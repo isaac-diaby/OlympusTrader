@@ -1,0 +1,13 @@
+bin/
+include/**/*
+lib/**/*
+share/**/*
+
+research/**/*
+tests/**/*
+
+v0.1/**/*
+
+.env
+.DS_Store
+```

@@ -1,0 +1,13 @@
+# dependencies
+alpaca-py
+
+numpy
+pandas
+# numba 
+
+TA-Lib
+pandas_ta
+scipy
+
+# Dev-dependencies
+python-dotenv
