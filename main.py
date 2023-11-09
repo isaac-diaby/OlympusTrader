@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState
 from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
 from OlympusTrader import AlpacaBroker, Strategy
-import OlympusTrader
 import math
 import numpy as np
 import warnings

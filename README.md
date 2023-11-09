@@ -18,6 +18,10 @@ To get started you can take a look at the main.py file for my own strategy for t
 and create a .env file for your environment variables as of now the only broker thats available is alpaca so you will need to set ALPACA_API_KEY and ALPACA_SECRET_KEY in the .env file.
 
 ```py
+from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState
+from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
+from OlympusTrader import AlpacaBroker, Strategy
+
 class  QbitTB(Strategy):
 	def  init(self,  asset):
 		state =  self.state
