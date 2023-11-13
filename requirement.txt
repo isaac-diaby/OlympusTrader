@@ -11,3 +11,4 @@ scipy
 
 # Dev-dependencies
 python-dotenv
+nest_asyncio
