@@ -50,11 +50,13 @@ class QbitTB(Strategy):
 
     def universe(self):
         # universe = { }
-        universe = {'BTC/USD', 'ETH/USD', 'LINK/USD' }
-        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
-        #             'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
-        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
-        #             'SPY', 'NDAQ', 'IHG', 'TRIP', 'BTC/USD', 'ETH/USD'}
+
+        # universe = {'BTC/USD', 'ETH/USD', 'LINK/USD' }
+
+        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
+
+        universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP', 'BTC/USD', 'ETH/USD', 'LINK/USD'}
+   
         return universe
 
     def on_bar(self, symbol, bar):
