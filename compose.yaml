@@ -15,7 +15,8 @@ services:
     ports:
       - 3333:3333
     env_file:
-      - .env
+      # - .env
+      - stack.env
 
 # TODO: Add a UI service here.
 # TODO: Add MongoDB database service here.
