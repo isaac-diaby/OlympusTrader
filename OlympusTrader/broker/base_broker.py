@@ -1,8 +1,9 @@
 
 import abc
 import datetime
-from typing import Any, Awaitable, Callable, List, Literal, override, Union
+from typing import Any, Awaitable, Callable, List, Literal, Union, overload
 
+from typing_extensions import override
 import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -66,7 +67,7 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def close_position(self, symbol: str, qty:int =None, percent: int=None):
+    def close_position(self, symbol: str, qty: int = None, percent: int = None):
         pass
 
     @override
@@ -79,9 +80,10 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def manage_insight_order(self, insight: Insight, asset: Asset):
         """Manage insight order by planing entry and exit orders for a given insight"""
-        assert isinstance(insight, Insight), 'insight must be of type Insight object'
+        assert isinstance(
+            insight, Insight), 'insight must be of type Insight object'
         # assert isinstance(asset, Asset), 'asset must be of type Asset object'
-        
+
     @override
     @abc.abstractmethod
     def startTradeStream(self, callback: Awaitable):
