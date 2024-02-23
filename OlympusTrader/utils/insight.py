@@ -49,7 +49,7 @@ class Insight:
     createAt: datetime = None
     updatedAt: datetime = None
 
-    def __init__(self, side: str, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = None, periodTillTp: int = 3):
+    def __init__(self, side: str, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = None, periodTillTp: int = 10):
         self.side = side  # buy or sell
         self.symbol = symbol  # symbol to trade
         self.quantity = quantity  # quantity to trade
@@ -91,8 +91,20 @@ class Insight:
         expireAt = self.tf.add_time_increment(
             self.createAt, self.periodUnfilled)
         hasExpired = expireAt < datetime.now()
-        if self.state == InsightState.NEW and hasExpired:
-            self.updateState(InsightState.EXPIRED)
+        if self.state == InsightState.EXECUTED and hasExpired:
+            self.updateState(InsightState.EXPIRED, 'Unfilled TTL expired')
+
+        return hasExpired
+    
+    def hasExhaustedTTL(self):
+        if self.periodTillTp == None:
+            return False
+
+        expireAt = self.tf.add_time_increment(
+            self.createAt, self.periodTillTp)
+        hasExpired = expireAt < datetime.now()
+        if self.state == InsightState.FILLED and hasExpired:
+            self.updateState(InsightState.EXPIRED, 'Filled TTL expired')
 
         return hasExpired
 

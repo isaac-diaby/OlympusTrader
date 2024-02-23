@@ -46,6 +46,17 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def get_positions(self) -> dict[str, IPosition]:
         pass
+    
+    @override
+    @abc.abstractmethod
+    def close_position(self, symbol: str, qty: int = None, percent: int = None):
+        pass
+
+    @override
+    @abc.abstractmethod
+    def close_all_positions(self):
+        """Close all open positions and cancel all open orders"""
+        pass
 
     @override
     @abc.abstractmethod
@@ -59,22 +70,16 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
+    def close_order(self, order_id):
+        pass
+
+    @override
+    @abc.abstractmethod
     def get_history(self, asset: Asset, start=(datetime.now() - timedelta(days=7)), end=datetime.now(), resolution=TimeFrame(5, TimeFrameUnit.Minute)) -> pd.DataFrame:
         """Get historical data for a given asset open, high, low, close, volume"""
 
         assert isinstance(
             resolution, TimeFrame), 'resolution must be of type TimeFrame object'
-
-    @override
-    @abc.abstractmethod
-    def close_position(self, symbol: str, qty: int = None, percent: int = None):
-        pass
-
-    @override
-    @abc.abstractmethod
-    def close_all_positions(self):
-        """Close all open positions and cancel all open orders"""
-        pass
 
     @override
     @abc.abstractmethod

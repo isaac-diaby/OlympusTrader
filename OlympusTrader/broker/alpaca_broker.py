@@ -291,6 +291,10 @@ class AlpacaBroker(BaseBroker):
         order = self.trading_client.close_position(symbol, closePosReq)
         # print("Closed position", order)
         return self.format_order(order)
+    
+    def close_order(self, order_id):
+        self.trading_client.cancel_order_by_id(order_id)
+        
 
     def startTradeStream(self, callback: Awaitable):
         self.trading_stream_client.subscribe_trade_updates(callback)

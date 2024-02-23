@@ -50,9 +50,9 @@ class QbitTB(Strategy):
 
     def universe(self):
         # universe = { }
-        # universe = {'BTC/USD', 'ETH/USD' }
-        universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
-                    'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
+        universe = {'BTC/USD', 'ETH/USD', 'LINK/USD' }
+        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
+        #             'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
         # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
         #             'SPY', 'NDAQ', 'IHG', 'TRIP', 'BTC/USD', 'ETH/USD'}
         return universe
@@ -370,19 +370,25 @@ class QbitTB(Strategy):
                 case InsightState.EXECUTED:
                     # TODO: Check if filled or not or should be expired or not
                     if (self.insights[symbol][i].hasExpired()):
+                        self.broker.close_order(self.insights[symbol][i]['order_id']) # Close Order
                         continue
 
                 case InsightState.FILLED:
                     print(f"Insight Filled: {insight}")
-                    # TODO: Check if the trade insight is exhausted
+                    # TODO: Check if the trade insight is exhausted and needs to be closed
+                    if (self.insights[symbol][i].hasExhaustedTTL()):
+                        self.broker.close_position(insight.symbol, insight.quantity)
                     # TODO: check if the trade needs to lower risk by moving stop loss
                     pass
                 case InsightState.CLOSED:
+
+                    print(f"Insight Closed: {insight}")
+                    del self.insights[symbol][i]
+                      # TODO: Save to DB?
                     pass
                 case InsightState.CANCELED:
                     # Remove from insights if the insight is canceled
                     print(f"Insight Canceled: {insight}")
-                    # TODO: Save to DB?
                     del self.insights[symbol][i]
 
                 case InsightState.REJECTED:
