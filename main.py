@@ -1,7 +1,7 @@
 import pandas_ta as ta
 import pandas as pd
 from datetime import datetime, timedelta
-from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState
+from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState, StrategyDependantConfirmation
 from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
 from OlympusTrader import AlpacaBroker, Strategy
 import math
@@ -34,31 +34,32 @@ class QbitTB(Strategy):
         if (state.get('market_state') == None):
             state['market_state'] = {}
         state['market_state'][asset['symbol']] = 0
-         # 4% of account per trade
-        state['execution_risk'] = 0.04 
+        # 4% of account per trade
+        state['execution_risk'] = 0.04
         # 2:1 Reward to Risk Ratio minimum
-        # state['RewardRiskRatio'] = 2.0
-        state['RewardRiskRatio'] = 0.5
-        
+        state['RewardRiskRatio'] = 2.0 
+
         # load warm up history
         if (state.get('history') == None):
             state['history'] = {}
 
         state['history'][asset['symbol']] = self.broker.get_history(
-            asset, (datetime.now() - timedelta(days=1)), datetime.now(), self.resolution)
-        
+            asset, (datetime.now() - timedelta(days=3)), datetime.now(), self.resolution)
+
         self.addBar_events(asset)
 
     def universe(self):
         # universe = { }
         # universe = {'BTC/USD', 'ETH/USD' }
-        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ', 'IHG', 'TRIP'}
         universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
-                    'SPY', 'NDAQ', 'IHG', 'TRIP', 'BTC/USD', 'ETH/USD'}
+                    'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
+        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT',
+        #             'SPY', 'NDAQ', 'IHG', 'TRIP', 'BTC/USD', 'ETH/USD'}
         return universe
 
     def on_bar(self, symbol, bar):
-        self.state['history'][symbol] = pd.concat([self.state['history'][symbol],  bar])
+        self.state['history'][symbol] = pd.concat(
+            [self.state['history'][symbol],  bar])
 
         # Needs to be warm up
         if (len(self.state['history'][symbol]) < self.state['warm_up']):
@@ -93,7 +94,7 @@ class QbitTB(Strategy):
 
         )
 
-        # self.state['history'][symbol] = 
+        # self.state['history'][symbol] =
         self.state['history'][symbol].ta.strategy(TaStrategy)
         # print(f"History: {self.state['history'][symbol]}")
 
@@ -107,17 +108,21 @@ class QbitTB(Strategy):
         #     'total_volume', 'SMA_32'],
         #     dtype='object')
 
-        # Compute Local Points of Control
-        self.computeLocalPointsOfControl(symbol)
-        # Compute RSI Divergance
-        self.computeRSIDivergance(symbol)
-        # Compute Market State
-        self.computeMarketState(symbol)
+        try:
+            # Compute Local Points of Control
+            self.computeLocalPointsOfControl(symbol)
+            # Compute RSI Divergance
+            self.computeRSIDivergance(symbol)
+            # Compute Market State
+            self.computeMarketState(symbol)
 
-        # Execute Orders If there should be any
-        self.insights[symbol] = self.generateInsights(symbol)
-        if (len(self.insights[symbol]) > 0):
-            self.executeOrder(symbol)
+            # Execute Orders If there should be any
+            self.generateInsights(symbol)  # self.insights[symbol]
+            if (len(self.insights[symbol]) > 0):
+                self.executeOrder(symbol)
+        except Exception as e:
+            print(f"Error: {e}")
+            raise e
 
     def computeLocalPointsOfControl(self, symbol: str):
         window = self.state['local_window']
@@ -152,7 +157,8 @@ class QbitTB(Strategy):
             if (IRSI.loc[lastLowIndex] < IRSI.loc[index]):
                 #    print(f"Long Divergance PIVOT at Index: {index} - From Index: {lastLowIndex}: {lastPrice:10} -> {price} - From RSI: {IRSI.iloc[lastLowIndex-IRSI_period]} -> {IRSI.iloc[index-IRSI_period]:10}")
                 # the difference between the two points of control / the price difference for ATR use
-                self.state['history'][symbol].loc[index, ['RSI_Divergance_Long']]= lastPrice-price
+                self.state['history'][symbol].loc[index, [
+                    'RSI_Divergance_Long']] = lastPrice-price
 
         # Bearish divergence - RSI is Decreasing while price is Increasing
         self.state['history'][symbol].loc[:, 'RSI_Divergance_Short'] = np.nan
@@ -168,7 +174,8 @@ class QbitTB(Strategy):
             lastHighIndex, lastPrice = previousLocalPoC[0]
             if (IRSI.loc[lastHighIndex] > IRSI.loc[index]):
                 # print(f"Short Divergance PIVOT at Index: {index} - From Index: {lastHighIndex}: {lastPrice:10} -> {price} - From RSI: {IRSI.iloc[lastHighIndex-IRSI_period]} -> {IRSI.iloc[index-IRSI_period]:10}")
-                self.state['history'][symbol].loc[index, ['RSI_Divergance_Short']] = price-lastPrice
+                self.state['history'][symbol].loc[index, [
+                    'RSI_Divergance_Short']] = price-lastPrice
 
         return history
 
@@ -193,6 +200,10 @@ class QbitTB(Strategy):
         elif (IRSI.iloc[-1] > 70):
             marketState -= 2
 
+        # take no action if Market Has no Volume based on the Volume Quantile > 0.7
+        if (history['volume'].iloc[-1] < round(history['volume'].quantile(0.7), 2)):
+            marketState = 0
+
         # print(f"{symbol} Market State: {marketState}, MACD: {IMACD.iloc[-1, 0]}, RSI: {IRSI.iloc[-1]}")
         marketState = min(max(marketState, -5), 5)
         self.state['market_state'][symbol] = marketState
@@ -208,6 +219,10 @@ class QbitTB(Strategy):
         baseConfidence = 0.1
         # marketState = -1
 
+        # Do not trade if market state is 0
+        if (marketState == 0):
+            return
+
         # TEST
         # if (len(self.insights[symbol]) == 0):
         #     TP = round((latestBar.close + (latestIATR*3)), 2)
@@ -217,7 +232,7 @@ class QbitTB(Strategy):
         #     self.insights[symbol].append(Insight('long', symbol,
         #                                          StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'LRVCM'))
 
-        # RSA Divergance
+        # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
             # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
             TP = round((latestBar.close + (latestIATR*3.5)), 2)
@@ -226,7 +241,8 @@ class QbitTB(Strategy):
                 previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
 
             self.insights[symbol].append(Insight('long', symbol,
-                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'LRVCM'))
+                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
+        # RSA Divergance Short
         if (not np.isnan(latestBar['RSI_Divergance_Short']) and marketState > 0):
             # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
             TP = round((latestBar.close - (latestIATR*3.5)), 2)
@@ -235,35 +251,35 @@ class QbitTB(Strategy):
                 previousBar.low - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
 
             self.insights[symbol].append(Insight('short', symbol,
-                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'LRVCM'))
+                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
 
-        # EMA Crossover
+        # EMA Crossover Long
         if ((latestBar['EMA_9'] < latestBar['close']) and (latestBar['EMA_9'] > previousBar['close']) and (abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState > 2):
             # print(
             #     f"Insight - {symbol}: Long EMA Crossover: EMA:{latestBar['EMA_9']} < {latestBar['close']}")
             TP = round(max(latestBar['BBU_16_2.0'],
-                       (latestBar['high']+(latestIATR*3))), 2)
+                       (latestBar['high']+(latestIATR*3.5))), 2)
             SL = round(
                 max(previousBar['low']-(.2*latestIATR), latestBar['EMA_9']-latestIATR*1.5), 2)
-            ENTRY = None  # Market Order
+            ENTRY = None  # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('long', symbol,
-                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM'))
-
+                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
+        # EMA Crossover Short
         if ((latestBar['EMA_9'] > latestBar['close']) and (latestBar['EMA_9'] < previousBar['close']) and (abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState < -2):
             # print(
             #     f"Insight - {symbol}: Short EMA Crossover: EMA:{latestBar['EMA_9']} > {latestBar['close']}")
             TP = round(min(latestBar['BBL_16_2.0'],
-                       (latestBar['low']-(latestIATR*3))), 2)
+                       (latestBar['low']-(latestIATR*3.5))), 2)
             SL = round(min(previousBar['high'] +
                        (.2*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), 2)
-            ENTRY = None  # Market Order
+            ENTRY = None  # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('short', symbol,
-                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM'))
+                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
 
-        return insights
-    
+        return
+
     def executeOrder(self, symbol: str):
         RISK = self.state['execution_risk']
         RewardRiskRatio = self.state['RewardRiskRatio']
@@ -272,26 +288,30 @@ class QbitTB(Strategy):
         for i, insight in enumerate(self.insights[symbol]):
             match insight.state:
                 case InsightState.NEW:
-                    try: 
+                    try:
                         if (insight.hasExpired()):
                             continue
 
-                        price = self.state['history'][symbol].loc[symbol].iloc[-1].close if ((insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price
-
+                        price = self.state['history'][symbol].loc[symbol].iloc[-1].close if (
+                            (insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price
 
                         # Get current holding
                         if (self.positions.get((insight.symbol).replace('/', '')) != None):
-                            holding = self.positions[(insight.symbol).replace('/', '')]
+                            holding = self.positions[(
+                                insight.symbol).replace('/', '')]
                             # Close position if holding is in the opposite direction of insight
                             if (len(holding) != 0):
                                 if (holding['side'] == 'long' and insight.side == 'short'):
-                                    self.close_position(insight.symbol, holding['qty'])
+                                    self.close_position(
+                                        insight.symbol, holding['qty'])
                                 elif (holding['side'] == 'short' and insight.side == 'long'):
-                                    self.close_position(insight.symbol, holding['qty'])
+                                    self.close_position(
+                                        insight.symbol, holding['qty'])
 
                         RR = insight.getPnLRatio(price)
                         if RR < RewardRiskRatio:
-                            self.insights[symbol][i].updateState(InsightState.REJECTED, f"Low RR: {RR}")
+                            self.insights[symbol][i].updateState(
+                                InsightState.REJECTED, f"Low RR: {RR}")
                             continue
                         #             insight.symbol, 'buy', abs(holding.available))
                         # calculate number of shares from cash according to risk of 2 percent
@@ -305,17 +325,19 @@ class QbitTB(Strategy):
                             size_can_buy = (diluted_account_margin_size)/price
                             size_should_buy = account_size_at_risk/riskPerShare
                             if (size_should_buy < 0):
-                                self.insights[symbol][i].updateState(InsightState.CANCELED, f"Low funds at Risk: {account_size_at_risk:^10}")
+                                self.insights[symbol][i].updateState(
+                                    InsightState.CANCELED, f"Low funds at Risk: {account_size_at_risk:^10}")
                                 continue
-                            
+
                             # np.round(diluted_account_size/price, 2)
-                            size = math.floor(min(size_should_buy, size_can_buy)*1000)/1000
-                            
-                                # continue 
+                            size = math.floor(
+                                min(size_should_buy, size_can_buy)*1000)/1000
+
+                            # continue
                             if (size >= 1):
                                 # Cant but fractional shares on limit orders with alpaca so round down
                                 size = math.floor(size)
-                            else: 
+                            else:
                                 self.insights[symbol][i].type = 'MARKET'
 
                             if insight.type == 'MARKET':
@@ -323,11 +345,11 @@ class QbitTB(Strategy):
                             else:
                                 pass
                                 # self.insights[symbol][i].updateState(InsightState.CANCELED)
-                            
 
                             self.insights[symbol][i].quantity = size
 
-                        print(f"{insight.side}: {insight.symbol} at {price} with {size} shares, SL: {insight.SL} TP: {insight.TP} Ratio: {RR}, Stratey: {insight.strategyType}")
+                        print(
+                            f"{insight.side}: {insight.symbol} at {price} with {size} shares, SL: {insight.SL} TP: {insight.TP} Ratio: {RR}, Stratey: {insight.strategyType}")
 
                         order = self.submit_order(insight)
 
@@ -338,7 +360,7 @@ class QbitTB(Strategy):
                                 InsightState.EXECUTED, f"Order ID: {order['order_id']}")
                         else:
                             self.insights[symbol][i].updateState(
-                                InsightState.REJECTED, f"Failed to submit order")
+                                InsightState.CANCELED, f"Failed to submit order")
 
                     except Exception as e:
                         # print(f"Error: {e}")
@@ -346,27 +368,39 @@ class QbitTB(Strategy):
                             InsightState.CANCELED, f"Error: {e}")
                         raise e
                 case InsightState.EXECUTED:
-                    # Check if filled or not or should be expired or not
-                    pass
+                    # TODO: Check if filled or not or should be expired or not
+                    if (self.insights[symbol][i].hasExpired()):
+                        continue
+
                 case InsightState.FILLED:
+                    print(f"Insight Filled: {insight}")
+                    # TODO: Check if the trade insight is exhausted
+                    # TODO: check if the trade needs to lower risk by moving stop loss
                     pass
                 case InsightState.CLOSED:
                     pass
                 case InsightState.CANCELED:
-                    pass
+                    # Remove from insights if the insight is canceled
+                    print(f"Insight Canceled: {insight}")
+                    # TODO: Save to DB?
+                    del self.insights[symbol][i]
+
                 case InsightState.REJECTED:
                     print(f"Insight Rejected: {insight}")
-                    pass
+                    del self.insights[symbol][i]
+
                 case InsightState.EXPIRED:
                     print(f"Insight Expired: {insight}")
-                    pass
+                    del self.insights[symbol][i]
+
                 case _:
                     pass
 
     def teardown(self):
         # Close all open positions
-        self.BROKER.close_all_positions()
-        
+        # self.BROKER.close_all_positions()
+        print("Tear Down")
+        pass
 
 
 if __name__ == "__main__":
