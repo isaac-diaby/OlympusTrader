@@ -38,6 +38,7 @@ class QbitTB(Strategy):
         state['execution_risk'] = 0.04
         # 2:1 Reward to Risk Ratio minimum
         state['RewardRiskRatio'] = 2.0 
+        state['baseConfidence'] = 0.1
 
         # load warm up history
         if (state.get('history') == None):
@@ -120,8 +121,6 @@ class QbitTB(Strategy):
 
             # Execute Orders If there should be any
             self.generateInsights(symbol)  # self.insights[symbol]
-            if (len(self.insights[symbol]) > 0):
-                self.executeOrder(symbol)
         except Exception as e:
             print(f"Error: {e}")
             raise e
@@ -217,8 +216,7 @@ class QbitTB(Strategy):
         previousBar = history.iloc[-2]
         latestIATR = latestBar['ATRr_14']
         marketState = self.state['market_state'][symbol]
-        insights = self.insights[symbol] = []
-        baseConfidence = 0.1
+        baseConfidence = self.state['baseConfidence']
         # marketState = -1
 
         # Do not trade if market state is 0
@@ -227,12 +225,12 @@ class QbitTB(Strategy):
 
         # TEST
         # if (len(self.insights[symbol]) == 0):
-        #     TP = round((latestBar.close + (latestIATR*3)), 2)
+        #     TP = round((latestBar.close + (latestIATR*20)), 2)
         #     SL = round((latestBar.close - (latestIATR*1.5)), 2)
         #     ENTRY = previousBar.high if (abs(
         #         previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
         #     self.insights[symbol].append(Insight('long', symbol,
-        #                                          StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'LRVCM'))
+        #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 1, 1))
 
         # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
@@ -281,10 +279,15 @@ class QbitTB(Strategy):
                                                  StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
 
         return
+    
 
-    def executeOrder(self, symbol: str):
+
+    def executeInsight(self, symbol: str):
         RISK = self.state['execution_risk']
         RewardRiskRatio = self.state['RewardRiskRatio']
+
+        history = self.state['history'][symbol].loc[symbol]
+        latestBar = history.iloc[-1]
 
         orders = self.orders
         for i, insight in enumerate(self.insights[symbol]):
@@ -319,10 +322,17 @@ class QbitTB(Strategy):
                         # calculate number of shares from cash according to risk of 2 percent
 
                         if (insight.quantity == None):
-                            diluted_account_margin_size = self.account['buying_power'] * \
-                                insight.confidence
-                            account_size_at_risk = self.account['cash'] * \
-                                insight.confidence*RISK
+                            if (self.assets[symbol]['asset_type'] == 'stock'):
+                                diluted_account_margin_size = self.account['buying_power'] * insight.confidence 
+                                account_size_at_risk = self.account['cash'] * (insight.confidence*RISK)
+                            if (self.assets[symbol]['asset_type'] == 'crypto'):
+                                diluted_account_margin_size = self.account['cash'] * (insight.confidence)
+                                account_size_at_risk = self.account['cash'] * (insight.confidence*RISK)
+
+                            if (diluted_account_margin_size > 200000):
+                                # Max 200k per trade Alapaca
+                                diluted_account_margin_size = 200000
+
                             riskPerShare = abs(price - insight.SL)
                             size_can_buy = (diluted_account_margin_size)/price
                             size_should_buy = account_size_at_risk/riskPerShare
@@ -332,13 +342,13 @@ class QbitTB(Strategy):
                                 continue
 
                             # np.round(diluted_account_size/price, 2)
-                            size = math.floor(
+                            self.insights[symbol][i].quantity = math.floor(
                                 min(size_should_buy, size_can_buy)*1000)/1000
 
                             # continue
-                            if (size >= 1):
+                            if (self.insights[symbol][i].quantity >= 1):
                                 # Cant but fractional shares on limit orders with alpaca so round down
-                                size = math.floor(size)
+                                self.insights[symbol][i].quantity = math.floor(self.insights[symbol][i].quantity)
                             else:
                                 self.insights[symbol][i].type = 'MARKET'
 
@@ -348,10 +358,7 @@ class QbitTB(Strategy):
                                 pass
                                 # self.insights[symbol][i].updateState(InsightState.CANCELED)
 
-                            self.insights[symbol][i].quantity = size
-
-                        print(
-                            f"{insight.side}: {insight.symbol} at {price} with {size} shares, SL: {insight.SL} TP: {insight.TP} Ratio: {RR}, Stratey: {insight.strategyType}")
+                        print(self.insights[symbol][i]) # Print Insight Before Submitting Order
 
                         order = self.submit_order(insight)
 
@@ -370,35 +377,54 @@ class QbitTB(Strategy):
                             InsightState.CANCELED, f"Error: {e}")
                         raise e
                 case InsightState.EXECUTED:
-                    # TODO: Check if filled or not or should be expired or not
+                    print(f"Insight Executed: {str(insight)}")
+                    # Check if filled or not or should be expired or not
                     if (self.insights[symbol][i].hasExpired()):
-                        self.broker.close_order(self.insights[symbol][i]['order_id']) # Close Order
-                        continue
+                        self.broker.close_order(order_id = (insight.order_id)) # Close Order
+                        
 
                 case InsightState.FILLED:
-                    print(f"Insight Filled: {insight}")
-                    # TODO: Check if the trade insight is exhausted and needs to be closed
+                    print(insight)
+                    # Check if the trade insight is exhausted and needs to be closed
                     if (self.insights[symbol][i].hasExhaustedTTL()):
-                        self.broker.close_position(insight.symbol, insight.quantity)
+                        self.broker.close_position(insight.symbol, percent=100)
+                        self.insights[symbol][i].updateState(InsightState.CLOSED, f"Exhausted TTL")
+
+                    
+                    match self.assets[symbol]['asset_type']:
+                        case 'stock':
+                            pass 
+                        case 'crypto':
+                            # TODO: Since Alpaca does not support stop loss for crypto, we need to manage it manually
+                            if ((insight.side == 'long') and (insight.SL >  latestBar.low)) or ((insight.side == 'short') and (insight.SL <  latestBar.high)):
+                                self.broker.close_position(insight.symbol, percent=100)
+                                self.insights[symbol][i].updateState(InsightState.CLOSED, f"SL Hit: {insight.side:^8}: {insight.limit_price} -> {insight.SL} -> {latestBar.low  if (insight.side == 'long') else latestBar.high}, LOST: ${insight.quantity*(insight.limit_price - insight.SL)}")
+                            # TODO: Take Profit if TP [0] is hit
+                            if ((insight.side == 'long') and (insight.TP[0] <  latestBar.high)) or ((insight.side == 'short') and (insight.TP[0] >  latestBar.low)):
+                                # TODO: If there is a TP 2 or 3, we need to close only a portion of the position and move the SL to break even
+                                self.broker.close_position(insight.symbol, percent=100) 
+                                self.insights[symbol][i].updateState(InsightState.CLOSED, f"TP Hit: {insight.side:^8}: {insight.limit_price} -> {insight.TP[0]} -> {latestBar.high  if (insight.side == 'long') else latestBar.low}, WON: ${insight.quantity*(insight.TP[0] - insight.limit_price)}")
+                    
+                    # 
                     # TODO: check if the trade needs to lower risk by moving stop loss
                     pass
                 case InsightState.CLOSED:
 
-                    print(f"Insight Closed: {insight}")
+                    print(insight)
                     del self.insights[symbol][i]
                       # TODO: Save to DB?
                     pass
                 case InsightState.CANCELED:
                     # Remove from insights if the insight is canceled
-                    print(f"Insight Canceled: {insight}")
+                    print(insight)
                     del self.insights[symbol][i]
 
                 case InsightState.REJECTED:
-                    print(f"Insight Rejected: {insight}")
+                    print(insight)
                     del self.insights[symbol][i]
 
                 case InsightState.EXPIRED:
-                    print(f"Insight Expired: {insight}")
+                    print(insight)
                     del self.insights[symbol][i]
 
                 case _:

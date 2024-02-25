@@ -43,6 +43,11 @@ class BaseStrategy(abc.ABC):
         assert TimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
+         # 4% of account per trade
+        state = self.state
+        state['execution_risk'] = 0.04
+        # 2:1 Reward to Risk Ratio minimum
+        state['RewardRiskRatio'] = 2.0 
         self.__loadUniverse()
         for asset in self.UNIVERSE.values():
             self.init(asset)
@@ -65,6 +70,34 @@ class BaseStrategy(abc.ABC):
         """ Called once per bar. open, high, low, close, volume """
         print('IS THIS WORKING, Add on_bar Function? ->  async def on_bar(self, bar):')
         pass
+
+    @override
+    @abc.abstractmethod
+    def executeInsight(self, symbol: str):
+        """ Called for each active insight in the strategy. 
+        it allows you to conrol the execution of the insight and manage the order.
+        """
+        print('IS THIS WORKING, Add executeInsight Function? ->  async def executeInsight(self, symbol: str):')
+        for i, insight in enumerate(self.insights[symbol]):
+            match insight.state:
+                # case InsightState.NEW:
+                #     pass
+                # case InsightState.EXECUTED:
+                #     pass
+                # case InsightState.FILLED:
+                #     pass
+                # case InsightState.EXPIRED:
+                #     pass
+                # case InsightState.CANCELED:
+                #     pass
+                # case InsightState.REJECTED:
+                #     pass
+                # case InsightState.CLOSED:
+                #     pass
+                case _:
+                    print('Implement the insight state in the executeInsight function:', insight.state)
+                    pass
+                    
 
     @override
     @abc.abstractmethod
@@ -101,6 +134,7 @@ class BaseStrategy(abc.ABC):
 
         except KeyboardInterrupt:
             self.teardown()
+            # self.BROKER.closeTradeStream()
             asyncio.run(self.BROKER.closeTradeStream())
             tradeStream.cancel()
             print("Interrupted execution by user")
@@ -112,7 +146,7 @@ class BaseStrategy(abc.ABC):
                 # self.BROKER.closeStream('crypto', 'bars')
                 asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
                 cryptoStream.cancel()
-            # loop.stop()
+            loop.stop()
 
             # asyncio.run(self.BROKER.closeTradeStream())
 
@@ -126,7 +160,7 @@ class BaseStrategy(abc.ABC):
             # if (len(self.STREAMS['cryptoTickers']) > 0):
             #     asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
 
-            loop.stop()
+            loop.close()
             exit(0)
 
     async def __on_trade_update(self, trade):
@@ -136,7 +170,7 @@ class BaseStrategy(abc.ABC):
             return
         # print(f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}")
         self.ORDERS.append(orderdata)
-        for i, insight in enumerate(self.insights[orderdata['asset']['symbol']]):
+        for i, insight in enumerate(self.INSIGHTS[orderdata['asset']['symbol']]):
             match insight.state:
                 case InsightState.EXECUTED:
                     # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
@@ -144,8 +178,12 @@ class BaseStrategy(abc.ABC):
                         print(
                             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}")
                         if event == 'fill':
-                            insight.updateState(
+                            # Update the insight with the filled price
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].limit_price = float(orderdata['filled_price'])
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
                                 InsightState.FILLED, f"Order: {event:<16}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}")
+                            
+
 
 
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
@@ -155,13 +193,17 @@ class BaseStrategy(abc.ABC):
         assert callable(self.universe), 'Universe must be a callable function'
         universeSet = self.universe()
         for symbol in universeSet:
-            symbol = symbol.upper()
-            assetInfo = self.BROKER.get_ticker_info(symbol)
-            if assetInfo:
-                self.UNIVERSE[symbol] = assetInfo
-                self.INSIGHTS[symbol] = []
-                print(
-                    f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
+            self.__loadAsset(symbol)
+                
+    def __loadAsset(self, s: str):
+        """ Loads the asset into the universe of the strategy."""
+        symbol = s.upper()
+        assetInfo = self.BROKER.get_ticker_info(symbol)
+        if assetInfo:
+            self.UNIVERSE[symbol] = assetInfo
+            self.INSIGHTS[symbol] = []
+            print(
+                f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
 
     # @abc.abstractmethod
     def addBar_events(self, asset: Asset):
@@ -215,6 +257,9 @@ class BaseStrategy(abc.ABC):
                     # print('Bar is not part of the resolution of the strategy', data)
                     pass
                     # Will need to take the the 1 min bar and convert it to the resolution of the strategy
+                # Check if there are any updates to insights for the symbol
+                if (len(self.INSIGHTS[symbol]) > 0):
+                    self.executeInsight(symbol)
 
             else:
                 print('Data is empty - BROKER.format_on_bar(bar) not working')

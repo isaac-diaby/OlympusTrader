@@ -110,6 +110,7 @@ class AlpacaBroker(BaseBroker):
 
     def get_account(self):
         res = self.trading_client.get_account()
+        res.non_marginable_buying_power
         account: IAccount = IAccount(account_id=res.id, cash=float(res.cash), currency=res.currency,
                                      buying_power=float(res.buying_power), shorting_enabled=res.shorting_enabled)
         return account
@@ -240,14 +241,15 @@ class AlpacaBroker(BaseBroker):
                             qty=insight.quantity,
                             side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
                             time_in_force=TimeInForce.GTC,
+                            # order_class=OrderClass.SIMPLE,
                             order_class=OrderClass.SIMPLE,
-                            # take_profit=TakeProfitRequest(
-                            #     limit_price=insight.TP[0]
-                            # ),
-                            # stop_loss=StopLossRequest(
-                            #     stop_price=insight.SL,
-                            #     limit_price=insight.SL*0.005
-                            # )
+                            take_profit=TakeProfitRequest(
+                                limit_price=insight.TP[0]
+                            ),
+                            stop_loss=StopLossRequest(
+                                stop_price=insight.SL,
+                                limit_price=insight.SL*0.005
+                            )
                         )
                     case 'LIMIT':
                         req = LimitOrderRequest(
@@ -255,6 +257,7 @@ class AlpacaBroker(BaseBroker):
                             qty=insight.quantity,
                             side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
                             time_in_force=TimeInForce.GTC,
+                            # order_class=OrderClass.BRACKET,
                             order_class=OrderClass.SIMPLE,
                             limit_price=insight.limit_price,
                             # take_profit=TakeProfitRequest(
@@ -286,11 +289,15 @@ class AlpacaBroker(BaseBroker):
         return closeOrders
 
     def close_position(self, symbol, qty=None, percent=None):
-        closePosReq = ClosePositionRequest(
-            qty=qty) if qty else ClosePositionRequest(percent=percent)
-        order = self.trading_client.close_position(symbol, closePosReq)
-        # print("Closed position", order)
-        return self.format_order(order)
+        try:
+            closePosReq = ClosePositionRequest(
+                qty=str(qty)) if qty else ClosePositionRequest(percent=str(percent))
+            order = self.trading_client.close_position(symbol, closePosReq)
+            # print("Closed position", order)
+            return self.format_order(order)
+        except alpaca.common.exceptions.APIError as e:
+            print("Error closing position", e)
+            raise e
     
     def close_order(self, order_id):
         self.trading_client.cancel_order_by_id(order_id)
@@ -333,8 +340,6 @@ class AlpacaBroker(BaseBroker):
         return self.format_order(trade.order), trade.event
 
     def format_on_bar(self, bar: Bar):
-        # print("ALPACA Format", bar)
-
         data = pd.DataFrame(data={
             # 'symbol': bar.symbol,
             # 'timestamp': bar.timestamp,

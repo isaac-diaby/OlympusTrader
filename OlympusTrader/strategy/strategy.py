@@ -11,22 +11,22 @@ class Strategy(BaseStrategy):
     @override
     def init(self, asset):
         super().init()
-        pass
 
     @override
     def universe(self):
         super().universe()
-        pass
 
     @override
     async def on_bar(self, bar):
         super().on_bar(bar)
-        pass
 
     @override
     def teardown(self):
         super().teardown()
-        pass
+        
+    def executeInsight(self, symbol: str):
+        super().executeInsight(symbol)
+        
 
 
        
