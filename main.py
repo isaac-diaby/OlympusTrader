@@ -227,8 +227,9 @@ class QbitTB(Strategy):
         # if (len(self.insights[symbol]) == 0):
         #     TP = round((latestBar.close + (latestIATR*20)), 2)
         #     SL = round((latestBar.close - (latestIATR*1.5)), 2)
-        #     ENTRY = previousBar.high if (abs(
-        #         previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
+        #     ENTRY = None
+        #     # ENTRY = previousBar.high if (abs(
+        #     #     previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
         #     self.insights[symbol].append(Insight('long', symbol,
         #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 1, 1))
 
@@ -297,7 +298,7 @@ class QbitTB(Strategy):
                         if (insight.hasExpired()):
                             continue
 
-                        price = self.state['history'][symbol].loc[symbol].iloc[-1].close if (
+                        self.insights[symbol][i].limit_price = self.state['history'][symbol].loc[symbol].iloc[-1].close if (
                             (insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price
 
                         # Get current holding
@@ -313,7 +314,7 @@ class QbitTB(Strategy):
                                     self.close_position(
                                         insight.symbol, holding['qty'])
 
-                        RR = insight.getPnLRatio(price)
+                        RR = self.insights[symbol][i].getPnLRatio()
                         if RR < RewardRiskRatio:
                             self.insights[symbol][i].updateState(
                                 InsightState.REJECTED, f"Low RR: {RR}")
@@ -333,8 +334,8 @@ class QbitTB(Strategy):
                                 # Max 200k per trade Alapaca
                                 diluted_account_margin_size = 200000
 
-                            riskPerShare = abs(price - insight.SL)
-                            size_can_buy = (diluted_account_margin_size)/price
+                            riskPerShare = abs(self.insights[symbol][i].limit_price - insight.SL)
+                            size_can_buy = (diluted_account_margin_size)/self.insights[symbol][i].limit_price
                             size_should_buy = account_size_at_risk/riskPerShare
                             if (size_should_buy < 0):
                                 self.insights[symbol][i].updateState(
@@ -352,7 +353,7 @@ class QbitTB(Strategy):
                             else:
                                 self.insights[symbol][i].type = 'MARKET'
 
-                            if insight.type == 'MARKET':
+                            if self.insights[symbol][i].type == 'MARKET':
                                 pass
                             else:
                                 pass

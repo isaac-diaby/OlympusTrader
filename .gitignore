@@ -8,6 +8,7 @@ tests/**/*
 
 v0.1/**/*
 
-.env
+**/stack.env
+**/.env
 .DS_Store
 ```

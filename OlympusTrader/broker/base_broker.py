@@ -49,7 +49,7 @@ class BaseBroker(abc.ABC):
     
     @override
     @abc.abstractmethod
-    def close_position(self, symbol: str, qty: int = None, percent: int = None):
+    def close_position(self, symbol: str, qty: int = None, percent: float = None):
         pass
 
     @override

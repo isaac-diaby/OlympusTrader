@@ -10,6 +10,7 @@
 **/.classpath
 **/.dockerignore
 **/.env
+**/stack.env
 **/.git
 **/.gitignore
 **/.project

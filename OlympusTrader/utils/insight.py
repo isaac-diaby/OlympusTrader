@@ -81,7 +81,7 @@ class Insight:
             self.classType = 'SIMPLE'
     
     def __str__(self):
-        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {self.getPnLRatio(self.limit_price):< 12} - UDA: {self.updatedAt}"
+        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - UDA: {self.updatedAt}"
 
     def updateState(self, state: InsightState, message: str = None):
         print(
@@ -121,8 +121,8 @@ class Insight:
         self.updatedAt = datetime.now()
         return self
 
-    def getPnLRatio(self, entry_price: float):
-        if self.TP and self.SL and entry_price != None:
-            return round((abs(self.TP[0] - entry_price)) / (abs(entry_price - self.SL)), 2)
+    def getPnLRatio(self):
+        if self.TP and self.SL and self.limit_price != None:
+            return round((abs(self.TP[0] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
         else:
             return None
