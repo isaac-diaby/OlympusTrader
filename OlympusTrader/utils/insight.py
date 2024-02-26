@@ -7,6 +7,7 @@ from .timeframe import TimeFrame
 class StrategyTypes(Enum):
     RSI_DIVERGANCE = 'RSI_DIVERGANCE'
     EMA_CROSSOVER = 'EMA_CROSSOVER'
+    MANUAL = 'MANUAL'
     TEST = 'TESTING'
 
 
@@ -50,6 +51,8 @@ class Insight:
     createAt: datetime = None
     updatedAt: datetime = None
     filledAt: datetime = None
+    close_order_id = None
+    close_price: float = None  # price to close at
 
     def __init__(self, side: str, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
         self.side = side  # buy or sell
@@ -92,27 +95,27 @@ class Insight:
             self.filledAt = self.updatedAt
         return self
 
-    def hasExpired(self):
+    def hasExpired(self, shouldUpdateState: bool = False):
         if self.periodUnfilled == None:
             return False
 
         expireAt = self.tf.add_time_increment(
             self.createAt, self.periodUnfilled)
         hasExpired = expireAt < datetime.now()
-        if (self.state == InsightState.EXECUTED or self.state == InsightState.NEW) and hasExpired:
-            self.updateState(InsightState.EXPIRED, 'Unfilled TTL expired')
+        if (self.state == InsightState.EXECUTED or self.state == InsightState.NEW) and hasExpired and shouldUpdateState:
+            self.updateState(InsightState.CANCELED, 'Unfilled TTL expired')
 
         return hasExpired
     
-    def hasExhaustedTTL(self):
+    def hasExhaustedTTL(self, shouldUpdateState: bool = False):
         if self.periodTillTp == None:
             return False
 
         expireAt = self.tf.add_time_increment(
             self.filledAt, self.periodTillTp)
         hasExpired = expireAt < datetime.now()
-        if (self.state == InsightState.FILLED) and hasExpired:
-            self.updateState(InsightState.EXPIRED, 'Filled TTL expired')
+        if (self.state == InsightState.FILLED) and hasExpired and shouldUpdateState:
+            self.updateState(InsightState.CLOSED, 'Filled TTL expired')
 
         return hasExpired
 
@@ -120,9 +123,31 @@ class Insight:
         self.order_id = order_id
         self.updatedAt = datetime.now()
         return self
-
+    
+    def positionFilled(self, price: float, qty: float, order_id: str = None):
+        self.updateOrderID(order_id)
+        self.limit_price = float(price)
+        self.quantity = float(qty)
+        self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {price}")
+        return self
+    
+    def positionClosed(self, price: float, order_id: str):
+        self.close_price = float(price)
+        self.close_order_id = order_id
+        # Print the P/L of the trade
+        PL = self.getPL()
+        self.updateState(InsightState.CLOSED, f"Trade Closed {"✅" if PL > 0 else "❌" }: {self.symbol} - {self.side} - {self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}")
+        return self
+    
+    def getPL(self):
+        assert self.close_price != None, 'Close price is not set'
+        if self.side == 'long':
+            return round((self.close_price - self.limit_price) * self.quantity, 2)
+        else:
+            return round((self.limit_price - self.close_price) * self.quantity, 2)
+        
     def getPnLRatio(self):
         if self.TP and self.SL and self.limit_price != None:
-            return round((abs(self.TP[0] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
+            return round((abs(self.TP[-1] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
         else:
             return None

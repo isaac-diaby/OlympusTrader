@@ -49,7 +49,7 @@ class BaseBroker(abc.ABC):
     
     @override
     @abc.abstractmethod
-    def close_position(self, symbol: str, qty: int = None, percent: float = None):
+    def close_position(self, symbol: str, qty: int = None, percent: float = None) -> IOrder | None:
         pass
 
     @override
@@ -70,7 +70,7 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def close_order(self, order_id):
+    def close_order(self, order_id: str) -> any:
         pass
 
     @override
@@ -83,7 +83,7 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def manage_insight_order(self, insight: Insight, asset: Asset):
+    def manage_insight_order(self, insight: Insight, asset: Asset) -> IOrder | None:
         """Manage insight order by planing entry and exit orders for a given insight"""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
@@ -122,6 +122,6 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def format_on_trade_update(self, trade: Any) -> pd.DataFrame:
+    def format_on_trade_update(self, trade: Any) -> IOrder:
         """Format stream quote data to { symbol: str, quote: -> bid, bidSize, ask, askSize, timestamp}"""
         pass

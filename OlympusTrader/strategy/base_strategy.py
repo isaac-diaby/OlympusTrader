@@ -135,6 +135,7 @@ class BaseStrategy(abc.ABC):
         except KeyboardInterrupt:
             self.teardown()
             # self.BROKER.closeTradeStream()
+            loop.stop()
             asyncio.run(self.BROKER.closeTradeStream())
             tradeStream.cancel()
             print("Interrupted execution by user")
@@ -146,7 +147,6 @@ class BaseStrategy(abc.ABC):
                 # self.BROKER.closeStream('crypto', 'bars')
                 asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
                 cryptoStream.cancel()
-            loop.stop()
 
             # asyncio.run(self.BROKER.closeTradeStream())
 
@@ -168,21 +168,26 @@ class BaseStrategy(abc.ABC):
         orderdata, event = self.BROKER.format_on_trade_update(trade)
         if not orderdata:
             return
-        # print(f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}")
+        print(
+            f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
         self.ORDERS.append(orderdata)
         for i, insight in enumerate(self.INSIGHTS[orderdata['asset']['symbol']]):
             match insight.state:
                 case InsightState.EXECUTED:
                     # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
                     if insight.order_id == orderdata['order_id']:
-                        print(
-                            f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}")
                         if event == 'fill':
                             # Update the insight with the filled price
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].limit_price = float(orderdata['filled_price'])
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
-                                InsightState.FILLED, f"Order: {event:<16}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}")
-                            
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'],  float(orderdata['qty']))
+                            break # No need to continue
+                case InsightState.FILLED | InsightState.CLOSED:
+                    # Check if the position has been closed via SL or TP
+                    if insight.symbol == orderdata['asset']['symbol']:
+                        # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
+                        if event == 'fill' and (orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']):
+                            # Update the insight closed price
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(float(orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price']), orderdata['order_id'])
+                            break # No need to continue
 
 
 

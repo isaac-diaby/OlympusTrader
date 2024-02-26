@@ -131,13 +131,13 @@ class AlpacaBroker(BaseBroker):
     def format_position(self, position: Position) -> IPosition:
         return IPosition(
             asset=self.get_ticker_info(position.symbol),
-            avg_entry_price=position.avg_entry_price,
-            qty=position.qty,
+            avg_entry_price=float(position.avg_entry_price),
+            qty=float(position.qty),
             side=position.side.value,
-            market_value=position.market_value,
-            cost_basis=position.cost_basis,
-            current_price=position.current_price,
-            unrealized_pl=position.unrealized_pl
+            market_value=float(position.market_value),
+            cost_basis=float(position.cost_basis),
+            current_price=float(position.current_price),
+            unrealized_pl=float(position.unrealized_pl)
         )
 
     def get_orders(self):
@@ -150,14 +150,23 @@ class AlpacaBroker(BaseBroker):
         return self.format_order(self.trading_client.get_order_by_id(order_id))
 
     def format_order(self, order: Order) -> IOrder:
+        side = None
+        match order.side.value:
+            case "buy":
+                side = "long"
+            case "sell":
+                side = "short"
+            case _:
+                side = "unknown"
+
         return IOrder(
             order_id=order.id,
             asset=self.get_ticker_info(order.symbol),
-            filled_price=order.filled_avg_price,
-            limit_price=order.limit_price,
-            stop_price=order.stop_price,
-            qty=order.qty,
-            side=order.side.value,
+            filled_price=float(order.filled_avg_price) if order.filled_avg_price else None,
+            limit_price=float(order.limit_price) if order.limit_price else None,
+            stop_price=float(order.stop_price) if order.stop_price else None,
+            qty=float(order.qty),
+            side=side,
             type=order.type.value,
             order_class=order.order_class.value,
             time_in_force=order.time_in_force.value,
@@ -184,11 +193,11 @@ class AlpacaBroker(BaseBroker):
                                 qty=insight.quantity,
                                 side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
                                 time_in_force=TimeInForce.DAY,
-                                order_class=OrderClass.BRACKET,
-                                take_profit=TakeProfitRequest(
+                                order_class=OrderClass.BRACKET if insight.TP or insight.SL else OrderClass.SIMPLE,
+                                take_profit=None if insight.TP == None else TakeProfitRequest(
                                     limit_price=insight.TP[0]
                                 ),
-                                stop_loss=StopLossRequest(
+                                stop_loss=None if insight.SL == None else StopLossRequest(
                                     stop_price=insight.SL,
                                     # stop_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
                                 ))
@@ -216,10 +225,10 @@ class AlpacaBroker(BaseBroker):
                             time_in_force=TimeInForce.DAY,
                             order_class=OrderClass.BRACKET,
                             limit_price=round(insight.limit_price, 2),
-                            take_profit=TakeProfitRequest(
+                            take_profit=None if insight.TP == None else TakeProfitRequest(
                                 limit_price=insight.TP[0]
                             ),
-                            stop_loss=StopLossRequest(
+                            stop_loss=None if insight.SL == None else StopLossRequest(
                                 stop_price=insight.SL,
                                 # limit_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
                             )
@@ -243,10 +252,10 @@ class AlpacaBroker(BaseBroker):
                             time_in_force=TimeInForce.GTC,
                             # order_class=OrderClass.SIMPLE,
                             order_class=OrderClass.SIMPLE,
-                            take_profit=TakeProfitRequest(
+                            take_profit=None if insight.TP == None else TakeProfitRequest(
                                 limit_price=insight.TP[0]
                             ),
-                            stop_loss=StopLossRequest(
+                            stop_loss=None if insight.SL == None else StopLossRequest(
                                 stop_price=insight.SL,
                                 limit_price=insight.SL*0.005
                             )
@@ -278,7 +287,8 @@ class AlpacaBroker(BaseBroker):
                 return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
             # print ("ALPACA: Error submitting order", e)
-            raise e
+            # raise e
+            pass
 
         return None
 
@@ -309,7 +319,7 @@ class AlpacaBroker(BaseBroker):
 
     async def closeTradeStream(self):
         self.trading_stream_client.stop()
-        await self.trading_stream_client.close()
+        self.trading_stream_client.close()
 
     def streamBar(self, callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
         if AssetType == 'stock':
