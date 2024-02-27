@@ -96,6 +96,9 @@ class Insight:
             self.filledAt = self.updatedAt
         if self.state == InsightState.CLOSED:
             self.closedAt = self.updatedAt
+            # Print the P/L of the trade
+            self.logPnL()
+        
         return self
 
     def hasExpired(self, shouldUpdateState: bool = False):
@@ -136,10 +139,8 @@ class Insight:
     
     def positionClosed(self, price: float, order_id: str):
         self.close_price = float(price)
-        self.close_order_id = order_id
-        # Print the P/L of the trade
-        
-        self.updateState(InsightState.CLOSED, self.logPnL())
+        self.close_order_id = order_id        
+        self.updateState(InsightState.CLOSED)
         return self
     
     def getPL(self):
