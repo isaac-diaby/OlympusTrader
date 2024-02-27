@@ -138,8 +138,8 @@ class Insight:
         self.close_price = float(price)
         self.close_order_id = order_id
         # Print the P/L of the trade
-        PL = self.getPL()
-        self.updateState(InsightState.CLOSED, f"Trade Closed {"✅" if PL > 0 else "❌" }: {self.symbol} - {self.side} - {self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}")
+        
+        self.updateState(InsightState.CLOSED, self.logPnL())
         return self
     
     def getPL(self):
@@ -154,3 +154,7 @@ class Insight:
             return round((abs(self.TP[-1] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
         else:
             return None
+    def logPnL(self):
+        PL = self.getPL()
+        message = f"Trade Closed {"✅" if PL > 0 else "❌" }: {self.symbol} - {self.side} - {self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}"
+        return message
