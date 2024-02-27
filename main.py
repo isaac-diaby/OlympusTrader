@@ -225,14 +225,14 @@ class QbitTB(Strategy):
             return
 
         # TEST
-        if (len(self.insights[symbol]) == 0):
-            TP = round((latestBar.close + (latestIATR*20)), 2)
-            SL = round((latestBar.close - (latestIATR*1.5)), 2)
-            ENTRY = None
-            # ENTRY = previousBar.high if (abs(
-            #     previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
-            self.insights[symbol].append(Insight('long', symbol,
-                                                 StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
+        # if (len(self.insights[symbol]) == 0):
+        #     TP = round((latestBar.close + (latestIATR*20)), 2)
+        #     SL = round((latestBar.close - (latestIATR*1.5)), 2)
+        #     ENTRY = None
+        #     # ENTRY = previousBar.high if (abs(
+        #     #     previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
+        #     self.insights[symbol].append(Insight('long', symbol,
+        #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
         # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
