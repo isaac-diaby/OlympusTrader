@@ -197,13 +197,14 @@ class AlpacaBroker(BaseBroker):
                                 time_in_force=TimeInForce.DAY,
                                 order_class=OrderClass.BRACKET if insight.TP or insight.SL else OrderClass.SIMPLE,
                                 take_profit=None if insight.TP == None else TakeProfitRequest(
-                                    limit_price=insight.TP[0]
+                                    limit_price=insight.TP[-1]
                                 ),
                                 stop_loss=None if insight.SL == None else StopLossRequest(
                                     stop_price=insight.SL,
                                     # stop_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
                                 ))
                         else:
+                            # For small quantity use simple order
                             req = MarketOrderRequest(
                                 symbol=insight.symbol,
                                 qty=insight.quantity,
@@ -228,7 +229,7 @@ class AlpacaBroker(BaseBroker):
                             order_class=OrderClass.BRACKET,
                             limit_price=round(insight.limit_price, 2),
                             take_profit=None if insight.TP == None else TakeProfitRequest(
-                                limit_price=insight.TP[0]
+                                limit_price=insight.TP[-1]
                             ),
                             stop_loss=None if insight.SL == None else StopLossRequest(
                                 stop_price=insight.SL,
@@ -255,7 +256,7 @@ class AlpacaBroker(BaseBroker):
                             # order_class=OrderClass.SIMPLE,
                             order_class=OrderClass.SIMPLE,
                             take_profit=None if insight.TP == None else TakeProfitRequest(
-                                limit_price=insight.TP[0]
+                                limit_price=insight.TP[-1]
                             ),
                             stop_loss=None if insight.SL == None else StopLossRequest(
                                 stop_price=insight.SL,
@@ -289,7 +290,7 @@ class AlpacaBroker(BaseBroker):
                 return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
             # print ("ALPACA: Error submitting order", e)
-            # raise e
+            raise f"ALPACA: Error submitting order {insight}"
             pass
 
         return None
