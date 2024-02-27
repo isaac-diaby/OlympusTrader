@@ -179,7 +179,7 @@ class BaseStrategy(abc.ABC):
                         if event == 'fill':
                             # Update the insight with the filled price
                             self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
-                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'],  float(orderdata['qty']))
+                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                             break  # No need to continue
                 case InsightState.FILLED | InsightState.CLOSED:
                     # Check if the position has been closed via SL or TP
@@ -187,8 +187,8 @@ class BaseStrategy(abc.ABC):
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
                         if (event == 'fill') and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id'])):
                             # Update the insight closed price
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(float(
-                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price']), orderdata['order_id'])
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
+                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
                             break  # No need to continue
 
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
