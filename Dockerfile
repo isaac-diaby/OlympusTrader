@@ -26,7 +26,7 @@ RUN adduser \
     --shell "/sbin/nologin" \
     --no-create-home \
     --uid "${UID}" \
-    appuser
+    trader
 
 # Install TA Lib
 RUN apt-get update && apt-get install -y \
@@ -53,13 +53,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install -r requirements.txt
 
 # Switch to the non-privileged user to run the application.
-USER appuser
+USER trader
 
 # Copy the source code into the container.
 COPY . .
 
 # Expose the port that the application listens on.
-EXPOSE 3333
+# EXPOSE 3333
 
 # Run the application.
 CMD python main.py
