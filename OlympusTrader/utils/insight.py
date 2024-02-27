@@ -51,6 +51,7 @@ class Insight:
     createAt: datetime = None
     updatedAt: datetime = None
     filledAt: datetime = None
+    closedAt: datetime = None
     close_order_id = None
     close_price: float = None  # price to close at
 
@@ -93,6 +94,8 @@ class Insight:
         self.updatedAt = datetime.now()
         if self.state == InsightState.FILLED:
             self.filledAt = self.updatedAt
+        if self.state == InsightState.CLOSED:
+            self.closedAt = self.updatedAt
         return self
 
     def hasExpired(self, shouldUpdateState: bool = False):
