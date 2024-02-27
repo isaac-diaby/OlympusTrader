@@ -131,9 +131,9 @@ class Insight:
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
         self.updateOrderID(order_id)
-        self.limit_price = float(price)
-        self.quantity = float(qty)
-        self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {price}")
+        self.limit_price = price
+        self.quantity = qty
+        self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
         return self
 
     def positionClosed(self, price: float, order_id: str):
