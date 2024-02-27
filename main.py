@@ -297,19 +297,17 @@ class QbitTB(Strategy):
                         if (insight.hasExpired()):
                             self.insights[symbol][i].updateState(
                                 InsightState.EXPIRED, f"Expired: Before Execution")
+                            continue
+                        # Not shortable
+                        if (insight.side == 'short' and not self.assets[symbol]['shortable']):
+                            self.insights[symbol][i].updateState(
+                                InsightState.REJECTED, f"Short not allowed")
+                            continue
 
+                        # Get price from latest bar if limit price is not set
                         self.insights[symbol][i].limit_price = self.state['history'][symbol].loc[symbol].iloc[-1].close if (
                             (insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price
 
-                        # Get current holding
-                        if (self.positions.get((insight.symbol).replace('/', '')) != None):
-                            holding = self.positions[(
-                                insight.symbol).replace('/', '')]
-                            # Close position if holding is in the opposite direction of insight
-                            if (len(holding) != 0):
-                                if (holding['side'] != insight.side):
-                                    self.close_position(
-                                        insight.symbol, holding['qty'])
 
                         RR = self.insights[symbol][i].getPnLRatio()
                         if RR < RewardRiskRatio:
@@ -366,6 +364,29 @@ class QbitTB(Strategy):
                         # Print Insight Before Submitting Order
                         print(self.insights[symbol][i])
 
+                        if (self.positions.get((insight.symbol).replace('/', '')) != None):
+                            # Check if there is a position open in the opposite direction
+                            holding = self.positions[(
+                                insight.symbol).replace('/', '')] 
+                                # Close position if holding is in the opposite direction of insight
+                            if (holding != None or len(holding) != 0):
+                                if (holding['side'] != insight.side):
+                                    # Close all insighs in the opposite direction
+                                    for x, otherInsight in enumerate(self.insights[symbol]):
+                                        match otherInsight.state:
+                                            case InsightState.FILLED:
+                                                if (otherInsight.side != insight.side):
+                                                    # Indecate that the market has changed
+                                                    self.insights[symbol][x].marketChanged = True
+                            else: 
+                                # TODO: Check if the holding is in the same direction as the new insight and if the insight is in profit, move the SL to break even.
+                                pass
+                                               
+
+
+                                # self.close_position(
+                                #     insight.symbol, holding['qty'])
+
                         order = self.submit_order(insight)
 
                         if order:
@@ -385,10 +406,9 @@ class QbitTB(Strategy):
                 case InsightState.EXECUTED:
                     print(f"Insight Executed: {str(insight)}")
                     # Check if filled or not or should be expired or not
-                    if (self.insights[symbol][i].hasExpired(True)):
-                        pass
-                        # self.insights[symbol][i].updateState(
-                        #     InsightState.CANCELED, f"Expired {symbol}: After Execution")
+                    self.insights[symbol][i].hasExpired(True)
+                    # self.insights[symbol][i].updateState(
+                    #     InsightState.CANCELED, f"Expired {symbol}: After Execution")
 
                 case InsightState.FILLED:
                     print(insight)
@@ -398,9 +418,14 @@ class QbitTB(Strategy):
                     if (self.insights[symbol][i].hasExhaustedTTL()):
                         shouldClosePosition = True
                         cause = "Exhausted TTL"
+                    
+                    # Check if market has changed
+                    if (insight.marketChanged):
+                        shouldClosePosition = True
+                        cause = "Market Changed"
                         # if (self.broker.close_position(insight.symbol, percent=100)):
                         #     self.insights[symbol][i].updateState(InsightState.CLOSED, f"Exhausted TTL")
-
+          
                     # TODO: Since Alpaca does not support stop loss for crypto, we need to manage it manually
                     if ((insight.side == 'long') and (insight.SL > latestBar.low)) or ((insight.side == 'short') and (insight.SL < latestBar.high)):
                         shouldClosePosition = True
@@ -413,7 +438,7 @@ class QbitTB(Strategy):
                     if (shouldClosePosition):
                         # Send a Market order to close the position manually
                         match cause:
-                            case "Exhausted TTL" | "SL Hit":
+                            case "Exhausted TTL" | "SL Hit" | "Market Changed":
                                 closeOrder = self.submit_order(Insight('long' if (
                                     insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
                             case "TP Hit":

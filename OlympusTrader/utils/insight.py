@@ -55,6 +55,8 @@ class Insight:
     close_order_id = None
     close_price: float = None  # price to close at
 
+    marketChanged: bool = False
+
     def __init__(self, side: str, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
         self.side = side  # buy or sell
         self.symbol = symbol  # symbol to trade
