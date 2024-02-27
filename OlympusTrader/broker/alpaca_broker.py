@@ -162,8 +162,10 @@ class AlpacaBroker(BaseBroker):
         return IOrder(
             order_id=order.id,
             asset=self.get_ticker_info(order.symbol),
-            filled_price=float(order.filled_avg_price) if order.filled_avg_price else None,
-            limit_price=float(order.limit_price) if order.limit_price else None,
+            filled_price=float(
+                order.filled_avg_price) if order.filled_avg_price else None,
+            limit_price=float(
+                order.limit_price) if order.limit_price else None,
             stop_price=float(order.stop_price) if order.stop_price else None,
             qty=float(order.qty),
             side=side,
@@ -308,10 +310,9 @@ class AlpacaBroker(BaseBroker):
         except alpaca.common.exceptions.APIError as e:
             print("Error closing position", e)
             raise e
-    
+
     def close_order(self, order_id):
         self.trading_client.cancel_order_by_id(order_id)
-        
 
     def startTradeStream(self, callback: Awaitable):
         self.trading_stream_client.subscribe_trade_updates(callback)

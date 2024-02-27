@@ -73,7 +73,6 @@ class Insight:
         self.createAt = datetime.now()
         self.updatedAt = datetime.now()
 
-
         if limit_price == None:
             self.type = 'MARKET'
         else:
@@ -83,7 +82,7 @@ class Insight:
             self.classType = 'BRACKET'
         else:
             self.classType = 'SIMPLE'
-    
+
     def __str__(self):
         return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - UDA: {self.updatedAt}"
 
@@ -98,7 +97,7 @@ class Insight:
             self.closedAt = self.updatedAt
             # Print the P/L of the trade
             self.logPnL()
-        
+
         return self
 
     def hasExpired(self, shouldUpdateState: bool = False):
@@ -112,7 +111,7 @@ class Insight:
             self.updateState(InsightState.CANCELED, 'Unfilled TTL expired')
 
         return hasExpired
-    
+
     def hasExhaustedTTL(self, shouldUpdateState: bool = False):
         if self.periodTillTp == None:
             return False
@@ -129,33 +128,36 @@ class Insight:
         self.order_id = order_id
         self.updatedAt = datetime.now()
         return self
-    
+
     def positionFilled(self, price: float, qty: float, order_id: str = None):
         self.updateOrderID(order_id)
         self.limit_price = float(price)
         self.quantity = float(qty)
-        self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {price}")
+        self.updateState(InsightState.FILLED, f"Trade Filled: {
+                         self.symbol} - {self.side} - {self.quantity} @ {price}")
         return self
-    
+
     def positionClosed(self, price: float, order_id: str):
         self.close_price = float(price)
-        self.close_order_id = order_id        
+        self.close_order_id = order_id
         self.updateState(InsightState.CLOSED)
         return self
-    
+
     def getPL(self):
         assert self.close_price != None, 'Close price is not set'
         if self.side == 'long':
             return round((self.close_price - self.limit_price) * self.quantity, 2)
         else:
             return round((self.limit_price - self.close_price) * self.quantity, 2)
-        
+
     def getPnLRatio(self):
         if self.TP and self.SL and self.limit_price != None:
             return round((abs(self.TP[-1] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
         else:
             return None
+
     def logPnL(self):
         PL = self.getPL()
-        message = f"Trade Closed {"✅" if PL > 0 else "❌" }: {self.symbol} - {self.side} - {self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}"
+        message = f"Trade Closed {"✅" if PL > 0 else "❌"}: {self.symbol} - {self.side} - {
+            self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}"
         return message

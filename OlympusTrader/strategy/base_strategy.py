@@ -43,11 +43,11 @@ class BaseStrategy(abc.ABC):
         assert TimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
-         # 4% of account per trade
+        # 4% of account per trade
         state = self.state
         state['execution_risk'] = 0.04
         # 2:1 Reward to Risk Ratio minimum
-        state['RewardRiskRatio'] = 2.0 
+        state['RewardRiskRatio'] = 2.0
         self.__loadUniverse()
         for asset in self.UNIVERSE.values():
             self.init(asset)
@@ -95,9 +95,9 @@ class BaseStrategy(abc.ABC):
                 # case InsightState.CLOSED:
                 #     pass
                 case _:
-                    print('Implement the insight state in the executeInsight function:', insight.state)
+                    print(
+                        'Implement the insight state in the executeInsight function:', insight.state)
                     pass
-                    
 
     @override
     @abc.abstractmethod
@@ -178,18 +178,18 @@ class BaseStrategy(abc.ABC):
                     if insight.order_id == orderdata['order_id']:
                         if event == 'fill':
                             # Update the insight with the filled price
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'],  float(orderdata['qty']))
-                            break # No need to continue
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
+                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'],  float(orderdata['qty']))
+                            break  # No need to continue
                 case InsightState.FILLED | InsightState.CLOSED:
                     # Check if the position has been closed via SL or TP
                     if insight.symbol == orderdata['asset']['symbol']:
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                        if event == 'fill' and (orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']):
+                        if (event == 'fill') and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id'])):
                             # Update the insight closed price
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(float(orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price']), orderdata['order_id'])
-                            break # No need to continue
-
-
+                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(float(
+                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price']), orderdata['order_id'])
+                            break  # No need to continue
 
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 
@@ -199,7 +199,7 @@ class BaseStrategy(abc.ABC):
         universeSet = self.universe()
         for symbol in universeSet:
             self.__loadAsset(symbol)
-                
+
     def __loadAsset(self, s: str):
         """ Loads the asset into the universe of the strategy."""
         symbol = s.upper()
@@ -232,6 +232,7 @@ class BaseStrategy(abc.ABC):
             elif assetType == 'crypto':
                 self.STREAMS['bars'].append(self.BROKER.streamBar(
                     self.__on_bar, symbol, 'crypto'))
+        # TODO: ADD other brokers
 
     async def __on_bar(self, bar: Any):
         """ format the bar stream to the strategy. """
@@ -270,7 +271,6 @@ class BaseStrategy(abc.ABC):
                 print('Data is empty - BROKER.format_on_bar(bar) not working')
         except Exception as e:
             print('Error in __on_bar_format in base Strategy:', e)
-            pass
 
     def submit_order(self, insight: Insight):
         """ Submits an order to the broker."""

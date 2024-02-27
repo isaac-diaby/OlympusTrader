@@ -46,7 +46,7 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def get_positions(self) -> dict[str, IPosition]:
         pass
-    
+
     @override
     @abc.abstractmethod
     def close_position(self, symbol: str, qty: int = None, percent: float = None) -> IOrder | None:

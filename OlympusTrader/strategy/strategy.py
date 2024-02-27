@@ -4,6 +4,7 @@ from .base_strategy import BaseStrategy
 from ..broker.base_broker import BaseBroker
 from ..utils.types import AttributeDict
 
+
 class Strategy(BaseStrategy):
     def __init__(self,  broker: BaseBroker, variables, resolution):
         super().__init__(broker, variables, resolution)
@@ -23,10 +24,6 @@ class Strategy(BaseStrategy):
     @override
     def teardown(self):
         super().teardown()
-        
+
     def executeInsight(self, symbol: str):
         super().executeInsight(symbol)
-        
-
-
-       
