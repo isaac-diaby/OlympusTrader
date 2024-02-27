@@ -297,7 +297,7 @@ class QbitTB(Strategy):
                     try:
                         if (insight.hasExpired()):
                             self.insights[symbol][i].updateState(
-                                InsightState.EXPIRED, f"Expired {symbol}: Before Execution")
+                                InsightState.EXPIRED, f"Expired: Before Execution")
 
                         self.insights[symbol][i].limit_price = self.state['history'][symbol].loc[symbol].iloc[-1].close if (
                             (insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price
