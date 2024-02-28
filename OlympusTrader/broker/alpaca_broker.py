@@ -8,6 +8,7 @@ from ..utils.insight import Insight
 
 import os
 import pandas as pd
+import json
 
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
@@ -290,8 +291,16 @@ class AlpacaBroker(BaseBroker):
                 return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
             # print ("ALPACA: Error submitting order", e)
+            if e.code == 40310000: 
+                # '{"available":"0.119784","balance":"0.119784","code":40310000,"message":"insufficient balance for BTC (requested: 0.12, available: 0.119784)","symbol":"USD"}'
+                error = BaseException({
+                    "code": "insufficient_balance",
+                    "data": json.loads(e.args[0])
+                })
+                
+                raise error
             raise f"ALPACA: Error submitting order {insight}"
-            pass
+            
 
         return None
 
@@ -341,7 +350,7 @@ class AlpacaBroker(BaseBroker):
             self.stock_stream_client.stop()
             if type == 'bars':
                 self.stock_stream_client.unsubscribe_bars()
-            await self.stock_stream_client.close()
+            self.stock_stream_client.close()
         elif assetType == 'crypto':
             self.crypto_stream_client.stop()
             if type == 'bars':

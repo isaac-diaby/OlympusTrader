@@ -86,6 +86,8 @@ class Insight:
             self.classType = 'SIMPLE'
 
     def __str__(self):
+        if self.strategyType == StrategyTypes.MANUAL:
+            return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ MARKET"
         return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - UDA: {self.updatedAt}"
 
     def updateState(self, state: InsightState, message: str = None):
@@ -132,7 +134,8 @@ class Insight:
         return self
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
-        self.updateOrderID(order_id)
+        if order_id != None: 
+            self.updateOrderID(order_id)
         self.limit_price = price
         self.quantity = qty
         self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")

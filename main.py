@@ -225,14 +225,14 @@ class QbitTB(Strategy):
             return
 
         # TEST
-        # if (len(self.insights[symbol]) == 0):
-        #     TP = round((latestBar.close + (latestIATR*20)), 2)
-        #     SL = round((latestBar.close - (latestIATR*1.5)), 2)
-        #     ENTRY = None
-        #     # ENTRY = previousBar.high if (abs(
-        #     #     previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
-        #     self.insights[symbol].append(Insight('long', symbol,
-        #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
+        if (len(self.insights[symbol]) == 0):
+            TP = round((latestBar.close + (latestIATR*20)), 2)
+            SL = round((latestBar.close - (latestIATR*1.5)), 2)
+            ENTRY = None
+            # ENTRY = previousBar.high if (abs(
+            #     previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
+            self.insights[symbol].append(Insight('long', symbol,
+                                                 StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
         # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
@@ -436,32 +436,45 @@ class QbitTB(Strategy):
                         cause = "TP Hit"
 
                     if (shouldClosePosition):
-                        # Send a Market order to close the position manually
-                        match cause:
-                            case "Exhausted TTL" | "SL Hit" | "Market Changed":
-                                closeOrder = self.submit_order(Insight('long' if (
-                                    insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
-                            case "TP Hit":
-                                # If there is a TP 2 or 3, we need to close only a portion of the position, move the SL to break even and let the rest run until TP 2 or 3 is hit.
-                                if len(insight.TP) > 1:
-                                    currentTP = self.insights[symbol][i].TP[0]
-                                    # Close 80% of the position
-                                    quantityToClose = round(
-                                        insight.quantity*0.8, 2)
+                        closeOrder = None
+                        try:
+                           
+                            # Send a Market order to close the position manually
+                            match cause:
+                                case "Exhausted TTL" | "SL Hit" | "Market Changed":
                                     closeOrder = self.submit_order(Insight('long' if (
-                                        insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, quantityToClose))
-                                    if closeOrder:
-                                        # update remaining quantity
-                                        self.insights[symbol][i].quantity = insight.quantity - \
-                                            quantityToClose
-                                        # Move SL to break even
-                                        self.insights[symbol][i].SL = insight.limit_price
-                                        self.insights[symbol][i].TP.pop(0)
-                                        # Reset TTL for the remaining position
-                                        self.insights[symbol][i].updateState(InsightState.FILLED, f"Partial TP Hit: {insight.side:^8}: {insight.limit_price} -> {currentTP} -> {latestBar.high if (insight.side == 'long') else latestBar.low}, WON: ${round(insight.quantity*(insight.TP[0] - insight.limit_price), 2)}")
-                                else:
+                                        insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
+                                case "TP Hit":
+                                    # If there is a TP 2 or 3, we need to close only a portion of the position, move the SL to break even and let the rest run until TP 2 or 3 is hit.
+                                    if len(insight.TP) > 1:
+                                        currentTP = self.insights[symbol][i].TP[0]
+                                        # Close 80% of the position
+                                        quantityToClose = round(
+                                            insight.quantity*0.8, 2)
+                                        closeOrder = self.submit_order(Insight('long' if (
+                                            insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, quantityToClose))
+                                        if closeOrder:
+                                            # update remaining quantity
+                                            self.insights[symbol][i].quantity = insight.quantity - \
+                                                quantityToClose
+                                            # Move SL to break even
+                                            self.insights[symbol][i].SL = insight.limit_price
+                                            self.insights[symbol][i].TP.pop(0)
+                                            # Reset TTL for the remaining position
+                                            self.insights[symbol][i].updateState(InsightState.FILLED, f"Partial TP Hit: {insight.side:^8}: {insight.limit_price} -> {currentTP} -> {latestBar.high if (insight.side == 'long') else latestBar.low}, WON: ${round(insight.quantity*(insight.TP[0] - insight.limit_price), 2)}")
+                                    else:
+                                        # Close 100% of the position
+                                        closeOrder = self.submit_order(Insight('long' if (insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
+                        except BaseException as e:
+                            if e.args[0]["code"] == "insufficient_balance": 
+                            # '{"available":"0.119784","balance":"0.119784","code":40310000,"message":"insufficient balance for BTC (requested: 0.12, available: 0.119784)","symbol":"USD"}'
+                                holding = float(e.args[0]["data"]["balance"])
+                                if (holding > 0):
                                     # Close 100% of the position
-                                    closeOrder = self.submit_order(Insight('long' if (insight.side == 'short') else 'short', insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
+                                    self.insights[symbol][i].quantity = holding
+                                else:
+                                    self.insights[symbol][i].updateState(InsightState.CANCELED, f"No funds to close position")
+                            
                         if (closeOrder):
                             self.insights[symbol][i].close_order_id = closeOrder['order_id']
                         # match self.assets[symbol]['asset_type']:
