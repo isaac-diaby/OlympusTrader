@@ -202,9 +202,14 @@ class QbitTB(Strategy):
         elif (IRSI.iloc[-1] > 70):
             marketState -= 2
 
-        # take no action if Market Has no Volume based on the Volume Quantile > 0.7
-        if (history['volume'].iloc[-1] < round(history['volume'].quantile(0.7), 2)):
+        # take no action if Market Has no Volume based on the Volume Quantile > 0.75
+        if (history['volume'].iloc[-1] < round(history['volume'].quantile(0.75), 2)):
             marketState = 0
+        else:
+            if (marketState > 0):
+                marketState += 1
+            elif (marketState < 0):
+                marketState -= 1
 
         # print(f"{symbol} Market State: {marketState}, MACD: {IMACD.iloc[-1, 0]}, RSI: {IRSI.iloc[-1]}")
         marketState = min(max(marketState, -5), 5)
@@ -256,25 +261,25 @@ class QbitTB(Strategy):
                                                  StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
 
         # EMA Crossover Long
-        if ((latestBar['EMA_9'] < latestBar['close']) and (latestBar['EMA_9'] > previousBar['close']) and (abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState > 2):
+        if ((latestBar['EMA_9'] < latestBar['close']) and (latestBar['EMA_9'] > previousBar['close']) and (abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState > 3):
             # print(
             #     f"Insight - {symbol}: Long EMA Crossover: EMA:{latestBar['EMA_9']} < {latestBar['close']}")
             TP = round(max(latestBar['BBU_16_2.0'],
                        (latestBar['high']+(latestIATR*3.5))), 2)
             SL = round(
-                max(previousBar['low']-(.2*latestIATR), latestBar['EMA_9']-latestIATR*1.5), 2)
+                max(previousBar['low']-(.5*latestIATR), latestBar['EMA_9']-latestIATR*1.5), 2)
             ENTRY = None  # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('long', symbol,
                                                  StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
         # EMA Crossover Short
-        if ((latestBar['EMA_9'] > latestBar['close']) and (latestBar['EMA_9'] < previousBar['close']) and (abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState < -2):
+        if ((latestBar['EMA_9'] > latestBar['close']) and (latestBar['EMA_9'] < previousBar['close']) and (abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState < -3):
             # print(
             #     f"Insight - {symbol}: Short EMA Crossover: EMA:{latestBar['EMA_9']} > {latestBar['close']}")
             TP = round(min(latestBar['BBL_16_2.0'],
                        (latestBar['low']-(latestIATR*3.5))), 2)
             SL = round(min(previousBar['high'] +
-                       (.2*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), 2)
+                       (.5*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), 2)
             ENTRY = None  # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('short', symbol,
