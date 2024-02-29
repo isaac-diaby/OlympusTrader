@@ -29,7 +29,8 @@ class  QbitTB(Strategy):
 		pass
 		
 	def  universe(self):
-		universe = {'BTC/USD', 'ETH/USD'}
+		# The universe of assets that you want to trade
+		universe = {'BTC/USD', 'ETH/USD', 'TSLA'}
 		return universe
 		
 	def  on_bar(self,  symbol,  bar):
@@ -37,20 +38,24 @@ class  QbitTB(Strategy):
 		self.executeOrder(symbol)
 		pass
 		
-	def  executeOrder(self,  symbol:  str):
+	def  executeInsight(self,  symbol:  str):
+
 		for i, insight in  enumerate(self.insights[symbol]):
 			match insight.state:
 				case InsightState.NEW:
 					# how to execution new insights that are generated
+				case InsightState.FILLED:
+					# how to manage open insights
+				# ... other cases
 				case _:
 					pass
 					
 	def  teardown(self):
-		# Close all open positions
+		# Close all open positions and pending orders om tear down
 		self.BROKER.close_all_positions()
 
 if __name__ ==  "__main__":
-	broker = AlpacaBroker(paper=True) # Set your broker 
+	broker = AlpacaBroker(paper=True) # Set your broker  and paper to True for a demo account
 
 	strategy = QbitTB(broker,  {},  resolution=TimeFrame(1, TimeFrameUnit.Minute)) 
 	"""Add your broker, variables and resolution  to your strategy """
@@ -93,13 +98,16 @@ Returns a list of orders placed/canceled/ filled and meta data around it.
 This function is called once at the start of the startegy. You can use this function to init your strategy set state via ``` self.state``` and load historiacal data for the secuity asset with ```self.broker.get_history()```
 
 ## universe()
-universe sets the security in play. Like quantconnect you can call this function to load assets data. it simply requires you to return a set of tickers that you want to load into your strategy. here you can build a stratey that filters the market to inly include specific requirement such as above average relative volume, market cap etc
+universe sets the security in play. Like quantconnect you can call this function to load assets data. it simply requires you to return a set of tickers that you want to load into your strategy. here you can build a stratey that filters the market to inly include specific requirement such as above average relative volume, market cap etc. 
 
 ## on_bar()
 Here you can build your strategy and call any functions you may need. in the main example i use pandas-ta to load my indicators and numpy to work on discovering RSI divergence in the price action. as mentioned this is my own strategy so ill be developing it further over-time as a starting point for future users of this framework.  
 
 ### Insights 
 The idea here is to generate insights (potential entry points) in this function and create another function to consume the insights how you want to. Insights include information such as entry price, order type, stop lost, take profit, time to live unfilled / filled, confidence, risk to reward ratio,  market dependencies (such as HRVCM = High relative volume confirmation, LRVCM = Low relative volume confirmation, etc  you can set your own) and others you can take a look at the full list of the Insight class in OlympusTrader/utils/insight.py. 
+
+the framework is designed to be flexible and allow you to build complex strategies with dependencies and a risk first approach. we already track the account information and open positions so you can build a strategy that can manage open positions and pending orders via the state value of the insight.
+we 
 
 ## teardown()
 
