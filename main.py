@@ -476,7 +476,7 @@ class QbitTB(Strategy):
                                 holding = float(e.args[0]["data"]["balance"])
                                 if (holding > 0):
                                     # Close 100% of the position
-                                    self.insights[symbol][i].quantity = holding
+                                    self.insights[symbol][i].quantity = abs(holding)
                                 else:
                                     self.insights[symbol][i].updateState(InsightState.CANCELED, f"No funds to close position")
                             
