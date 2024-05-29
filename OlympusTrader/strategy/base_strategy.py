@@ -1,15 +1,17 @@
 import abc
 import asyncio
 from threading import Thread
-from typing import Any, List, override, Union
+from typing import Any, List, override, Union, Literal
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import time
+import datetime
 import nest_asyncio
+import timeit
 
 
 from ..broker.base_broker import BaseBroker
-from ..utils.interfaces import Asset, IAccount, IPosition, IOrder
+from ..utils.interfaces import Asset, IAccount, IPosition, IOrder, IMarketDataStream
 from ..utils.insight import Insight, InsightState
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.types import AttributeDict
@@ -25,30 +27,26 @@ class BaseStrategy(abc.ABC):
     INSIGHTS: dict[str, Insight] = {}
     UNIVERSE: dict[str, Asset] = {}
     RESOLUTION = TimeFrame(5, TimeFrameUnit.Minute)
-    STREAMS = {
-        'stockTickers': set(),
-        'cryptoTickers': set(),
-        'bars': [],
-        'quotes': [],
-        'trades': [],
-        'news': []
-    }
+    STREAMS: [IMarketDataStream] = []
     VARIABLES: AttributeDict
 
+    VERBOSE: int = 0
+
     @abc.abstractmethod
-    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(5, TimeFrameUnit.Minute)) -> None:
+    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0) -> None:
         """Abstract class for strategy implementations."""
         self.VARIABLES = variables
         self.BROKER = broker
+        self.VERBOSE = verbose
         assert TimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
         # 4% of account per trade
         state = self.state
-        state['execution_risk'] = 0.04
+        # state['execution_risk'] = 0.01
         # 2:1 Reward to Risk Ratio minimum
-        state['RewardRiskRatio'] = 2.0
-        self.__loadUniverse()
+        # state['RewardRiskRatio'] = 2.0
+        self._loadUniverse()
         for asset in self.UNIVERSE.values():
             self.init(asset)
 
@@ -109,59 +107,81 @@ class BaseStrategy(abc.ABC):
     def run(self):
         """ starts the strategy. """
         nest_asyncio.apply()
-        if self.BROKER.name == 'AlpacaBroker':
-            self.runAlpaca()
-        # TODO: Add other brokers
 
-    def runAlpaca(self):
-        """ starts the event streams with strategy. """
-        pool = ThreadPoolExecutor(max_workers=14)
+        if self.BROKER.NAME == 'AlpacaBroker':
+            # Exchange specific setup
+            pass
+
+        pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="tradeStream")
         loop = asyncio.new_event_loop()
 
         try:
             tradeStream = loop.run_in_executor(
                 pool, self.BROKER.startTradeStream, self.__on_trade_update)
 
-            if (len(self.STREAMS['stockTickers']) > 0):
-                stockStream = loop.run_in_executor(
-                    pool, self.BROKER.startStream, 'stock', 'bars')
-
-            if (len(self.STREAMS['cryptoTickers']) > 0):
-                cryptoStream = loop.run_in_executor(
-                    pool, self.BROKER.startStream, 'crypto', 'bars')
+            # marketDataSream = loop.run_in_executor(pool, self.BROKER.streamMarketData, self.__on_bar, self.STREAMS)
+            self.BROKER.streamMarketData(self.__on_bar, self.STREAMS)
 
             loop.run_forever()
-
         except KeyboardInterrupt:
-            self.teardown()
-            # self.BROKER.closeTradeStream()
-            loop.stop()
-            asyncio.run(self.BROKER.closeTradeStream())
-            tradeStream.cancel()
             print("Interrupted execution by user")
-            if (len(self.STREAMS['stockTickers']) > 0):
-                # self.BROKER.closeStream('stock', 'bars')
-                asyncio.run(self.BROKER.closeStream('stock', 'bars'))
-                stockStream.cancel()
-            if (len(self.STREAMS['cryptoTickers']) > 0):
-                # self.BROKER.closeStream('crypto', 'bars')
-                asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
-                cryptoStream.cancel()
-
-            # asyncio.run(self.BROKER.closeTradeStream())
-
         except Exception as e:
             print(f'Exception from websocket connection: {e}')
         finally:
-            # self.BROKER.closeTradeStream()
-            # print("Closing websocket connection... ")
-            # if (len(self.STREAMS['stockTickers']) > 0):
-            #     asyncio.run(self.BROKER.closeStream('stock', 'bars'))
-            # if (len(self.STREAMS['cryptoTickers']) > 0):
-            #     asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
-
+            self.teardown()
             loop.close()
+            pool.shutdown(wait=False)
             exit(0)
+
+    # def _runAlpaca(self):
+    #     """ starts the event streams with strategy. """
+    #     pool = ThreadPoolExecutor(max_workers=14)
+    #     loop = asyncio.new_event_loop()
+
+    #     try:
+    #         tradeStream = loop.run_in_executor(
+    #             pool, self.BROKER.startTradeStream, self.__on_trade_update)
+
+    #         if (len(self.STREAMS['stockTickers']) > 0):
+        #         stockStream = loop.run_in_executor(
+        #             pool, self.BROKER.startStream, 'stock', 'bars')
+
+        #     if (len(self.STREAMS['cryptoTickers']) > 0):
+        #         cryptoStream = loop.run_in_executor(
+        #             pool, self.BROKER.startStream, 'crypto', 'bars')
+
+        #     loop.run_forever()
+
+        # except KeyboardInterrupt:
+        #     self.teardown()
+        #     # self.BROKER.closeTradeStream()
+        #     loop.stop()
+        #     asyncio.run(self.BROKER.closeTradeStream())
+        #     tradeStream.cancel()
+        #     print("Interrupted execution by user")
+        #     if (len(self.STREAMS['stockTickers']) > 0):
+        #         # self.BROKER.closeStream('stock', 'bars')
+        #         asyncio.run(self.BROKER.closeStream('stock', 'bars'))
+        #         stockStream.cancel()
+        #     if (len(self.STREAMS['cryptoTickers']) > 0):
+        #         # self.BROKER.closeStream('crypto', 'bars')
+        #         asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
+        #         cryptoStream.cancel()
+
+        #     # asyncio.run(self.BROKER.closeTradeStream())
+
+        # except Exception as e:
+        #     print(f'Exception from websocket connection: {e}')
+        # finally:
+        #     # self.BROKER.closeTradeStream()
+        #     # print("Closing websocket connection... ")
+        #     # if (len(self.STREAMS['stockTickers']) > 0):
+        #     #     asyncio.run(self.BROKER.closeStream('stock', 'bars'))
+        #     # if (len(self.STREAMS['cryptoTickers']) > 0):
+        #     #     asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
+
+        #     loop.close()
+        #     exit(0)
 
     async def __on_trade_update(self, trade):
         """ format the trade stream to the strategy. """
@@ -193,46 +213,49 @@ class BaseStrategy(abc.ABC):
 
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 
-    def __loadUniverse(self):
+    def _loadUniverse(self):
         """ Loads the universe of the strategy."""
         assert callable(self.universe), 'Universe must be a callable function'
         universeSet = self.universe()
         for symbol in universeSet:
-            self.__loadAsset(symbol)
+            self._loadAsset(symbol)
 
-    def __loadAsset(self, s: str):
+    def _loadAsset(self, s: str):
         """ Loads the asset into the universe of the strategy."""
         symbol = s.upper()
         assetInfo = self.BROKER.get_ticker_info(symbol)
-        if assetInfo:
+        if assetInfo and assetInfo['status'] == 'active':
             self.UNIVERSE[symbol] = assetInfo
             self.INSIGHTS[symbol] = []
+
             print(
                 f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
-
-    # @abc.abstractmethod
-    def addBar_events(self, asset: Asset):
-        """ Adds bar streams to the strategy."""
-        if (asset['asset_type'] == 'stock'):
-            self.STREAMS['stockTickers'].add(asset['symbol'])
-        elif (asset['asset_type'] == 'crypto'):
-            self.STREAMS['cryptoTickers'].add(asset['symbol'])
         else:
-            assert False, 'AddBar Event: Asset type must be of type stock or crypto'
+            print(f'Failed to load {symbol} into universe')
 
-        self.__addBar_event(asset['symbol'], asset['asset_type'])
-    # @abc.abstractmethod
+    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar'):
+        """ Adds bar streams to the strategy."""
+        match eventType:
+            case 'bar' | 'trade' | 'quote' | 'news':
+                for assetInfo in self.UNIVERSE.values():
+                    self.STREAMS.append(IMarketDataStream(symbol=assetInfo.get('symbol'), exchange=assetInfo.get(
+                'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType))
+            case _: 
+                print(f"{eventType} Event not supported")
+       
 
-    def __addBar_event(self, symbol: str, assetType: str):
-        """ build the bar stream to the strategy."""
-        if self.BROKER.name == 'AlpacaBroker':
-            if assetType == 'stock':
-                self.STREAMS['bars'].append(self.BROKER.streamBar(
-                    self.__on_bar, symbol, 'stock'))
-            elif assetType == 'crypto':
-                self.STREAMS['bars'].append(self.BROKER.streamBar(
-                    self.__on_bar, symbol, 'crypto'))
-        # TODO: ADD other brokers
+    # # @abc.abstractmethod
+
+    # def __addBar_event(self, symbol: str, assetType: str):
+    #     """ build the bar stream to the strategy."""
+    #     if self.BROKER.name == 'AlpacaBroker':
+    #         if assetType == 'stock':
+    #             self.STREAMS['bars'].append(self.BROKER.streamBar(
+    #                 self.__on_bar, symbol, 'stock'))
+    #         elif assetType == 'crypto':
+    #             self.STREAMS['bars'].append(self.BROKER.streamBar(
+    #                 self.__on_bar, symbol, 'crypto'))
+    #     # TODO: ADD other brokers
 
     async def __on_bar(self, bar: Any):
         """ format the bar stream to the strategy. """
@@ -258,7 +281,14 @@ class BaseStrategy(abc.ABC):
                 # Check if the bar is part of the resolution of the strategy
                 if self.resolution.is_time_increment(timestamp):
                     # print('New Bar is part of the resolution of the strategy', data)
+                    if self.VERBOSE > 0:
+                        print(f'New Bar is part of the resolution of the strategy: {symbol} - {timestamp} - {datetime.datetime.utcnow()}')
+                        start_time = timeit.default_timer()
+                        
+                    # Call the on_bar function and process the bar
                     self.on_bar(symbol, data)
+                    if self.VERBOSE > 0:
+                        print('Time taken on_bar:',symbol, timeit.default_timer() - start_time)
                 else:
                     # print('Bar is not part of the resolution of the strategy', data)
                     pass

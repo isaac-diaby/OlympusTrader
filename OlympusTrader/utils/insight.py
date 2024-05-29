@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Literal
 from .timeframe import TimeFrame
+from .tools import dynamic_round
 
 
 class StrategyTypes(Enum):
@@ -150,15 +151,15 @@ class Insight:
     def getPL(self):
         assert self.close_price != None, 'Close price is not set'
         if self.side == 'long':
-            return round((self.close_price - self.limit_price) * self.quantity, 2)
+            return dynamic_round((self.close_price - self.limit_price) * self.quantity)
         else:
-            return round((self.limit_price - self.close_price) * self.quantity, 2)
+            return dynamic_round((self.limit_price - self.close_price) * self.quantity)
 
     def getPnLRatio(self):
         if self.TP and self.SL and self.limit_price != None:
             return round((abs(self.TP[-1] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
         else:
-            return None
+            return 0
 
     def logPnL(self):
         PL = self.getPL()

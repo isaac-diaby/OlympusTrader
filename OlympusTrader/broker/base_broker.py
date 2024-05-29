@@ -11,19 +11,19 @@ from datetime import datetime, timedelta
 from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
 from ..utils.insight import Insight
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
+from ..utils.interfaces import IMarketDataStream
 
 
 class BaseBroker(abc.ABC):
-    name = 'BaseBroker'
+    NAME = 'BaseBroker'
     DataFeed: str
     PAPER: bool
 
     @abc.abstractmethod
-    def __init__(self, paper: bool = True, feed: str = None, name='BaseBroker') -> None:
+    def __init__(self, name: str = 'BaseBroker', paper: bool = True, feed: str = None) -> None:
         """Abstract class for broker implementations."""
-        # super().__init__()
         load_dotenv()
-        self.name = name
+        self.NAME = name
         self.PAPER = paper
         self.DataFeed = feed
 
@@ -92,6 +92,7 @@ class BaseBroker(abc.ABC):
     @override
     @abc.abstractmethod
     def startTradeStream(self, callback: Awaitable):
+        """Listen to trades and order updates and call the callback function with the data"""
         pass
 
     @override
@@ -101,18 +102,24 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def streamBar(self,  callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
+    def streamMarketData(self, callback: Awaitable, Assets: List[IMarketDataStream]):
+        """Listen to market data and call the callback function with the data"""
         pass
-
-    @override
-    @abc.abstractmethod
-    def startStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
-        pass
-
+    
     @override
     @abc.abstractmethod
     async def closeStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
         pass
+    # @override
+    # @abc.abstractmethod
+    # def streamBar(self,  callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
+    #     pass
+
+    # @override
+    # @abc.abstractmethod
+    # def startStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
+    #     pass
+
 
     @override
     @abc.abstractmethod

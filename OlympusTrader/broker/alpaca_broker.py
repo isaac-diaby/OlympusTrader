@@ -1,15 +1,19 @@
 import datetime
 from typing import Awaitable, Callable, List, Literal, Union
-import alpaca
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+
 from .base_broker import BaseBroker
 from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
 from ..utils.timeframe import TimeFrame as tf
 from ..utils.insight import Insight
+from ..utils.tools import dynamic_round
 
 import os
 import pandas as pd
 import json
 
+import alpaca
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
 from alpaca.data.live import StockDataStream, CryptoDataStream
@@ -228,7 +232,7 @@ class AlpacaBroker(BaseBroker):
                             side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
                             time_in_force=TimeInForce.DAY,
                             order_class=OrderClass.BRACKET,
-                            limit_price=round(insight.limit_price, 2),
+                            limit_price=dynamic_round(insight.limit_price),
                             take_profit=None if insight.TP == None else TakeProfitRequest(
                                 limit_price=insight.TP[-1]
                             ),
@@ -331,18 +335,43 @@ class AlpacaBroker(BaseBroker):
     async def closeTradeStream(self):
         self.trading_stream_client.stop()
         self.trading_stream_client.close()
+    
+    def streamMarketData(self, callback: Awaitable, Assets):
+        StockStreamCount = 0
+        CryptoStreamCount = 0
+        for assetStream in Assets:
+            if assetStream['type'] == 'bar':
+                if assetStream['asset_type'] == 'stock':
+                    StockStreamCount += 1
+                    self.stock_stream_client.subscribe_bars(callback, assetStream.get('symbol'))
+                elif assetStream['asset_type'] == 'crypto':
+                    CryptoStreamCount += 1
+                    self.crypto_stream_client.subscribe_bars(callback, assetStream.get('symbol'))
+            # TODO: add support for quotes
+        
+        pool = ThreadPoolExecutor(max_workers=(StockStreamCount+CryptoStreamCount), thread_name_prefix="MarketDataStream")
+        loop = asyncio.new_event_loop()
+        if StockStreamCount:
+            loop.run_in_executor(pool, self.stock_stream_client.run)
+            # self.stock_stream_client.run()
+            print(f"Stock Stream Running: {StockStreamCount} streams")
+        if CryptoStreamCount:
+            loop.run_in_executor(pool, self.crypto_stream_client.run)
+            # self.crypto_stream_client.run()
+            print(f"Crypto Stream Running: {CryptoStreamCount} streams")
+        # TODO: add support for qutoes
 
-    def streamBar(self, callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
-        if AssetType == 'stock':
-            return self.stock_stream_client.subscribe_bars(callback, symbol)
-        elif AssetType == 'crypto':
-            return self.crypto_stream_client.subscribe_bars(callback, symbol)
+    # def streamBar(self, callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
+    #     if AssetType == 'stock':
+    #         return self.stock_stream_client.subscribe_bars(callback, symbol)
+    #     elif AssetType == 'crypto':
+    #         return self.crypto_stream_client.subscribe_bars(callback, symbol)
 
-    def startStream(self, assetType, type):
-        if assetType == 'stock':
-            self.stock_stream_client.run()
-        elif assetType == 'crypto':
-            self.crypto_stream_client.run()
+    # def startStream(self, assetType, type):
+    #     if assetType == 'stock':
+    #         self.stock_stream_client.run()
+    #     elif assetType == 'crypto':
+    #         self.crypto_stream_client.run()
 
     async def closeStream(self, assetType, type):
         # TODO: unsubscribe from streams type close stream should be called when strategy is stopped - close WSS connection

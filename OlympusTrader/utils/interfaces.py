@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal, Optional, TypedDict, Required
+from .timeframe import TimeFrame
 
 from pandas import Timestamp
 class Asset(TypedDict):
@@ -54,6 +55,13 @@ class IAccountState(TypedDict):
     account: IAccount
     positions: dict[str, IPosition]
     orders: [IOrder]
+
+class IMarketDataStream(TypedDict):
+    symbol: str
+    exchange: str
+    time_frame: TimeFrame
+    asset_type: Literal['stock', 'crypto'] = 'crypto'
+    type: Literal['trade', 'quote', 'bar', 'news'] = 'bar'
 
 
 
