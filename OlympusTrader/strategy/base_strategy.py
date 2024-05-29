@@ -186,7 +186,8 @@ class BaseStrategy(abc.ABC):
     async def __on_trade_update(self, trade):
         """ format the trade stream to the strategy. """
         orderdata, event = self.BROKER.format_on_trade_update(trade)
-        if not orderdata:
+        # check if there is data and that the order symbol is in the universe
+        if not orderdata or orderdata['asset']['symbol'] not in self.UNIVERSE:
             return
         print(
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
@@ -216,7 +217,7 @@ class BaseStrategy(abc.ABC):
     def _loadUniverse(self):
         """ Loads the universe of the strategy."""
         assert callable(self.universe), 'Universe must be a callable function'
-        universeSet = self.universe()
+        universeSet = set(self.universe())
         for symbol in universeSet:
             self._loadAsset(symbol)
 
