@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal, Optional, TypedDict, Required
+
 from .timeframe import TimeFrame
 
 from pandas import Timestamp
@@ -15,6 +16,8 @@ class Asset(TypedDict):
     shortable: bool
     fractionable: bool
     min_order_size: float
+    min_price_increment: float
+    price_base: int = None
 
 class IAccount(TypedDict):
     account_id: str

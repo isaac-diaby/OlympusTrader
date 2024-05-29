@@ -2,13 +2,6 @@ import datetime
 from typing import Awaitable, Callable, List, Literal, Union
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-
-from .base_broker import BaseBroker
-from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
-from ..utils.timeframe import TimeFrame as tf
-from ..utils.insight import Insight
-from ..utils.tools import dynamic_round
-
 import os
 import pandas as pd
 import json
@@ -26,6 +19,11 @@ from alpaca.data.models import Bar
 from alpaca.trading.requests import OrderRequest, MarketOrderRequest, LimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
 from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
+
+from .base_broker import BaseBroker
+from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
+from ..utils.timeframe import TimeFrame as tf
+from ..utils.insight import Insight
 
 
 class AlpacaBroker(BaseBroker):
@@ -106,7 +104,8 @@ class AlpacaBroker(BaseBroker):
                 marginable=tickerInfo.marginable,
                 shortable=tickerInfo.shortable,
                 fractionable=tickerInfo.fractionable,
-                min_order_size=tickerInfo.min_order_size
+                min_order_size=tickerInfo.min_order_size,
+                min_price_increment=tickerInfo.price_increment
             )
             return tickerAsset
         except alpaca.common.exceptions.APIError as e:
@@ -232,7 +231,7 @@ class AlpacaBroker(BaseBroker):
                             side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
                             time_in_force=TimeInForce.DAY,
                             order_class=OrderClass.BRACKET,
-                            limit_price=dynamic_round(insight.limit_price),
+                            limit_price=insight.limit_price,
                             take_profit=None if insight.TP == None else TakeProfitRequest(
                                 limit_price=insight.TP[-1]
                             ),
@@ -295,16 +294,15 @@ class AlpacaBroker(BaseBroker):
                 return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
             # print ("ALPACA: Error submitting order", e)
-            if e.code == 40310000: 
+            if e.code == 40310000:
                 # '{"available":"0.119784","balance":"0.119784","code":40310000,"message":"insufficient balance for BTC (requested: 0.12, available: 0.119784)","symbol":"USD"}'
                 error = BaseException({
                     "code": "insufficient_balance",
                     "data": json.loads(e.args[0])
                 })
-                
+
                 raise error
             raise f"ALPACA: Error submitting order {insight}"
-            
 
         return None
 
@@ -335,22 +333,28 @@ class AlpacaBroker(BaseBroker):
     async def closeTradeStream(self):
         self.trading_stream_client.stop()
         self.trading_stream_client.close()
-    
+
     def streamMarketData(self, callback: Awaitable, Assets):
         StockStreamCount = 0
         CryptoStreamCount = 0
+        barStreamCount = len([asset for asset in Assets if asset['type'] == 'bar'])
+
+        pool = ThreadPoolExecutor(max_workers=(
+            barStreamCount), thread_name_prefix="MarketDataStream")
+        loop = asyncio.new_event_loop()
+
         for assetStream in Assets:
             if assetStream['type'] == 'bar':
                 if assetStream['asset_type'] == 'stock':
                     StockStreamCount += 1
-                    self.stock_stream_client.subscribe_bars(callback, assetStream.get('symbol'))
+                    self.stock_stream_client.subscribe_bars(
+                        callback, assetStream.get('symbol'))
                 elif assetStream['asset_type'] == 'crypto':
                     CryptoStreamCount += 1
-                    self.crypto_stream_client.subscribe_bars(callback, assetStream.get('symbol'))
+                    self.crypto_stream_client.subscribe_bars(
+                        callback, assetStream.get('symbol'))
             # TODO: add support for quotes
-        
-        pool = ThreadPoolExecutor(max_workers=(StockStreamCount+CryptoStreamCount), thread_name_prefix="MarketDataStream")
-        loop = asyncio.new_event_loop()
+
         if StockStreamCount:
             loop.run_in_executor(pool, self.stock_stream_client.run)
             # self.stock_stream_client.run()

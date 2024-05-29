@@ -79,7 +79,7 @@ class QbitTB(Strategy):
 
         universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
                     'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
-        
+
         # universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'DAI/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
         #             'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
 
@@ -238,20 +238,24 @@ class QbitTB(Strategy):
         # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
             # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
-            TP = dynamic_round((latestBar.close + (latestIATR*3.5)))
-            SL = dynamic_round((latestBar.close - (latestIATR*1.5)))
+            TP = self.tools.dynamic_round(
+                (latestBar.close + (latestIATR*3.5)), symbol)
+            SL = self.tools.dynamic_round(
+                (latestBar.close - (latestIATR*1.5)), symbol)
             ENTRY = previousBar.high if (abs(
-                previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)))
+                previousBar.high - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
 
             self.insights[symbol].append(Insight('long', symbol,
                                                  StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
         # RSA Divergance Short
         if (self.assets[symbol]['shortable'] and (not np.isnan(latestBar['RSI_Divergance_Short'])) and marketState > 0):
             # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
-            TP = dynamic_round((latestBar.close - (latestIATR*3.5)))
-            SL = dynamic_round((latestBar.close + (latestIATR*1.5)))
+            TP = self.tools.dynamic_round(
+                (latestBar.close - (latestIATR*3.5)), symbol)
+            SL = self.tools.dynamic_round(
+                (latestBar.close + (latestIATR*1.5)), symbol)
             ENTRY = previousBar.low if (abs(
-                previousBar.low - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)))
+                previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
 
             self.insights[symbol].append(Insight('short', symbol,
                                                  StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
@@ -260,10 +264,10 @@ class QbitTB(Strategy):
         if ((latestBar['EMA_9'] < latestBar['close']) and (latestBar['EMA_9'] > previousBar['close']) and (abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState > 3):
             # print(
             #     f"Insight - {symbol}: Long EMA Crossover: EMA:{latestBar['EMA_9']} < {latestBar['close']}")
-            TP = dynamic_round(max(latestBar['BBU_16_2.0']+(latestIATR*1.5),
-                       (latestBar['high']+(latestIATR*3.5))))
-            SL = dynamic_round(
-                max(previousBar['low']-(.5*latestIATR), latestBar['EMA_9']-latestIATR*1.5))
+            TP = self.tools.dynamic_round(max(latestBar['BBU_16_2.0']+(latestIATR*1.5),
+                                              (latestBar['high']+(latestIATR*3.5))), symbol)
+            SL = self.tools.dynamic_round(
+                max(previousBar['low']-(.5*latestIATR), latestBar['EMA_9']-latestIATR*1.5), symbol)
             ENTRY = None  # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('long', symbol,
@@ -272,10 +276,10 @@ class QbitTB(Strategy):
         if (self.assets[symbol]['shortable'] and (latestBar['EMA_9'] > latestBar['close']) and (latestBar['EMA_9'] < previousBar['close']) and (abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState < -3):
             # print(
             #     f"Insight - {symbol}: Short EMA Crossover: EMA:{latestBar['EMA_9']} > {latestBar['close']}")
-            TP = dynamic_round(min(latestBar['BBL_16_2.0']-(latestIATR*1.5),
-                       (latestBar['low']-(latestIATR*3.5))))
-            SL = dynamic_round(min(previousBar['high'] +
-                       (.5*latestIATR),  latestBar['EMA_9']+latestIATR*1.5))
+            TP = self.tools.dynamic_round(min(latestBar['BBL_16_2.0']-(latestIATR*1.5),
+                                              (latestBar['low']-(latestIATR*3.5))), symbol)
+            SL = self.tools.dynamic_round(min(previousBar['high'] +
+                                              (.5*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), symbol)
             ENTRY = None  # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('short', symbol,
@@ -461,7 +465,7 @@ class QbitTB(Strategy):
                                             self.insights[symbol][i].TP.pop(0)
                                             # Reset TTL for the remaining position
                                             self.insights[symbol][i].updateState(InsightState.FILLED, f"Partial TP Hit: {insight.side:^8}: {insight.limit_price} -> {currentTP} -> {
-                                                                                 latestBar.high if (insight.side == 'long') else latestBar.low}, WON: ${dynamic_round(insight.quantity*(insight.TP[0] - insight.limit_price))}")
+                                                                                 latestBar.high if (insight.side == 'long') else latestBar.low}, WON: ${round(insight.quantity*(insight.TP[0] - insight.limit_price), 2)}")
                                     else:
                                         # Close 100% of the position
                                         closeOrder = self.submit_order(Insight('long' if (
@@ -531,7 +535,7 @@ class QbitTB(Strategy):
 
 if __name__ == "__main__":
     broker = AlpacaBroker(paper=True, )
-    strategy = QbitTB(broker, variables = {}, resolution=TimeFrame(
+    strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
         1, TimeFrameUnit.Minute), verbose=0)
     # strategy = QbitTB(broker, resolution=TimeFrame(5, TimeFrameUnit.Minute))
     strategy.add_events('bar')

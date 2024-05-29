@@ -15,6 +15,7 @@ from ..utils.interfaces import Asset, IAccount, IPosition, IOrder, IMarketDataSt
 from ..utils.insight import Insight, InsightState
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.types import AttributeDict
+from ..utils.tools import TradingTools
 
 
 class BaseStrategy(abc.ABC):
@@ -30,6 +31,7 @@ class BaseStrategy(abc.ABC):
     STREAMS: [IMarketDataStream] = []
     VARIABLES: AttributeDict
 
+    TOOLS: TradingTools = None
     VERBOSE: int = 0
 
     @abc.abstractmethod
@@ -37,6 +39,7 @@ class BaseStrategy(abc.ABC):
         """Abstract class for strategy implementations."""
         self.VARIABLES = variables
         self.BROKER = broker
+        self.TOOLS = TradingTools(self)
         self.VERBOSE = verbose
         assert TimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
@@ -112,17 +115,23 @@ class BaseStrategy(abc.ABC):
             # Exchange specific setup
             pass
 
-        pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="tradeStream")
         loop = asyncio.new_event_loop()
+        # asyncio.set_event_loop(loop)
 
         try:
-            tradeStream = loop.run_in_executor(
-                pool, self.BROKER.startTradeStream, self.__on_trade_update)
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="tradeStream") as pool:
+                tradeStream = loop.run_in_executor(
+                    pool, self.BROKER.startTradeStream, self.__on_trade_update)
+                marketDataSream = loop.run_in_executor(
+                    pool, self.BROKER.streamMarketData, self.__on_bar, self.STREAMS)
+                loop.run_forever()
+                
+            # with ThreadPoolExecutor(max_workers=3, thread_name_prefix="eventStream") as pool:
 
-            # marketDataSream = loop.run_in_executor(pool, self.BROKER.streamMarketData, self.__on_bar, self.STREAMS)
-            self.BROKER.streamMarketData(self.__on_bar, self.STREAMS)
+                # marketDataSream = asyncio.create_task(self.BROKER.streamMarketData(self.__on_bar, self.STREAMS), name='marketDataStream')
+                # self.BROKER.streamMarketData(self.__on_bar, self.STREAMS)
 
-            loop.run_forever()
+                # loop.run_forever()
         except KeyboardInterrupt:
             print("Interrupted execution by user")
         except Exception as e:
@@ -203,6 +212,9 @@ class BaseStrategy(abc.ABC):
                                 orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                             break  # No need to continue
                 case InsightState.FILLED | InsightState.CLOSED:
+                    # Update the account and positions
+                    self.ACCOUNT = self.BROKER.get_account()
+                    self.POSITIONS = self.BROKER.get_positions()
                     # Check if the position has been closed via SL or TP
                     if insight.symbol == orderdata['asset']['symbol']:
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
@@ -225,7 +237,7 @@ class BaseStrategy(abc.ABC):
         """ Loads the asset into the universe of the strategy."""
         symbol = s.upper()
         assetInfo = self.BROKER.get_ticker_info(symbol)
-        if assetInfo and assetInfo['status'] == 'active':
+        if assetInfo and assetInfo['status'] == 'active' and assetInfo['tradable']:
             self.UNIVERSE[symbol] = assetInfo
             self.INSIGHTS[symbol] = []
 
@@ -240,10 +252,9 @@ class BaseStrategy(abc.ABC):
             case 'bar' | 'trade' | 'quote' | 'news':
                 for assetInfo in self.UNIVERSE.values():
                     self.STREAMS.append(IMarketDataStream(symbol=assetInfo.get('symbol'), exchange=assetInfo.get(
-                'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType))
-            case _: 
+                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType))
+            case _:
                 print(f"{eventType} Event not supported")
-       
 
     # # @abc.abstractmethod
 
@@ -283,13 +294,15 @@ class BaseStrategy(abc.ABC):
                 if self.resolution.is_time_increment(timestamp):
                     # print('New Bar is part of the resolution of the strategy', data)
                     if self.VERBOSE > 0:
-                        print(f'New Bar is part of the resolution of the strategy: {symbol} - {timestamp} - {datetime.datetime.utcnow()}')
+                        print(f'New Bar is part of the resolution of the strategy: {
+                              symbol} - {timestamp} - {datetime.datetime.utcnow()}')
                         start_time = timeit.default_timer()
-                        
+
                     # Call the on_bar function and process the bar
                     self.on_bar(symbol, data)
                     if self.VERBOSE > 0:
-                        print('Time taken on_bar:',symbol, timeit.default_timer() - start_time)
+                        print('Time taken on_bar:', symbol,
+                              timeit.default_timer() - start_time)
                 else:
                     # print('Bar is not part of the resolution of the strategy', data)
                     pass
@@ -364,6 +377,11 @@ class BaseStrategy(abc.ABC):
     def resolution(self) -> str:
         """ Returns the resolution of the strategy."""
         return self.RESOLUTION
+
+    @property
+    def tools(self) -> str:
+        """ Returns the tools of the strategy."""
+        return self.TOOLS
 
     @property
     def streams(self) -> dict:
