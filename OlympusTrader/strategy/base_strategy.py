@@ -8,6 +8,7 @@ import time
 import datetime
 import nest_asyncio
 import timeit
+# from numba.experimental import jitclass
 
 
 from ..broker.base_broker import BaseBroker
@@ -116,20 +117,22 @@ class BaseStrategy(abc.ABC):
             pass
 
         loop = asyncio.new_event_loop()
-        # asyncio.set_event_loop(loop)
+        asyncio.set_event_loop(loop)
 
         try:
-            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="tradeStream") as pool:
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStream") as pool:
                 tradeStream = loop.run_in_executor(
-                    pool, self.BROKER.startTradeStream, self.__on_trade_update)
+                    pool, self.BROKER.startTradeStream, self._on_trade_update)
                 marketDataSream = loop.run_in_executor(
-                    pool, self.BROKER.streamMarketData, self.__on_bar, self.STREAMS)
-                loop.run_forever()
-                
+                    pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+                insighStream = asyncio.run(self._insightListener())
+                # insighStream = loop.run_in_executor( pool, self._insightListener)
+            loop.run_forever()
+           
             # with ThreadPoolExecutor(max_workers=3, thread_name_prefix="eventStream") as pool:
 
-                # marketDataSream = asyncio.create_task(self.BROKER.streamMarketData(self.__on_bar, self.STREAMS), name='marketDataStream')
-                # self.BROKER.streamMarketData(self.__on_bar, self.STREAMS)
+                # marketDataSream = asyncio.create_task(self.BROKER.streamMarketData(self._on_bar, self.STREAMS), name='marketDataStream')
+                # self.BROKER.streamMarketData(self._on_bar, self.STREAMS)
 
                 # loop.run_forever()
         except KeyboardInterrupt:
@@ -142,88 +145,63 @@ class BaseStrategy(abc.ABC):
             pool.shutdown(wait=False)
             exit(0)
 
-    # def _runAlpaca(self):
-    #     """ starts the event streams with strategy. """
-    #     pool = ThreadPoolExecutor(max_workers=14)
-    #     loop = asyncio.new_event_loop()
 
-    #     try:
-    #         tradeStream = loop.run_in_executor(
-    #             pool, self.BROKER.startTradeStream, self.__on_trade_update)
+    async def _insightListener(self):
+        """ Listen to the insights and manage the orders. """
+        loop = asyncio.get_running_loop()
+        while True:
+            for symbol in self.INSIGHTS.keys():
+                
+                if (len(self.INSIGHTS[symbol]) > 0):
+                    try: 
+                        if self.VERBOSE > 0:
+                            print(f'Execute Insight: {
+                                symbol}- {datetime.datetime.now()}')
+                            start_time = timeit.default_timer()
+                        self.executeInsight(symbol)
+                        if self.VERBOSE > 0:
+                            print('Time taken executeInsight:', symbol,
+                                timeit.default_timer() - start_time)
+                    except Exception as e:
+                        print('Error in _insightListener:', e)
+                        continue
+            await asyncio.sleep(1)
+            # Update the account and positions
+            self.ACCOUNT = self.BROKER.get_account()
+            self.POSITIONS = self.BROKER.get_positions()
 
-    #         if (len(self.STREAMS['stockTickers']) > 0):
-        #         stockStream = loop.run_in_executor(
-        #             pool, self.BROKER.startStream, 'stock', 'bars')
 
-        #     if (len(self.STREAMS['cryptoTickers']) > 0):
-        #         cryptoStream = loop.run_in_executor(
-        #             pool, self.BROKER.startStream, 'crypto', 'bars')
 
-        #     loop.run_forever()
-
-        # except KeyboardInterrupt:
-        #     self.teardown()
-        #     # self.BROKER.closeTradeStream()
-        #     loop.stop()
-        #     asyncio.run(self.BROKER.closeTradeStream())
-        #     tradeStream.cancel()
-        #     print("Interrupted execution by user")
-        #     if (len(self.STREAMS['stockTickers']) > 0):
-        #         # self.BROKER.closeStream('stock', 'bars')
-        #         asyncio.run(self.BROKER.closeStream('stock', 'bars'))
-        #         stockStream.cancel()
-        #     if (len(self.STREAMS['cryptoTickers']) > 0):
-        #         # self.BROKER.closeStream('crypto', 'bars')
-        #         asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
-        #         cryptoStream.cancel()
-
-        #     # asyncio.run(self.BROKER.closeTradeStream())
-
-        # except Exception as e:
-        #     print(f'Exception from websocket connection: {e}')
-        # finally:
-        #     # self.BROKER.closeTradeStream()
-        #     # print("Closing websocket connection... ")
-        #     # if (len(self.STREAMS['stockTickers']) > 0):
-        #     #     asyncio.run(self.BROKER.closeStream('stock', 'bars'))
-        #     # if (len(self.STREAMS['cryptoTickers']) > 0):
-        #     #     asyncio.run(self.BROKER.closeStream('crypto', 'bars'))
-
-        #     loop.close()
-        #     exit(0)
-
-    async def __on_trade_update(self, trade):
+    async def _on_trade_update(self, trade):
         """ format the trade stream to the strategy. """
         orderdata, event = self.BROKER.format_on_trade_update(trade)
         # check if there is data and that the order symbol is in the universe
-        if not orderdata or orderdata['asset']['symbol'] not in self.UNIVERSE:
-            return
-        print(
-            f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
-        self.ORDERS.append(orderdata)
-        for i, insight in enumerate(self.INSIGHTS[orderdata['asset']['symbol']]):
-            match insight.state:
-                case InsightState.EXECUTED:
-                    # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
-                    if insight.order_id == orderdata['order_id']:
-                        if event == 'fill':
-                            # Update the insight with the filled price
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
-                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
-                            break  # No need to continue
-                case InsightState.FILLED | InsightState.CLOSED:
-                    # Update the account and positions
-                    self.ACCOUNT = self.BROKER.get_account()
-                    self.POSITIONS = self.BROKER.get_positions()
-                    # Check if the position has been closed via SL or TP
-                    if insight.symbol == orderdata['asset']['symbol']:
-                        # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                        if (event == 'fill') and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id'])):
-                            # Update the insight closed price
-                            self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
-                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
-                            break  # No need to continue
-
+        if orderdata and orderdata['asset']['symbol'] in self.UNIVERSE:
+            print(
+                f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
+            self.ORDERS.append(orderdata)
+            for i, insight in enumerate(self.INSIGHTS[orderdata['asset']['symbol']]):
+                match insight.state:
+                    case InsightState.EXECUTED:
+                        # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
+                        if insight.order_id == orderdata['order_id']:
+                            if event == 'fill':
+                                # Update the insight with the filled price
+                                self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
+                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
+                                break  # No need to continue
+                    case InsightState.FILLED | InsightState.CLOSED:
+                        # Check if the position has been closed via SL or TP
+                        if insight.symbol == orderdata['asset']['symbol']:
+                            # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
+                            if (event == 'fill') and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id'])):
+                                # Update the insight closed price
+                                self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
+                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
+                                break  # No need to continue
+        else: 
+            # 'Order not in universe'
+            pass              
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 
     def _loadUniverse(self):
@@ -256,20 +234,7 @@ class BaseStrategy(abc.ABC):
             case _:
                 print(f"{eventType} Event not supported")
 
-    # # @abc.abstractmethod
-
-    # def __addBar_event(self, symbol: str, assetType: str):
-    #     """ build the bar stream to the strategy."""
-    #     if self.BROKER.name == 'AlpacaBroker':
-    #         if assetType == 'stock':
-    #             self.STREAMS['bars'].append(self.BROKER.streamBar(
-    #                 self.__on_bar, symbol, 'stock'))
-    #         elif assetType == 'crypto':
-    #             self.STREAMS['bars'].append(self.BROKER.streamBar(
-    #                 self.__on_bar, symbol, 'crypto'))
-    #     # TODO: ADD other brokers
-
-    async def __on_bar(self, bar: Any):
+    async def _on_bar(self, bar: Any):
         """ format the bar stream to the strategy. """
         try:
             # set_index(['symbol', 'timestamp']
@@ -307,22 +272,22 @@ class BaseStrategy(abc.ABC):
                     # print('Bar is not part of the resolution of the strategy', data)
                     pass
                     # Will need to take the the 1 min bar and convert it to the resolution of the strategy
-                # Check if there are any updates to insights for the symbol
-                if (len(self.INSIGHTS[symbol]) > 0):
-                    self.executeInsight(symbol)
-
             else:
                 print('Data is empty - BROKER.format_on_bar(bar) not working')
         except Exception as e:
-            print('Error in __on_bar_format in base Strategy:', e)
+            print('Error in _on_bar_format in base Strategy:', e)
 
     def submit_order(self, insight: Insight):
         """ Submits an order to the broker."""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
-        order = self.BROKER.manage_insight_order(
-            insight, self.assets[insight.symbol])
-        return order
+        try:
+            order = self.BROKER.manage_insight_order(
+                insight, self.assets[insight.symbol])
+            return order
+        except BaseException as e:
+            # print('Error in submit_order:', e)
+            raise e
 
     def close_position(self, symbol, qty=None, percent=None):
         """ Cancels an order to the broker."""

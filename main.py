@@ -5,7 +5,6 @@ from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState, St
 from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
 from OlympusTrader.utils.tools import dynamic_round
 from OlympusTrader import AlpacaBroker, Strategy
-import math
 import numpy as np
 
 import warnings
@@ -107,20 +106,20 @@ class QbitTB(Strategy):
         #     'total_volume', 'SMA_32'],
         #     dtype='object')
 
-        try:
-            # Compute Local Points of Control
-            self.computeLocalPointsOfControl(symbol)
-            # Compute RSI Divergance
-            self.computeRSIDivergance(symbol)
-            # Compute Market State
-            self.computeMarketState(symbol)
+        # try:
+        # Compute Local Points of Control
+        self.computeLocalPointsOfControl(symbol)
+        # Compute RSI Divergance
+        self.computeRSIDivergance(symbol)
+        # Compute Market State
+        self.computeMarketState(symbol)
 
-            # Execute Orders If there should be any
-            self.generateInsights(symbol)  # self.insights[symbol]
+        # Execute Orders If there should be any
+        self.generateInsights(symbol)  # self.insights[symbol]
 
-        except Exception as e:
-            print(f"Error: {e}")
-            raise e
+        # except Exception as e:
+        #     print(f"Error: {e}")
+        #     raise e
 
     def computeLocalPointsOfControl(self, symbol: str):
         window = self.state['local_window']
@@ -227,11 +226,11 @@ class QbitTB(Strategy):
 
         # TEST
         # if (len(self.insights[symbol]) == 0):
-        #     TP = round((latestBar.close + (latestIATR*20)), 2)
-        #     SL = round((latestBar.close - (latestIATR*1.5)), 2)
+        #     TP = self.tools.dynamic_round((latestBar.close + (latestIATR*10)), symbol)
+        #     SL = self.tools.dynamic_round((latestBar.close - (latestIATR*1.5)), symbol)
         #     ENTRY = None
         #     # ENTRY = previousBar.high if (abs(
-        #     #     previousBar.high - latestBar.close) < latestIATR) else round((latestBar.open+(.2*latestIATR)), 2)
+        #     #     previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
         #     self.insights[symbol].append(Insight('long', symbol,
         #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
@@ -349,13 +348,13 @@ class QbitTB(Strategy):
                                 continue
 
                             # np.round(diluted_account_size/price, 2)
-                            self.insights[symbol][i].quantity = math.floor(
+                            self.insights[symbol][i].quantity = np.floor(
                                 min(size_should_buy, size_can_buy)*1000)/1000
 
                             # continue
                             if (self.insights[symbol][i].quantity >= 1):
                                 # Cant but fractional shares on limit orders with alpaca so round down
-                                self.insights[symbol][i].quantity = math.floor(
+                                self.insights[symbol][i].quantity = np.floor(
                                     self.insights[symbol][i].quantity)
                             else:
                                 self.insights[symbol][i].type = 'MARKET'
@@ -401,11 +400,13 @@ class QbitTB(Strategy):
                             self.insights[symbol][i].updateState(
                                 InsightState.REJECTED, f"Failed to submit order")
 
-                    except Exception as e:
+                    except BaseException as e:
                         # print(f"Error: {e}")
                         self.insights[symbol][i].updateState(
                             InsightState.REJECTED, f"Error: {e}")
-                        raise e
+                        continue
+                        # raise e
+
                 case InsightState.EXECUTED:
                     print(f"Insight Executed: {str(insight)}")
                     # Check if filled or not or should be expired or not
@@ -461,6 +462,7 @@ class QbitTB(Strategy):
                                             self.insights[symbol][i].quantity = insight.quantity - \
                                                 quantityToClose
                                             # Move SL to break even
+                                            # TODO: update SL to break even
                                             self.insights[symbol][i].SL = insight.limit_price
                                             self.insights[symbol][i].TP.pop(0)
                                             # Reset TTL for the remaining position
@@ -476,7 +478,7 @@ class QbitTB(Strategy):
                                 holding = float(e.args[0]["data"]["balance"])
                                 if (holding > 0):
                                     # Close 100% of the position
-                                    self.insights[symbol][i].quantity = abs(
+                                    self.insights[symbol][i].quantity = np.abs(
                                         holding)
                                 else:
                                     self.insights[symbol][i].updateState(
@@ -495,7 +497,7 @@ class QbitTB(Strategy):
                         #     self.insights[symbol][i].updateState(InsightState.CLOSED, f"{cause}: {insight.side:^8}: {insight.limit_price} -> {insight.TP[0]} -> {latestBar.high  if (insight.side == 'long') else latestBar.low}, WON: ${insight.quantity*(insight.TP[0] - insight.limit_price)}")
 
                     # TODO: check if the trade needs to lower risk by moving stop loss
-                    pass
+                    continue
                 case InsightState.CLOSED:
 
                     print(insight)
@@ -509,34 +511,42 @@ class QbitTB(Strategy):
                 case InsightState.CANCELED:
                     # Remove from insights if the insight is canceled
                     print(insight)
-                    cancelOrder = self.broker.close_order(
-                        order_id=insight.order_id)  # Cancel Order
-                    if cancelOrder:
+                    try:
+                        cancelOrder = self.broker.close_order(
+                            order_id=insight.order_id)  # Cancel Order
+
                         del self.insights[symbol][i]
+                    except BaseException as e:
+                        if e.args[0]["code"] == "already_filled":
+                            # Order is already be canceled
+                            del self.insights[symbol][i]
+                    continue
 
                 case InsightState.REJECTED:
                     print(insight)
                     del self.insights[symbol][i]
+                    continue
 
                 case InsightState.EXPIRED:
                     print(insight)
                     # TODO: Make sure that the order is closed and the position is closed
                     del self.insights[symbol][i]
+                    continue
 
                 case _:
-                    pass
+                    continue
 
     def teardown(self):
         # Close all open positions
         print("Tear Down")
         self.BROKER.close_all_positions()
-        pass
+        
 
 
 if __name__ == "__main__":
     broker = AlpacaBroker(paper=True, )
     strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-        1, TimeFrameUnit.Minute), verbose=0)
+        1, TimeFrameUnit.Minute), verbose=1)
     # strategy = QbitTB(broker, resolution=TimeFrame(5, TimeFrameUnit.Minute))
     strategy.add_events('bar')
 

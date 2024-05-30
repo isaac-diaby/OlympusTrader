@@ -324,7 +324,17 @@ class AlpacaBroker(BaseBroker):
             raise e
 
     def close_order(self, order_id):
-        self.trading_client.cancel_order_by_id(order_id)
+        try:
+            return self.trading_client.cancel_order_by_id(order_id)
+        except alpaca.common.exceptions.APIError as e:
+            if e.code == 42210000:
+                error = BaseException({
+                    "code": "already_filled",
+                    "data": e
+                })
+                raise error
+            raise e
+
 
     def startTradeStream(self, callback: Awaitable):
         self.trading_stream_client.subscribe_trade_updates(callback)
@@ -337,7 +347,8 @@ class AlpacaBroker(BaseBroker):
     def streamMarketData(self, callback: Awaitable, Assets):
         StockStreamCount = 0
         CryptoStreamCount = 0
-        barStreamCount = len([asset for asset in Assets if asset['type'] == 'bar'])
+        barStreamCount = len(
+            [asset for asset in Assets if asset['type'] == 'bar'])
 
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")

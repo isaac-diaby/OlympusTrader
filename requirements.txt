@@ -3,7 +3,6 @@ alpaca-py
 
 numpy
 pandas
-# numba 
 
 TA-Lib
 pandas_ta
