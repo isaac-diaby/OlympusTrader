@@ -544,9 +544,9 @@ class QbitTB(Strategy):
 
 
 if __name__ == "__main__":
-    broker = AlpacaBroker(paper=True, )
+    broker = AlpacaBroker(paper=True)
     strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-        1, TimeFrameUnit.Minute), verbose=1)
+        1, TimeFrameUnit.Minute), verbose=0, ui = False)
     # strategy = QbitTB(broker, resolution=TimeFrame(5, TimeFrameUnit.Minute))
     strategy.add_events('bar')
 

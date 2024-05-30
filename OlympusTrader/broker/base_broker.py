@@ -8,6 +8,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
+from .interfaces import ISupportedBrokers
+
 from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
 from ..utils.insight import Insight
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
@@ -15,14 +17,14 @@ from ..utils.interfaces import IMarketDataStream
 
 
 class BaseBroker(abc.ABC):
-    NAME = 'BaseBroker'
+    NAME: ISupportedBrokers = ISupportedBrokers.BASE
     DataFeed: str
     PAPER: bool
 
     @abc.abstractmethod
-    def __init__(self, name: str = 'BaseBroker', paper: bool = True, feed: str = None) -> None:
+    def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE , paper: bool = True, feed: str = None) -> None:
         """Abstract class for broker implementations."""
-        load_dotenv()
+        load_dotenv(".env")
         self.NAME = name
         self.PAPER = paper
         self.DataFeed = feed

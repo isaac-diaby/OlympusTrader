@@ -21,6 +21,7 @@ from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
+from .interfaces import ISupportedBrokers
 from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
 from ..utils.timeframe import TimeFrame as tf
 from ..utils.insight import Insight
@@ -34,8 +35,9 @@ class AlpacaBroker(BaseBroker):
     crypto_client: CryptoHistoricalDataClient = None
     crypto_stream_client: CryptoDataStream = None
 
-    def __init__(self, paper: bool, feed: DataFeed = DataFeed.IEX, name='AlpacaBroker'):
-        super().__init__(paper, feed, name)
+    def __init__(self, paper: bool, feed: DataFeed = DataFeed.IEX):
+        super().__init__(ISupportedBrokers.ALPACA, paper, feed)
+
         assert os.getenv('ALPACA_API_KEY'), 'ALPACA_API_KEY not found'
         assert os.getenv('ALPACA_SECRET_KEY'), 'ALPACA_SECRET_KEY not found'
 
@@ -57,7 +59,7 @@ class AlpacaBroker(BaseBroker):
     def get_history(self, asset: Asset, start: datetime, end: datetime, resolution: tf):
         # Convert to TimeFrame from OlympusTrader from alpaca
         super().get_history(asset, start, end, resolution)
-
+        
         timeframe = TimeFrame(resolution.amount, resolution.unit)
         data = None
         if (asset['asset_type'] == 'stock'):

@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Literal, Optional, TypedDict, Required
+from typing import Literal, Optional, TypedDict, Required, List
+from enum import Enum
 
 from .timeframe import TimeFrame
 
@@ -57,7 +58,7 @@ class IOrder(TypedDict):
 class IAccountState(TypedDict):
     account: IAccount
     positions: dict[str, IPosition]
-    orders: [IOrder]
+    orders: List[IOrder]
 
 class IMarketDataStream(TypedDict):
     symbol: str
@@ -66,5 +67,8 @@ class IMarketDataStream(TypedDict):
     asset_type: Literal['stock', 'crypto'] = 'crypto'
     type: Literal['trade', 'quote', 'bar', 'news'] = 'bar'
 
-
+class IStrategyMode(Enum):
+    BACKTEST = 'backtest'
+    PAPER = 'paper'
+    LIVE = 'live'
 

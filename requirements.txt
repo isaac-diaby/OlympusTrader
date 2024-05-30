@@ -8,6 +8,8 @@ TA-Lib
 pandas_ta
 scipy
 
+streamlit
+
 # Dev-dependencies
 python-dotenv
 nest_asyncio

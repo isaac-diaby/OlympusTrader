@@ -8,15 +8,17 @@ import time
 import datetime
 import nest_asyncio
 import timeit
-# from numba.experimental import jitclass
-
 
 from ..broker.base_broker import BaseBroker
-from ..utils.interfaces import Asset, IAccount, IPosition, IOrder, IMarketDataStream
+from ..broker.interfaces import ISupportedBrokers
+
+from ..utils.interfaces import Asset, IAccount, IPosition, IOrder, IMarketDataStream, IStrategyMode
 from ..utils.insight import Insight, InsightState
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.types import AttributeDict
 from ..utils.tools import TradingTools
+
+from ..ui.base_ui import Dashboard
 
 
 class BaseStrategy(abc.ABC):
@@ -29,15 +31,20 @@ class BaseStrategy(abc.ABC):
     INSIGHTS: dict[str, Insight] = {}
     UNIVERSE: dict[str, Asset] = {}
     RESOLUTION = TimeFrame(5, TimeFrameUnit.Minute)
-    STREAMS: [IMarketDataStream] = []
+    STREAMS: List[IMarketDataStream] = []
     VARIABLES: AttributeDict
+    MODE: IStrategyMode
+    WITHUI: bool = True
+    DASHBOARD: Dashboard = None
 
     TOOLS: TradingTools = None
     VERBOSE: int = 0
 
     @abc.abstractmethod
-    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0) -> None:
+    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui = True, mode: IStrategyMode = IStrategyMode.LIVE ) -> None:
         """Abstract class for strategy implementations."""
+        self.MODE = mode
+        self.WITHUI = ui
         self.VARIABLES = variables
         self.BROKER = broker
         self.TOOLS = TradingTools(self)
@@ -53,6 +60,8 @@ class BaseStrategy(abc.ABC):
         self._loadUniverse()
         for asset in self.UNIVERSE.values():
             self.init(asset)
+        if self.WITHUI:
+            self.DASHBOARD = Dashboard(self)
 
     @override
     @abc.abstractmethod
@@ -112,22 +121,28 @@ class BaseStrategy(abc.ABC):
         """ starts the strategy. """
         nest_asyncio.apply()
 
-        if self.BROKER.NAME == 'AlpacaBroker':
-            # Exchange specific setup
-            pass
+        # check if universe is empty
+        assert len(self.UNIVERSE) > 0, 'Universe is empty'
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        if self.MODE == IStrategyMode.LIVE:
+            if self.BROKER.NAME == ISupportedBrokers.ALPACA:
+                # Exchange specific setup
+                pass
 
-        try:
-            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStream") as pool:
-                tradeStream = loop.run_in_executor(
-                    pool, self.BROKER.startTradeStream, self._on_trade_update)
-                marketDataSream = loop.run_in_executor(
-                    pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
-                insighStream = asyncio.run(self._insightListener())
-                # insighStream = loop.run_in_executor( pool, self._insightListener)
-            loop.run_forever()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStream") as pool:
+                    tradeStream = loop.run_in_executor(
+                        pool, self.BROKER.startTradeStream, self._on_trade_update)
+                    marketDataSream = loop.run_in_executor(
+                        pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+                    insighStream = asyncio.run(self._insightListener())
+                    # insighStream = loop.run_in_executor( pool, self._insightListener)
+                self.DASHBOARD.show()
+                loop.run_forever()
+        
            
             # with ThreadPoolExecutor(max_workers=3, thread_name_prefix="eventStream") as pool:
 
@@ -135,15 +150,19 @@ class BaseStrategy(abc.ABC):
                 # self.BROKER.streamMarketData(self._on_bar, self.STREAMS)
 
                 # loop.run_forever()
-        except KeyboardInterrupt:
-            print("Interrupted execution by user")
-        except Exception as e:
-            print(f'Exception from websocket connection: {e}')
-        finally:
-            self.teardown()
-            loop.close()
-            pool.shutdown(wait=False)
-            exit(0)
+            except KeyboardInterrupt:
+                print("Interrupted execution by user")
+            except Exception as e:
+                print(f'Exception from websocket connection: {e}')
+            finally:
+                self.teardown()
+                # pool.shutdown(wait=False)
+                # loop.close()
+                exit(0)
+        elif self.MODE == IStrategyMode.BACKTEST:
+            # Backtest
+            print('Backtest Mode - Not Implemented')
+            pass
 
 
     async def _insightListener(self):
@@ -165,7 +184,7 @@ class BaseStrategy(abc.ABC):
                     except Exception as e:
                         print('Error in _insightListener:', e)
                         continue
-            await asyncio.sleep(1)
+            await asyncio.sleep(10)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
@@ -210,6 +229,9 @@ class BaseStrategy(abc.ABC):
         universeSet = set(self.universe())
         for symbol in universeSet:
             self._loadAsset(symbol)
+        if len(self.UNIVERSE) == 0:
+            print('No assets loaded into the universe')
+
 
     def _loadAsset(self, s: str):
         """ Loads the asset into the universe of the strategy."""
