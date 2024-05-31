@@ -152,11 +152,11 @@ class Insight:
         if self.limit_price == None:
             return False
         if self.TP and self.SL:
-            if (self.limit_price > self.SL and self.side == 'long' ) or (self.limit_price < self.SL and self.side == 'short'):
+            if (self.limit_price < self.SL and self.side == 'long' ) or (self.limit_price > self.SL and self.side == 'short'):
                 print("invalid entry insight: limit price is below the stop loss") 
                 return False
             for tp in self.TP:
-                if (self.limit_price < tp and self.side == 'long' ) or (self.limit_price > tp and self.side == 'short'):
+                if (self.limit_price > tp and self.side == 'long' ) or (self.limit_price < tp and self.side == 'short'):
                     print("invalid entry insight: limit price is above the take profit") 
                     return False
         return True
