@@ -247,7 +247,7 @@ class QbitTB(Strategy):
             self.insights[symbol].append(Insight('long', symbol,
                                                  StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
         # RSA Divergance Short
-        if (self.assets[symbol]['shortable'] and (not np.isnan(latestBar['RSI_Divergance_Short'])) and marketState > 0):
+        if (self.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short']) and marketState > 0):
             # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
             TP = self.tools.dynamic_round(
                 (latestBar.close - (latestIATR*3.5)), symbol)
@@ -260,26 +260,26 @@ class QbitTB(Strategy):
                                                  StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
 
         # EMA Crossover Long
-        if ((latestBar['EMA_9'] < latestBar['close']) and (latestBar['EMA_9'] > previousBar['close']) and (abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState > 3):
+        if ((latestBar['EMA_9'] < latestBar['close']) and (previousBar['EMA_9'] > previousBar['high']) and (np.abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState > 3):
             # print(
             #     f"Insight - {symbol}: Long EMA Crossover: EMA:{latestBar['EMA_9']} < {latestBar['close']}")
             TP = self.tools.dynamic_round(max(latestBar['BBU_16_2.0']+(latestIATR*1.5),
                                               (latestBar['high']+(latestIATR*3.5))), symbol)
             SL = self.tools.dynamic_round(
                 max(previousBar['low']-(.5*latestIATR), latestBar['EMA_9']-latestIATR*1.5), symbol)
-            ENTRY = None  # TODO: ADD Price instead of  Market Order
+            ENTRY = self.tools.dynamic_round(latestBar['EMA_9'], symbol)  # pullback
 
             self.insights[symbol].append(Insight('long', symbol,
                                                  StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
         # EMA Crossover Short
-        if (self.assets[symbol]['shortable'] and (latestBar['EMA_9'] > latestBar['close']) and (latestBar['EMA_9'] < previousBar['close']) and (abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState < -3):
+        if (self.assets[symbol]['shortable'] and (latestBar['EMA_9'] > latestBar['close']) and (previousBar['EMA_9'] < previousBar['low']) and (np.abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState < -3):
             # print(
             #     f"Insight - {symbol}: Short EMA Crossover: EMA:{latestBar['EMA_9']} > {latestBar['close']}")
             TP = self.tools.dynamic_round(min(latestBar['BBL_16_2.0']-(latestIATR*1.5),
                                               (latestBar['low']-(latestIATR*3.5))), symbol)
             SL = self.tools.dynamic_round(min(previousBar['high'] +
                                               (.5*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), symbol)
-            ENTRY = None  # TODO: ADD Price instead of  Market Order
+            ENTRY = self.tools.dynamic_round(latestBar['EMA_9'], symbol)   # TODO: ADD Price instead of  Market Order
 
             self.insights[symbol].append(Insight('short', symbol,
                                                  StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
@@ -309,8 +309,8 @@ class QbitTB(Strategy):
                             continue
 
                         # Get price from latest bar if limit price is not set
-                        self.insights[symbol][i].limit_price = self.state['history'][symbol].loc[symbol].iloc[-1].close if (
-                            (insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price
+                        self.insights[symbol][i].update_limit_price(self.state['history'][symbol].loc[symbol].iloc[-1].close if (
+                            (insight.type == 'MARKET') or np.isnan(insight.limit_price)) else insight.limit_price)
 
                         RR = self.insights[symbol][i].getPnLRatio()
 
@@ -322,16 +322,20 @@ class QbitTB(Strategy):
                         # calculate number of shares from cash according to risk of 2 percent
 
                         if (insight.quantity == None):
-                            if (self.assets[symbol]['asset_type'] == 'stock'):
-                                diluted_account_margin_size = self.account['buying_power'] * \
-                                    insight.confidence
-                                account_size_at_risk = self.account['cash'] * (
-                                    insight.confidence*RISK)
-                            if (self.assets[symbol]['asset_type'] == 'crypto'):
-                                diluted_account_margin_size = self.account['cash'] * (
-                                    insight.confidence)
-                                account_size_at_risk = self.account['cash'] * (
-                                    insight.confidence*RISK)
+                            # if (self.assets[symbol]['asset_type'] == 'stock'):
+                            #     diluted_account_margin_size = self.account['buying_power'] * \
+                            #         insight.confidence
+                            #     account_size_at_risk = self.account['cash'] * (
+                            #         insight.confidence*RISK)
+                            # if (self.assets[symbol]['asset_type'] == 'crypto'):
+                                # diluted_account_margin_size = self.account['cash'] * (
+                                #     insight.confidence)
+                                # account_size_at_risk = self.account['cash'] * (
+                                #     insight.confidence*RISK)
+                            diluted_account_margin_size = self.account['cash'] * (
+                                insight.confidence)
+                            account_size_at_risk = self.account['cash'] * (
+                                insight.confidence*RISK)
 
                             if (diluted_account_margin_size > 200000):
                                 # Max 200k per trade Alapaca

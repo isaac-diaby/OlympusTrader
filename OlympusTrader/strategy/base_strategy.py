@@ -8,6 +8,7 @@ import time
 import datetime
 import nest_asyncio
 import timeit
+from collections import deque
 
 from ..broker.base_broker import BaseBroker
 from ..broker.interfaces import ISupportedBrokers
@@ -25,7 +26,7 @@ class BaseStrategy(abc.ABC):
     BROKER: BaseBroker
     ACCOUNT: IAccount = {}
     POSITIONS: dict[str, IPosition] = {}
-    ORDERS: List[IOrder] = []
+    ORDERS: deque[IOrder] = deque([])
     HISTORY: pd.DataFrame = pd.DataFrame(
         columns=['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume'])
     INSIGHTS: dict[str, Insight] = {}
@@ -41,7 +42,7 @@ class BaseStrategy(abc.ABC):
     VERBOSE: int = 0
 
     @abc.abstractmethod
-    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui = True, mode: IStrategyMode = IStrategyMode.LIVE ) -> None:
+    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui=True, mode: IStrategyMode = IStrategyMode.LIVE) -> None:
         """Abstract class for strategy implementations."""
         self.MODE = mode
         self.WITHUI = ui
@@ -142,8 +143,7 @@ class BaseStrategy(abc.ABC):
                     # insighStream = loop.run_in_executor( pool, self._insightListener)
                 self.DASHBOARD.show()
                 loop.run_forever()
-        
-           
+
             # with ThreadPoolExecutor(max_workers=3, thread_name_prefix="eventStream") as pool:
 
                 # marketDataSream = asyncio.create_task(self.BROKER.streamMarketData(self._on_bar, self.STREAMS), name='marketDataStream')
@@ -164,15 +164,14 @@ class BaseStrategy(abc.ABC):
             print('Backtest Mode - Not Implemented')
             pass
 
-
     async def _insightListener(self):
         """ Listen to the insights and manage the orders. """
         loop = asyncio.get_running_loop()
         while True:
             for symbol in self.INSIGHTS.keys():
-                
+
                 if (len(self.INSIGHTS[symbol]) > 0):
-                    try: 
+                    try:
                         if self.VERBOSE > 0:
                             print(f'Execute Insight: {
                                 symbol}- {datetime.datetime.now()}')
@@ -180,7 +179,7 @@ class BaseStrategy(abc.ABC):
                         self.executeInsight(symbol)
                         if self.VERBOSE > 0:
                             print('Time taken executeInsight:', symbol,
-                                timeit.default_timer() - start_time)
+                                  timeit.default_timer() - start_time)
                     except Exception as e:
                         print('Error in _insightListener:', e)
                         continue
@@ -188,8 +187,6 @@ class BaseStrategy(abc.ABC):
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
-
-
 
     async def _on_trade_update(self, trade):
         """ format the trade stream to the strategy. """
@@ -209,6 +206,10 @@ class BaseStrategy(abc.ABC):
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                                 break  # No need to continue
+                            if event == 'canceled':
+                                self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
+                                    InsightState.CANCELED, 'Order Canceled')
+                                break
                     case InsightState.FILLED | InsightState.CLOSED:
                         # Check if the position has been closed via SL or TP
                         if insight.symbol == orderdata['asset']['symbol']:
@@ -218,9 +219,9 @@ class BaseStrategy(abc.ABC):
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
                                 break  # No need to continue
-        else: 
+        else:
             # 'Order not in universe'
-            pass              
+            pass
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 
     def _loadUniverse(self):
@@ -231,7 +232,6 @@ class BaseStrategy(abc.ABC):
             self._loadAsset(symbol)
         if len(self.UNIVERSE) == 0:
             print('No assets loaded into the universe')
-
 
     def _loadAsset(self, s: str):
         """ Loads the asset into the universe of the strategy."""
@@ -267,18 +267,21 @@ class BaseStrategy(abc.ABC):
 
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
-            self.ORDERS = self.BROKER.get_orders()
-            if self.ORDERS == None:
-                self.ORDERS = []
+            orders = self.BROKER.get_orders()
+            if orders:
+                self.ORDERS = deque(orders)
+            else:
+                self.ORDERS = deque([])
+
             if self.POSITIONS == None:
                 self.POSITIONS = {}
 
             if not data.empty:
                 symbol = data.index[0][0]
                 timestamp = data.index[0][1]
-                self.HISTORY = pd.concat([self.HISTORY, data])
                 # Check if the bar is part of the resolution of the strategy
                 if self.resolution.is_time_increment(timestamp):
+                    self.HISTORY = pd.concat([self.HISTORY, data])
                     # print('New Bar is part of the resolution of the strategy', data)
                     if self.VERBOSE > 0:
                         print(f'New Bar is part of the resolution of the strategy: {
@@ -326,7 +329,7 @@ class BaseStrategy(abc.ABC):
         return self.POSITIONS
 
     @property
-    def orders(self) -> List[IOrder]:
+    def orders(self) -> deque[IOrder]:
         """ Returns the orders of the strategy."""
         return self.ORDERS
 
