@@ -1,3 +1,4 @@
+import time
 import pandas_ta as ta
 import pandas as pd
 from datetime import datetime, timedelta
@@ -77,7 +78,7 @@ class QbitTB(Strategy):
         # universe = { }
 
         universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-                    'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
+                    'MKR/USD', 'SHIB/USD', 'SOL/USD', 'UNI/USD', 'WBTC/USD'}
 
         # universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'DAI/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
         #             'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
@@ -234,6 +235,11 @@ class QbitTB(Strategy):
         #     self.insights[symbol].append(Insight('long', symbol,
         #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
+        # TODO: movethis into strategy tools
+        def calculateTimeToLive(price, entry, ATR, additional=2):
+            """Calculate the time to live for a given price and entry based on the ATR"""
+            return ((np.abs(price - entry)) // ATR)+2
+
         # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
             # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
@@ -243,9 +249,13 @@ class QbitTB(Strategy):
                 (latestBar.close - (latestIATR*1.5)), symbol)
             ENTRY = previousBar.high if (abs(
                 previousBar.high - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+            # time to live unfilled
+            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            # time to live till take profit
+            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.insights[symbol].append(Insight('long', symbol,
-                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
+                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
         # RSA Divergance Short
         if (self.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short']) and marketState > 0):
             # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
@@ -255,9 +265,13 @@ class QbitTB(Strategy):
                 (latestBar.close + (latestIATR*1.5)), symbol)
             ENTRY = previousBar.low if (abs(
                 previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+            # time to live unfilled
+            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            # time to live till take profit
+            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.insights[symbol].append(Insight('short', symbol,
-                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM]))
+                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
 
         # EMA Crossover Long
         if ((latestBar['EMA_9'] < latestBar['close']) and (previousBar['EMA_9'] > previousBar['high']) and (np.abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState > 3):
@@ -267,10 +281,15 @@ class QbitTB(Strategy):
                                               (latestBar['high']+(latestIATR*3.5))), symbol)
             SL = self.tools.dynamic_round(
                 max(previousBar['low']-(.5*latestIATR), latestBar['EMA_9']-latestIATR*1.5), symbol)
-            ENTRY = self.tools.dynamic_round(latestBar['EMA_9'], symbol)  # pullback
+            ENTRY = self.tools.dynamic_round(
+                latestBar['EMA_9'], symbol)  # pullback
+            # time to live unfilled
+            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            # time to live till take profit
+            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.insights[symbol].append(Insight('long', symbol,
-                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
+                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
         # EMA Crossover Short
         if (self.assets[symbol]['shortable'] and (latestBar['EMA_9'] > latestBar['close']) and (previousBar['EMA_9'] < previousBar['low']) and (np.abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState < -3):
             # print(
@@ -279,10 +298,15 @@ class QbitTB(Strategy):
                                               (latestBar['low']-(latestIATR*3.5))), symbol)
             SL = self.tools.dynamic_round(min(previousBar['high'] +
                                               (.5*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), symbol)
-            ENTRY = self.tools.dynamic_round(latestBar['EMA_9'], symbol)   # TODO: ADD Price instead of  Market Order
+            ENTRY = self.tools.dynamic_round(
+                latestBar['EMA_9'], symbol)  # pullback
+ # time to live unfilled
+            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            # time to live till take profit
+            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.insights[symbol].append(Insight('short', symbol,
-                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM]))
+                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
 
         return
 
@@ -328,10 +352,10 @@ class QbitTB(Strategy):
                             #     account_size_at_risk = self.account['cash'] * (
                             #         insight.confidence*RISK)
                             # if (self.assets[symbol]['asset_type'] == 'crypto'):
-                                # diluted_account_margin_size = self.account['cash'] * (
-                                #     insight.confidence)
-                                # account_size_at_risk = self.account['cash'] * (
-                                #     insight.confidence*RISK)
+                            # diluted_account_margin_size = self.account['cash'] * (
+                            #     insight.confidence)
+                            # account_size_at_risk = self.account['cash'] * (
+                            #     insight.confidence*RISK)
                             diluted_account_margin_size = self.account['cash'] * (
                                 insight.confidence)
                             account_size_at_risk = self.account['cash'] * (
@@ -361,7 +385,8 @@ class QbitTB(Strategy):
                                 self.insights[symbol][i].quantity = np.floor(
                                     self.insights[symbol][i].quantity)
                             else:
-                                self.insights[symbol][i].type = 'MARKET'
+                                pass
+                                # self.insights[symbol][i].type = 'MARKET'
 
                             if self.insights[symbol][i].type == 'MARKET':
                                 pass
@@ -544,16 +569,18 @@ class QbitTB(Strategy):
         # Close all open positions
         print("Tear Down")
         self.BROKER.close_all_positions()
-        
 
 
 if __name__ == "__main__":
     broker = AlpacaBroker(paper=True)
     strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-        1, TimeFrameUnit.Minute), verbose=0, ui = False)
+        1, TimeFrameUnit.Minute), verbose=0, ui=True)
     # strategy = QbitTB(broker, resolution=TimeFrame(5, TimeFrameUnit.Minute))
     strategy.add_events('bar')
+    print(strategy.NAME)
 
+    # while True:
+    #     time.sleep(60)
     strategy.run()
 
     # print(strategy.assets)

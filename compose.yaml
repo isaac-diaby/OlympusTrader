@@ -11,14 +11,38 @@ services:
   trader:
     restart: always
     build:
-      context: .
-    # ports:
-    #   - 3333:3333
+      context: ./
+      dockerfile: Docker/Dockerfile.trader
+    ports:
+      - 50000:50000
     env_file:
       # - .env
       - stack.env
+    healthcheck:
+      # test: ["CMD-SHELL", "nc -vz trader 50000"]
+      test: ["CMD-SHELL", "wget -q --spider trader:50000 -O /dev/null"]
+      interval: "5s"
+      retries: 30
 
-# TODO: Add a UI service here.
+# TODO: Add a UI service here. 
+  ui:
+    restart: always
+    build:
+      context: ./
+      dockerfile: Docker/Dockerfile.ui
+    ports:
+      - 8501:8501
+    env_file:
+      - stack.env
+    healthcheck:
+      # test: ["CMD-SHELL", "nc -vz ui 8501"]
+      test: ["CMD-SHELL", "wget -q --spider ui:8501 -O /dev/null"]
+      interval: "5s"
+      retries: 30
+    depends_on:
+      trader:
+        condition: service_healthy
+
 # TODO: Add MongoDB database service here.
 
 # The commented out section below is an example of how to define a PostgreSQL

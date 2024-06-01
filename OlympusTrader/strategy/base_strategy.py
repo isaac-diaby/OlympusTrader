@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import os
 from threading import Thread
 from typing import Any, List, override, Union, Literal
 import pandas as pd
@@ -13,16 +14,19 @@ from collections import deque
 from ..broker.base_broker import BaseBroker
 from ..broker.interfaces import ISupportedBrokers
 
+from .sharedmemory import SharedStrategyManager
+
 from ..utils.interfaces import Asset, IAccount, IPosition, IOrder, IMarketDataStream, IStrategyMode
 from ..utils.insight import Insight, InsightState
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.types import AttributeDict
 from ..utils.tools import TradingTools
 
-from ..ui.base_ui import Dashboard
+# from ..ui.base_ui import Dashboard
 
 
 class BaseStrategy(abc.ABC):
+    NAME: str = "BaseStrategy"
     BROKER: BaseBroker
     ACCOUNT: IAccount = {}
     POSITIONS: dict[str, IPosition] = {}
@@ -36,7 +40,8 @@ class BaseStrategy(abc.ABC):
     VARIABLES: AttributeDict
     MODE: IStrategyMode
     WITHUI: bool = True
-    DASHBOARD: Dashboard = None
+    SSM: SharedStrategyManager = None
+    # DASHBOARD: Dashboard = None
 
     TOOLS: TradingTools = None
     VERBOSE: int = 0
@@ -44,6 +49,7 @@ class BaseStrategy(abc.ABC):
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui=True, mode: IStrategyMode = IStrategyMode.LIVE) -> None:
         """Abstract class for strategy implementations."""
+        self.NAME = self.__class__.__name__
         self.MODE = mode
         self.WITHUI = ui
         self.VARIABLES = variables
@@ -58,11 +64,15 @@ class BaseStrategy(abc.ABC):
         # state['execution_risk'] = 0.01
         # 2:1 Reward to Risk Ratio minimum
         # state['RewardRiskRatio'] = 2.0
+        self.ACCOUNT = self.BROKER.get_account()
+        self.POSITIONS = self.BROKER.get_positions()
+
+        if self.WITHUI:
+            self._startUISharedMemory()
+
         self._loadUniverse()
         for asset in self.UNIVERSE.values():
             self.init(asset)
-        if self.WITHUI:
-            self.DASHBOARD = Dashboard(self)
 
     @override
     @abc.abstractmethod
@@ -134,14 +144,26 @@ class BaseStrategy(abc.ABC):
             asyncio.set_event_loop(loop)
 
             try:
-                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStream") as pool:
-                    tradeStream = loop.run_in_executor(
-                        pool, self.BROKER.startTradeStream, self._on_trade_update)
-                    marketDataSream = loop.run_in_executor(
-                        pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
-                    insighStream = asyncio.run(self._insightListener())
-                    # insighStream = loop.run_in_executor( pool, self._insightListener)
-                self.DASHBOARD.show()
+                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStreams") as pool:
+                    try:
+                        #  Trading data streams
+                        tradeStream = loop.run_in_executor(
+                            pool, self.BROKER.startTradeStream, self._on_trade_update)
+                        marketDataStream = loop.run_in_executor(
+                            pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+
+                        # UI Shared Memory Server
+                        if self.WITHUI:
+                            server = self.SSM.get_server()
+                            loop.run_in_executor(
+                                pool, server.serve_forever)
+                            print('UI Shared Memory Server started')
+
+                        #  Insight executor and listener
+                        insighStream = asyncio.run(self._insightListener())
+
+                    except Exception as e:
+                        print(f'Exception from Threads: {e}')
                 loop.run_forever()
 
             # with ThreadPoolExecutor(max_workers=3, thread_name_prefix="eventStream") as pool:
@@ -152,8 +174,6 @@ class BaseStrategy(abc.ABC):
                 # loop.run_forever()
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
-            except Exception as e:
-                print(f'Exception from websocket connection: {e}')
             finally:
                 self.teardown()
                 # pool.shutdown(wait=False)
@@ -162,6 +182,25 @@ class BaseStrategy(abc.ABC):
         elif self.MODE == IStrategyMode.BACKTEST:
             # Backtest
             print('Backtest Mode - Not Implemented')
+            pass
+
+    def _startUISharedMemory(self):
+        """ Starts the UI shared memory."""
+        if not self.WITHUI:
+            print('UI is not enabled')
+            return
+        try:
+            assert os.getenv(
+                'SSM_PASSWORD'), 'SSM_PASSWORD not found in environment variables'
+            SharedStrategyManager.register(
+                'get_strategy', callable=lambda: self)
+            SharedStrategyManager.register(
+                'get_account', callable=lambda: self.ACCOUNT)
+            self.SSM = SharedStrategyManager(
+                address=('', 50000), authkey=os.getenv('SSM_PASSWORD').encode())
+
+        except Exception as e:
+            print(f'Error in _startUISharedMemory: {e}')
             pass
 
     async def _insightListener(self):
@@ -206,9 +245,15 @@ class BaseStrategy(abc.ABC):
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                                 break  # No need to continue
+
+                            # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
                             if event == 'canceled':
+                                # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
                                     InsightState.CANCELED, 'Order Canceled')
+                            if event == 'rejected':
+                                self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
+                                    InsightState.REJECTED, 'Order Rejected')
                                 break
                     case InsightState.FILLED | InsightState.CLOSED:
                         # Check if the position has been closed via SL or TP
@@ -285,7 +330,7 @@ class BaseStrategy(abc.ABC):
                     # print('New Bar is part of the resolution of the strategy', data)
                     if self.VERBOSE > 0:
                         print(f'New Bar is part of the resolution of the strategy: {
-                              symbol} - {timestamp} - {datetime.datetime.utcnow()}')
+                              symbol} - {timestamp} - {datetime.datetime.now()}')
                         start_time = timeit.default_timer()
 
                     # Call the on_bar function and process the bar
@@ -317,6 +362,18 @@ class BaseStrategy(abc.ABC):
     def close_position(self, symbol, qty=None, percent=None):
         """ Cancels an order to the broker."""
         return self.BROKER.close_position(symbol, qty, percent)
+
+    # dynamic function to get variables from the strategy class - used in the UI shared server.
+    def get_variable(self, var='account'):
+        """ Get a variable from the strategy class."""
+        if not self.WITHUI:
+            print('UI is not enabled')
+            return None
+        try:
+            if getattr(self, var):
+                return getattr(self, var)
+        except AttributeError as e:
+            return None
 
     @property
     def account(self) -> IAccount:
@@ -364,12 +421,12 @@ class BaseStrategy(abc.ABC):
         return self.UNIVERSE
 
     @property
-    def resolution(self) -> str:
+    def resolution(self) -> TimeFrame:
         """ Returns the resolution of the strategy."""
         return self.RESOLUTION
 
     @property
-    def tools(self) -> str:
+    def tools(self) -> TradingTools:
         """ Returns the tools of the strategy."""
         return self.TOOLS
 

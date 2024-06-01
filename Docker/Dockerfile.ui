@@ -26,7 +26,7 @@ RUN adduser \
     --shell "/sbin/nologin" \
     --no-create-home \
     --uid "${UID}" \
-    trader
+    traderui
 
 # Install TA Lib
 RUN apt-get update && apt-get install -y \
@@ -53,13 +53,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install -r requirements.txt
 
 # Switch to the non-privileged user to run the application.
-USER trader
+USER traderui
 
 # Copy the source code into the container.
-COPY . .
+COPY ../. .
 
 # Expose the port that the application listens on.
-# EXPOSE 3333
+EXPOSE 8501
+# EXPOSE 50000
 
 # Run the application.
-CMD python main.py
+CMD python -m streamlit run ./OlympusTrader/ui/base_ui.py

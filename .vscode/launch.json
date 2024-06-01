@@ -21,12 +21,12 @@
             "name": "Python: Current File with streamlit server",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "program": "bin/streamlit",
             "console": "integratedTerminal",
 
             "args": [
-                "-m streamlit run",
-                "--ui",
+                "run",
+                "${file}"
             ]
         }
     ]

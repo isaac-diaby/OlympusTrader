@@ -6,7 +6,7 @@ from ..utils.types import AttributeDict
 
 
 class Strategy(BaseStrategy):
-    def __init__(self, broker: BaseBroker,  **kwargs):
+    def __init__(self, broker: BaseBroker, **kwargs):
         super().__init__(broker, **kwargs)
 
     @override

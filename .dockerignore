@@ -31,5 +31,16 @@
 **/obj
 **/secrets.dev.yaml
 **/values.dev.yaml
+
+**/Docker
+**/bin
+**/etc
+**/lib
+**/include
+**/share
+**/research
+**/tests
+**/v0.1
+
 LICENSE
 README.md

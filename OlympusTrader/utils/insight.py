@@ -86,18 +86,18 @@ class Insight:
             self.classType = 'BRACKET'
         else:
             self.classType = 'SIMPLE'
-
-        if self.checkValidEntryInsight():
-            print(f"Created Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {self.TP} - SL: {self.SL} - Ratio: {self.getPnLRatio()} - UDA: {self.updatedAt}")
+        # check if the insight is valid except for manual or test insights
+        if self.checkValidEntryInsight() and (self.strategyType != StrategyTypes.TEST or self.strategyType != StrategyTypes.MANUAL):
+            print(f"Created Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {
+                  self.TP} - SL: {self.SL} - Ratio: {self.getPnLRatio()} - UDA: {self.updatedAt}")
         else:
             # print(f"Invalid Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {self.TP} - SL: {self.SL} - Ratio: {self.getPnLRatio()} - UDA: {self.updatedAt}")
             self.updateState(InsightState.REJECTED, 'Invalid Entry Insight')
 
-
     def __str__(self):
         if self.strategyType == StrategyTypes.MANUAL:
             return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ MARKET"
-        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - UDA: {self.updatedAt}"
+        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - TTLUF/TTL: {str(self.periodUnfilled):^5}/{str(self.periodTillTp):^5} - UDA: {self.updatedAt}"
 
     def updateState(self, state: InsightState, message: str = None):
         print(
@@ -112,56 +112,50 @@ class Insight:
             print(self.logPnL())
 
         return self
+
     def update_limit_price(self, price: float):
         # check if price is the same as the limit price
         if price == self.limit_price:
             print(
                 f"Limit price is the same as the current limit price: {price} == {self.limit_price}")
-            return self
+            return False
         # check if the insight is already filled
         if self.state == InsightState.FILLED:
             print(
                 f"Insight is already filled: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
-            return self
+            return False
         # check if the price is within the take profit and stop loss
-        if self.TP and self.SL:
-            if price < self.SL:
-                print(
-                    f"Limit price is below the stop loss: {price} < {self.SL}")
-                return self
-            if price > self.TP[-1]:
-                print(
-                    f"Limit price is above the take profit: {price} > {self.TP[-1]}")
-                return self
+        if not self.checkValidEntryInsight(price):
+            return False
         self.limit_price = price
         self.updatedAt = datetime.now()
         self.type = 'LIMIT'
 
         # check if the insight is already executed
         if self.state == InsightState.EXECUTED:
+
             # TODO: Need to check if the order is already placed and update it
             # self.updateState(InsightState.FILLED, 'Trade Filled')
             pass
         return self
-    
+
     # TODO: def update_take_profit(self, price: float):
     # TODO: def update_stop_loss(self, price: float):
 
-    def checkValidEntryInsight(self):
+    def checkValidEntryInsight(self, limit_price: float = None):
         """Check if the insight is valid. limitprice needs to be beween the take profit and stop loss."""
-        if self.limit_price == None:
+        limit_price = limit_price if limit_price != None else self.limit_price
+        if limit_price == None:
             return False
         if self.TP and self.SL:
-            if (self.limit_price < self.SL and self.side == 'long' ) or (self.limit_price > self.SL and self.side == 'short'):
-                print("invalid entry insight: limit price is below the stop loss") 
+            if (limit_price < self.SL and self.side == 'long') or (limit_price > self.SL and self.side == 'short'):
+                print("invalid entry insight: limit price is below the stop loss")
                 return False
             for tp in self.TP:
-                if (self.limit_price > tp and self.side == 'long' ) or (self.limit_price < tp and self.side == 'short'):
-                    print("invalid entry insight: limit price is above the take profit") 
+                if (limit_price > tp and self.side == 'long') or (limit_price < tp and self.side == 'short'):
+                    print("invalid entry insight: limit price is above the take profit")
                     return False
         return True
-
-
 
     def hasExpired(self, shouldUpdateState: bool = False):
         if self.periodUnfilled == None:

@@ -22,9 +22,9 @@ class BaseBroker(abc.ABC):
     PAPER: bool
 
     @abc.abstractmethod
-    def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE , paper: bool = True, feed: str = None) -> None:
+    def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: str = None) -> None:
         """Abstract class for broker implementations."""
-        load_dotenv(".env")
+        load_dotenv()
         self.NAME = name
         self.PAPER = paper
         self.DataFeed = feed
@@ -107,7 +107,7 @@ class BaseBroker(abc.ABC):
     def streamMarketData(self, callback: Awaitable, Assets: List[IMarketDataStream]):
         """Listen to market data and call the callback function with the data"""
         pass
-    
+
     @override
     @abc.abstractmethod
     async def closeStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
@@ -121,7 +121,6 @@ class BaseBroker(abc.ABC):
     # @abc.abstractmethod
     # def startStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
     #     pass
-
 
     @override
     @abc.abstractmethod
