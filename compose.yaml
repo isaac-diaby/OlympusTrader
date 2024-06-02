@@ -22,7 +22,7 @@ services:
       # test: ["CMD-SHELL", "nc -vz trader 50000"]
       test: ["CMD-SHELL", "wget -q --spider trader:50000 -O /dev/null"]
       interval: "5s"
-      retries: 30
+      retries: 300
 
 # TODO: Add a UI service here. 
   ui:
