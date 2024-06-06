@@ -4,7 +4,7 @@ from typing import List, Literal
 
 
 from .timeframe import TimeFrame
-
+from ..broker.interfaces import OrderSide, OrderType, OrderClass
 
 class StrategyTypes(Enum):
     RSI_DIVERGANCE = 'RSI_DIVERGANCE'
@@ -32,13 +32,11 @@ class InsightState(Enum):
 
 class Insight:
     order_id: str = None
-    side: Literal['long', 'short'] = None  # buy or sell
+    side: OrderSide = None  # buy or sell
     symbol: str = None  # symbol to trade
     quantity: float = None  # quantity to trade
-    # market, limit, stop, stop_limit, trailing_stop
-    type: Literal['MARKET', 'LIMIT'] = None
-    classType: Literal['SIMPLE', 'BRACKET', 'OCO',
-                       'OTO'] = None  # simple, bracket, oco, oto
+    type: OrderType = None # market, limit, stop, stop_limit, trailing_stop
+    classType: OrderClass = None  # simple, bracket, oco, oto
     limit_price: List[float] = None  # price to enter at
     strategyType: StrategyTypes = None  # strategy type
     confidence: float = None  # confidence in insight
@@ -59,7 +57,8 @@ class Insight:
 
     marketChanged: bool = False
 
-    def __init__(self, side: str, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
+    def __init__(self, side: OrderSide, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
+        assert side in OrderSide, 'Invalid Order Side'
         self.side = side  # buy or sell
         self.symbol = symbol  # symbol to trade
         self.quantity = quantity  # quantity to trade
@@ -78,14 +77,14 @@ class Insight:
         self.updatedAt = datetime.now()
 
         if limit_price == None:
-            self.type = 'MARKET'
+            self.type = OrderType.MARKET
         else:
-            self.type = 'LIMIT'
+            self.type = OrderType.LIMIT
 
         if self.TP and self.SL:
-            self.classType = 'BRACKET'
+            self.classType = OrderClass.BRACKET
         else:
-            self.classType = 'SIMPLE'
+            self.classType = OrderClass.SIMPLE
         # check if the insight is valid except for manual or test insights
         if self.checkValidEntryInsight() and (self.strategyType != StrategyTypes.TEST or self.strategyType != StrategyTypes.MANUAL):
             print(f"Created Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {
@@ -97,7 +96,7 @@ class Insight:
     def __str__(self):
         if self.strategyType == StrategyTypes.MANUAL:
             return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ MARKET"
-        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - TTLUF/TTL: {str(self.periodUnfilled):^5}/{str(self.periodTillTp):^5} - UDA: {self.updatedAt}"
+        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price if self.limit_price else "MARKET"):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - TTLUF/TTL: {str(self.periodUnfilled):^5}/{str(self.periodTillTp):^5} - UDA: {self.updatedAt}"
 
     def updateState(self, state: InsightState, message: str = None):
         print(
@@ -147,14 +146,18 @@ class Insight:
         limit_price = limit_price if limit_price != None else self.limit_price
         if limit_price == None:
             return False
-        if self.TP and self.SL:
+        if self.SL:
             if (limit_price < self.SL and self.side == 'long') or (limit_price > self.SL and self.side == 'short'):
                 print("invalid entry insight: limit price is below the stop loss")
                 return False
+        if self.TP:
             for tp in self.TP:
                 if (limit_price > tp and self.side == 'long') or (limit_price < tp and self.side == 'short'):
                     print("invalid entry insight: limit price is above the take profit")
                     return False
+        if self.quantity != None or self.quantity <= 0:
+            print("invalid entry insight: quantity is invalid")
+            return False
         return True
 
     def hasExpired(self, shouldUpdateState: bool = False):

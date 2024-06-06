@@ -12,11 +12,10 @@ import timeit
 from collections import deque
 
 from ..broker.base_broker import BaseBroker
-from ..broker.interfaces import ISupportedBrokers
+from ..broker.interfaces import ISupportedBrokers, TradeUpdateEvent, Asset, IAccount, IPosition, IOrder
 
 from .sharedmemory import SharedStrategyManager
-
-from ..utils.interfaces import Asset, IAccount, IPosition, IOrder, IMarketDataStream, IStrategyMode
+from ..utils.interfaces import IMarketDataStream, IStrategyMode
 from ..utils.insight import Insight, InsightState
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.types import AttributeDict
@@ -47,7 +46,8 @@ class BaseStrategy(abc.ABC):
     VERBOSE: int = 0
 
     @abc.abstractmethod
-    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui=True, mode: IStrategyMode = IStrategyMode.LIVE) -> None:
+    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
+                 IStrategyMode = IStrategyMode.LIVE ) -> None:
         """Abstract class for strategy implementations."""
         self.NAME = self.__class__.__name__
         self.MODE = mode
@@ -59,25 +59,40 @@ class BaseStrategy(abc.ABC):
         assert TimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
-        # 4% of account per trade
-        state = self.state
-        # state['execution_risk'] = 0.01
-        # 2:1 Reward to Risk Ratio minimum
-        # state['RewardRiskRatio'] = 2.0
-        self.ACCOUNT = self.BROKER.get_account()
-        self.POSITIONS = self.BROKER.get_positions()
-
+       
+        
+        # set the UI shared memory sever
         if self.WITHUI:
             self._startUISharedMemory()
 
+        self._start()
+
+        # Load the universe
         self._loadUniverse()
         for asset in self.UNIVERSE.values():
             self.init(asset)
 
+        # Set backtesting configuration
+        if self.MODE == IStrategyMode.BACKTEST:
+            # check if the broker is paper
+            assert self.BROKER.NAME == ISupportedBrokers.PAPER, 'Backtesting is only supported with the paper broker'
+            # # change the broker to feed to backtest mode 
+            # self.BROKER.feed = IStrategyMode.BACKTEST
+            pass
+
+        self.ACCOUNT = self.BROKER.get_account()
+        self.POSITIONS = self.BROKER.get_positions()
+
+    @override
+    @abc.abstractmethod
+    def start(self):
+        """ Start the strategy. This method is called once at the start of the strategy."""
+        pass
+        
     @override
     @abc.abstractmethod
     def init(self, asset: Asset):
-        """ Initialize the strategy. This method is called once before the start of the strategy. """
+        """ Initialize the strategy. This method is called once before the start of the strategy on every asset in the universe."""
         pass
 
     @override
@@ -163,15 +178,10 @@ class BaseStrategy(abc.ABC):
                         insighStream = asyncio.run(self._insightListener())
 
                     except Exception as e:
+                        self.BROKER.closeTradeStream()
                         print(f'Exception from Threads: {e}')
                 loop.run_forever()
 
-            # with ThreadPoolExecutor(max_workers=3, thread_name_prefix="eventStream") as pool:
-
-                # marketDataSream = asyncio.create_task(self.BROKER.streamMarketData(self._on_bar, self.STREAMS), name='marketDataStream')
-                # self.BROKER.streamMarketData(self._on_bar, self.STREAMS)
-
-                # loop.run_forever()
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
             finally:
@@ -179,10 +189,48 @@ class BaseStrategy(abc.ABC):
                 # pool.shutdown(wait=False)
                 # loop.close()
                 exit(0)
+
+        
         elif self.MODE == IStrategyMode.BACKTEST:
             # Backtest
-            print('Backtest Mode - Not Implemented')
-            pass
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                print('Running Backtest')
+                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStreams") as pool:
+                    try:
+                        #  Trading data streams
+                        tradeStream = loop.run_in_executor(
+                            pool, self.BROKER.startTradeStream, self._on_trade_update)
+                        marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
+
+                        # UI Shared Memory Server
+                        if self.WITHUI:
+                            server = self.SSM.get_server()
+                            loop.run_in_executor(
+                                pool, server.serve_forever)
+                            print('UI Shared Memory Server started')
+
+                        #  Insight executor and listener
+                        insighStream = asyncio.run(self._insightListener())
+
+                    except Exception as e:
+                        self.BROKER.closeTradeStream()
+                        print(f'Exception from Threads: {e}')
+
+                # loop.run_forever()
+
+            except KeyboardInterrupt:
+                print("Interrupted execution by user")
+            finally:
+                self.teardown()
+                # pool.shutdown(wait=False)
+                # loop.close()
+            print('Backtest Completed')
+            # TODO: Add backtest results
+            exit(0)
+            
 
     def _startUISharedMemory(self):
         """ Starts the UI shared memory."""
@@ -240,12 +288,15 @@ class BaseStrategy(abc.ABC):
                     case InsightState.EXECUTED:
                         # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
                         if insight.order_id == orderdata['order_id']:
-                            if event == 'fill':
+                            if event == TradeUpdateEvent.FILL:
                                 # Update the insight with the filled price
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                                 break  # No need to continue
-
+                            
+                            if event == TradeUpdateEvent.CLOSED:
+                                self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
+                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
                             # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
                             if event == 'canceled':
                                 # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
@@ -259,7 +310,9 @@ class BaseStrategy(abc.ABC):
                         # Check if the position has been closed via SL or TP
                         if insight.symbol == orderdata['asset']['symbol']:
                             # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                            if (event == 'fill') and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or (insight.close_order_id != None and insight.close_order_id == orderdata['order_id'])):
+                            if (event == TradeUpdateEvent.FILL) and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or \
+                                                                    (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or \
+                                                                    (insight.order_id == orderdata['order_id'])):
                                 # Update the insight closed price
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
@@ -268,6 +321,17 @@ class BaseStrategy(abc.ABC):
             # 'Order not in universe'
             pass
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
+
+    def _start(self):
+        """ Start the strategy. """
+        assert callable(self.start), 'start must be a callable function'
+         # 1% of account per trade
+        print("Running start function")
+        self.state['execution_risk'] = 0.01
+        # 2:1 Reward to Risk Ratio minimum
+        self.state['RewardRiskRatio'] = 2.0
+
+        self.start()
 
     def _loadUniverse(self):
         """ Loads the universe of the strategy."""
@@ -305,10 +369,14 @@ class BaseStrategy(abc.ABC):
         """ format the bar stream to the strategy. """
         try:
             # set_index(['symbol', 'timestamp']
-            if bar == None:
+            if bar.empty:
                 print('Bar is None')
                 return
-            data = self.BROKER.format_on_bar(bar)
+            
+            if self.MODE != IStrategyMode.BACKTEST:
+                data = self.BROKER.format_on_bar(bar)
+            else:
+                data = bar
 
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
@@ -352,7 +420,7 @@ class BaseStrategy(abc.ABC):
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
         try:
-            order = self.BROKER.manage_insight_order(
+            order = self.BROKER.execute_insight_order(
                 insight, self.assets[insight.symbol])
             return order
         except BaseException as e:

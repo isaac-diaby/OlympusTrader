@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from .interfaces import ISupportedBrokers
 
-from ..utils.interfaces import Asset, IAccount, IOrder, IPosition
+from .interfaces import Asset, IAccount, IOrder, IPosition
 from ..utils.insight import Insight
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.interfaces import IMarketDataStream
@@ -51,7 +51,7 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def close_position(self, symbol: str, qty: int = None, percent: float = None) -> IOrder | None:
+    def close_position(self, symbol: str, qty: float = None, percent: float = None) -> IOrder | None:
         pass
 
     @override
@@ -63,11 +63,12 @@ class BaseBroker(abc.ABC):
     @override
     @abc.abstractmethod
     def get_orders(self) -> List[IOrder]:
+        """Get all orders"""
         pass
 
     @override
     @abc.abstractmethod
-    def get_order(self, order_id) -> IOrder:
+    def get_order(self, order_id) -> IOrder | None:
         pass
 
     @override
@@ -85,10 +86,13 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def manage_insight_order(self, insight: Insight, asset: Asset) -> IOrder | None:
+    def execute_insight_order(self, insight: Insight, asset: Asset) -> IOrder | None:
         """Manage insight order by planing entry and exit orders for a given insight"""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
+        
+        if not insight.checkValidEntryInsight():
+            raise ValueError("Invalid Entry Insight")
         # assert isinstance(asset, Asset), 'asset must be of type Asset object'
 
     @override
@@ -104,27 +108,18 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def streamMarketData(self, callback: Awaitable, Assets: List[IMarketDataStream]):
+    def streamMarketData(self, callback: Awaitable, assetStreams: List[IMarketDataStream]):
         """Listen to market data and call the callback function with the data"""
         pass
 
     @override
     @abc.abstractmethod
-    async def closeStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
+    async def closeStream(self,  assetStreams: List[IMarketDataStream]):
         pass
-    # @override
-    # @abc.abstractmethod
-    # def streamBar(self,  callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
-    #     pass
-
-    # @override
-    # @abc.abstractmethod
-    # def startStream(self, assetType: Literal['stock', 'crypto'], type: Literal['bars', 'quotes', 'trades'] = 'bars'):
-    #     pass
 
     @override
     @abc.abstractmethod
-    def format_on_bar(self, bar: Any) -> pd.DataFrame:
+    def format_on_bar(self, bar: Any) -> pd.DataFrame: #(data={}, index=[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
         """Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}"""
         pass
 

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 
-"""FROM ALPACA TIMEFRAME.PY """
+"""FROM ALPACA TIMEFRAME.PY but modified to be used for OlympusTrader framework"""
 
 
 class TimeFrameUnit(str, Enum):
@@ -153,6 +153,43 @@ class TimeFrame:
                 return time + timedelta(weeks=self.amount_value*periods)
             case TimeFrameUnit.Month:
                 return time + timedelta(months=self.amount_value*periods)
+            case _:
+                print("resolution Error: TimeFrameUnit not implemented")
+                return False
+            
+    def get_time_increment(self, time: datetime) -> datetime:
+        """ 
+        Get the current time increment
+        """
+        match self.unit_value:
+            case TimeFrameUnit.Minute:
+                return time - timedelta(minutes=time.minute % self.amount_value, seconds=time.second, microseconds=time.microsecond)
+            case TimeFrameUnit.Hour:
+                return time - timedelta(hours=time.hour % self.amount_value, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
+            case TimeFrameUnit.Day:
+                return time - timedelta(days=time.day % self.amount_value, hours=time.hour, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
+            case TimeFrameUnit.Week:
+                return time - timedelta(weeks=time.week % self.amount_value, days=time.day, hours=time.hour, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
+            case TimeFrameUnit.Month:
+                return time - timedelta(months=time.month % self.amount_value, weeks=time.week, days=time.day, hours=time.hour, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
+            case _:
+                print("resolution Error: TimeFrameUnit not implemented")
+                return False
+    def get_next_time_increment(self, time: datetime) -> datetime:
+        """ 
+        Get the next time increment
+        """
+        match self.unit_value:
+            case TimeFrameUnit.Minute:
+                return time + timedelta(minutes=self.amount_value - time.minute % self.amount_value, seconds=-time.second, microseconds=-time.microsecond)
+            case TimeFrameUnit.Hour:
+                return time + timedelta(hours=self.amount_value - time.hour % self.amount_value, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
+            case TimeFrameUnit.Day:
+                return time + timedelta(days=self.amount_value - time.day % self.amount_value, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
+            case TimeFrameUnit.Week:
+                return time + timedelta(weeks=self.amount_value - time.week % self.amount_value, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
+            case TimeFrameUnit.Month:
+                return time + timedelta(months=self.amount_value - time.month % self.amount_value, weeks=-time.week, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case _:
                 print("resolution Error: TimeFrameUnit not implemented")
                 return False

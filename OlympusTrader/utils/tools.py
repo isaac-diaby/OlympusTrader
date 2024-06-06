@@ -1,8 +1,7 @@
 import numpy
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..strategy.base_strategy import BaseStrategy
-# from OlympusTrader.strategy.base_strategy import BaseStrategy
+    from OlympusTrader.strategy.base_strategy import BaseStrategy
 
 from ..utils.insight import InsightState
 
@@ -63,3 +62,4 @@ if __name__ == '__main__':
     print(dynamic_round(122222222))  # 12.22
     print(dynamic_round(0.291))  # 0.25
     print(dynamic_round(0.000000001))  # 0.0
+    print(dynamic_round(5505999.68))

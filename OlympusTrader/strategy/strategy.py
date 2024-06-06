@@ -10,6 +10,10 @@ class Strategy(BaseStrategy):
         super().__init__(broker, **kwargs)
 
     @override
+    def start():
+        super().start()
+    
+    @override
     def init(self, asset):
         super().init()
 

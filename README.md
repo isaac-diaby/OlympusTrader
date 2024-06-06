@@ -23,9 +23,12 @@ from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
 from OlympusTrader import AlpacaBroker, Strategy
 
 class  QbitTB(Strategy):
+	def start(self): 
+		# Your strategy start point first thing that runs 
+		pass
 	def  init(self,  asset):
 		state =  self.state
-		self.addBar_events(asset)
+
 		pass
 		
 	def  universe(self):
@@ -57,11 +60,20 @@ class  QbitTB(Strategy):
 if __name__ ==  "__main__":
 	broker = AlpacaBroker(paper=True) # Set your broker  and paper to True for a demo account
 
-	strategy = QbitTB(broker,  {},  resolution=TimeFrame(1, TimeFrameUnit.Minute)) 
+	strategy = QbitTB(broker,  {},  resolution=TimeFrame(1, TimeFrameUnit.Minute),  ui=True) 
+	strategy.add_events('bar')
 	"""Add your broker, variables and resolution  to your strategy """
 	strategy.run() # To run your live/ demo account trade 
 ```
 That easy to get started !
+
+if you want to get started with backtesting your  strategy you can use the backtest flcg and the PaperBroker - with the same code!
+
+```py
+broker = PaperBroker(cash=1_000_000, start_date=datetime(2024, 5, 27), end_date=datetime(2024, 5, 31))
+    strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
+        1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.BACKTEST)
+```
 
 ## OlympusTrader.BaseStrategy  => OlympusTrader.Strategy
 The BaseStrategy has the for execution flow for a strategy but if you want to use it its recommended to use the Strategy class. 
@@ -94,8 +106,11 @@ Returns your open positions and includes information such as the average entry p
 ```self.orders ->  List[IOrder] type ``` 
 Returns a list of orders placed/canceled/ filled and meta data around it. 
 
-## init()
+## Start()
 This function is called once at the start of the startegy. You can use this function to init your strategy set state via ``` self.state``` and load historiacal data for the secuity asset with ```self.broker.get_history()```
+
+## init()
+This function is called for every asset in the universe at the start of the startegy. You can use this function to init your strategy set state via ``` self.state``` and load historiacal data for the secuity asset with ```self.broker.get_history()```
 
 ## universe()
 universe sets the security in play. Like quantconnect you can call this function to load assets data. it simply requires you to return a set of tickers that you want to load into your strategy. here you can build a stratey that filters the market to inly include specific requirement such as above average relative volume, market cap etc. 
