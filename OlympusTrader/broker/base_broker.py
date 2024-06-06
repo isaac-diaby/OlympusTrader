@@ -99,6 +99,7 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def startTradeStream(self, callback: Awaitable):
         """Listen to trades and order updates and call the callback function with the data"""
+        print("Start Trade Stream -", self.NAME)
         pass
 
     @override
@@ -110,6 +111,7 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def streamMarketData(self, callback: Awaitable, assetStreams: List[IMarketDataStream]):
         """Listen to market data and call the callback function with the data"""
+        print("Stream Market Data -", self.NAME)
         pass
 
     @override

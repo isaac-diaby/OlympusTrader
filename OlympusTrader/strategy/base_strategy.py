@@ -203,7 +203,9 @@ class BaseStrategy(abc.ABC):
                         #  Trading data streams
                         tradeStream = loop.run_in_executor(
                             pool, self.BROKER.startTradeStream, self._on_trade_update)
-                        marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
+                        marketDataStream = loop.run_in_executor(
+                            pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+                        # marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
 
                         # UI Shared Memory Server
                         if self.WITHUI:
@@ -253,6 +255,7 @@ class BaseStrategy(abc.ABC):
 
     async def _insightListener(self):
         """ Listen to the insights and manage the orders. """
+        print('Running Insight Listener')
         loop = asyncio.get_running_loop()
         while True:
             for symbol in self.INSIGHTS.keys():
@@ -364,6 +367,16 @@ class BaseStrategy(abc.ABC):
                         'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType))
             case _:
                 print(f"{eventType} Event not supported")
+
+    def add_insight(self, insight: Insight):
+        """ Adds an insight to the strategy."""
+        assert isinstance(
+            insight, Insight), 'insight must be of type Insight object'
+        
+        insight.set_mode(self.BROKER, self.MODE )
+
+
+        self.INSIGHTS[insight.symbol].append(insight)
 
     async def _on_bar(self, bar: Any):
         """ format the bar stream to the strategy. """

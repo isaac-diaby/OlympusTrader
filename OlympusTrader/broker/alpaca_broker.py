@@ -404,6 +404,7 @@ class AlpacaBroker(BaseBroker):
 
 
     def startTradeStream(self, callback: Awaitable):
+        super().startTradeStream(callback)
         self.trading_stream_client.subscribe_trade_updates(callback)
         self.trading_stream_client.run()
 
@@ -412,6 +413,7 @@ class AlpacaBroker(BaseBroker):
         self.trading_stream_client.close()
 
     def streamMarketData(self, callback: Awaitable, assetStreams):
+        super().streamMarketData(callback, assetStreams)
         StockStreamCount = 0
         CryptoStreamCount = 0
         barStreamCount = len(
