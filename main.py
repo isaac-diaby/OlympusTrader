@@ -82,10 +82,10 @@ class QbitTB(Strategy):
             asset, (datetime.now() - timedelta(days=3)), datetime.now(), self.resolution)
 
     def universe(self):
-        universe = {'BTC/USD'}
+        # universe = {'BTC/USD'}
 
-        # universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-        #             'MKR/USD', 'SHIB/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
+        universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
+                    'MKR/USD', 'SHIB/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
 
         # universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'DAI/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
         #             'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
@@ -105,7 +105,8 @@ class QbitTB(Strategy):
         if (len(self.state['history'][symbol]) < self.state['warm_up']):
             return
         # During back testing we need to update the history with the latest bar
-        self.state['history'][symbol] = self.state['history'][symbol].loc[~self.state['history'][symbol].index.duplicated(keep='first')]
+        self.state['history'][symbol] = self.state['history'][symbol].loc[~self.state['history']
+                                                                          [symbol].index.duplicated(keep='first')]
 
         self.state['history'][symbol].ta.strategy(self.state['TaStrategy'])
         # History Index(['close', 'high', 'low', 'open', 'volume', 'ATRr_14', 'MACD_16_36_9',
@@ -235,14 +236,16 @@ class QbitTB(Strategy):
             return
 
         # TEST
-        # if (len(self.insights[symbol]) == 0):
-        #     TP = self.tools.dynamic_round((latestBar.close + (latestIATR*10)), symbol)
-        #     SL = self.tools.dynamic_round((latestBar.close - (latestIATR*1.5)), symbol)
-        #     ENTRY = None
-        #     # ENTRY = previousBar.high if (abs(
-        #     #     previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
-        #     self.insights[symbol].append(Insight(OrderSide.BUY, symbol,
-        #                                          StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
+        if (len(self.insights[symbol]) == 0):
+            TP = self.tools.dynamic_round(
+                (latestBar.close + (latestIATR*10)), symbol)
+            SL = self.tools.dynamic_round(
+                (latestBar.close - (latestIATR*1.5)), symbol)
+            ENTRY = None
+            # ENTRY = previousBar.high if (abs(
+            #     previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+            self.add_insight(Insight(OrderSide.BUY, symbol,
+                                     StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
         # TODO: movethis into strategy tools
         def calculateTimeToLive(price, entry, ATR, additional=2):
@@ -263,8 +266,8 @@ class QbitTB(Strategy):
             # time to live till take profit
             TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
-            self.insights[symbol].append(Insight(OrderSide.BUY, symbol,
-                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
+            self.add_insight(Insight(OrderSide.BUY, symbol,
+                                     StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
         # RSA Divergance Short
         if (self.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short']) and marketState > 0):
             # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
@@ -279,8 +282,8 @@ class QbitTB(Strategy):
             # time to live till take profit
             TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
-            self.insights[symbol].append(Insight(OrderSide.SELL, symbol,
-                                                 StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
+            self.add_insight(Insight(OrderSide.SELL, symbol,
+                                     StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
 
         # EMA Crossover Long
         if ((latestBar['EMA_9'] < latestBar['close']) and (previousBar['EMA_9'] > previousBar['high']) and (np.abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState > 3):
@@ -297,8 +300,8 @@ class QbitTB(Strategy):
             # time to live till take profit
             TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
-            self.insights[symbol].append(Insight(OrderSide.BUY, symbol,
-                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
+            self.add_insight(Insight(OrderSide.BUY, symbol,
+                                     StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
         # EMA Crossover Short
         if (self.assets[symbol]['shortable'] and (latestBar['EMA_9'] > latestBar['close']) and (previousBar['EMA_9'] < previousBar['low']) and (np.abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState < -3):
             # print(
@@ -314,8 +317,8 @@ class QbitTB(Strategy):
             # time to live till take profit
             TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
-            self.insights[symbol].append(Insight(OrderSide.SELL, symbol,
-                                                 StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
+            self.add_insight(Insight(OrderSide.SELL, symbol,
+                                     StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
 
         return
 
@@ -558,7 +561,7 @@ class QbitTB(Strategy):
                         if e.args[0]["code"] == "already_filled":
                             # Order is already be canceled or filled
                             if (self.insights[symbol][i].state == InsightState.FILLED):
-                                #FIXME: best to get the order direcetly from the API to check if it is filled or not
+                                # FIXME: best to get the order direcetly from the API to check if it is filled or not
                                 self.insights[symbol][i].updateState(
                                     InsightState.FILLED, f"Already Filled")
                             else:
@@ -593,7 +596,8 @@ if __name__ == "__main__":
     #     1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     # Paper Broker for backtesting
-    broker = PaperBroker(cash=1_000_000, start_date=datetime(2024, 5, 27), end_date=datetime(2024, 5, 31))
+    broker = PaperBroker(cash=1_000_000, start_date=datetime(
+        2024, 5, 27), end_date=datetime(2024, 5, 28))
     strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
         1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.BACKTEST)
 

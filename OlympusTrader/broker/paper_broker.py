@@ -1,3 +1,4 @@
+import asyncio
 import os
 import datetime
 import numpy as np
@@ -156,6 +157,7 @@ class PaperBroker(BaseBroker):
             })
 
     def startTradeStream(self, callback):
+        super().startTradeStream(callback)
         self.RUNNING_TRADE_STREAM = True
         if self.MODE == IStrategyMode.BACKTEST:
             # TODO: trade stream for all of the pending, filled, canceled oerders.
@@ -482,8 +484,9 @@ class PaperBroker(BaseBroker):
             raise NotImplementedError(
                 f'DataFeed {self.DataFeed} not supported')
 
-    async def streamMarketData(self, callback, assetStreams):
+    def streamMarketData(self, callback, assetStreams):
         """Listen to market data and call the callback function with the data"""
+        super().streamMarketData(callback, assetStreams)
         if self.MODE == IStrategyMode.BACKTEST:
             # Load Market data from yfinance for all assets
             self.HISTORICAL_DATA = {}
@@ -512,7 +515,7 @@ class PaperBroker(BaseBroker):
                         if asset['type'] == 'bar':
                             barData = self._get_current_bar(asset['symbol'])
                             if not barData.empty:
-                                await callback(barData)
+                                asyncio.run(callback(barData))
                         else:
                             print('DataFeed not supported')
 

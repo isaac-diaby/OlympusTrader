@@ -18,6 +18,5 @@ class IMarketDataStream(TypedDict):
 
 class IStrategyMode(Enum):
     BACKTEST = 'Backtest'
-    PAPER = 'Paper'
     LIVE = 'Live'
 
