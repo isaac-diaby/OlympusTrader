@@ -1,6 +1,7 @@
 import asyncio
 import os
 import datetime
+from types import NoneType
 import numpy as np
 from typing import List, Literal
 from collections import deque
@@ -513,11 +514,18 @@ class PaperBroker(BaseBroker):
                     print("streaming data for ", self.CURRENT)
                     for asset in assetStreams:
                         if asset['type'] == 'bar':
-                            barData = self._get_current_bar(asset['symbol'])
-                            if barData.empty:
+                            try:
+                                barData = self._get_current_bar(asset['symbol'])
+                                if type(barData) == NoneType:
+                                    continue
+                                elif barData.empty:
+                                    continue
+                                else:
+                                    asyncio.run(callback(barData))
+
+                            except Exception as e:
+                                print("Error: ", e)
                                 continue
-                            
-                            asyncio.run(callback(barData))
                         else:
                             print('DataFeed not supported')
 
