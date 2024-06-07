@@ -23,43 +23,17 @@ class QbitTB(Strategy):
         state["technical_indicators"] = {
             'IATR': {'period': 14},
             'IRSI': {'period': 14},
-            'IMACD': {'short_period': 16, 'long_period': 32, 'signal_period': 9},
-            'IVWMA': None,
-            'ISMA': None,
-            'IEMA': None,
-            'IBBANDS': None,
-            'IVP': None,
-            'IPVO': None,
         }
         state['TaStrategy'] = ta.Strategy(
             name=f"TAVLM23",
-            description="Using TA, Volume/Momentum Spikes and Dominating Price action to place low risk positions from extened price movement.",
+            description="simple RSI OB/OS",
             ta=[
-                {"kind": 'atr', "length": 14},  # , "col_names": ('IATR',)},
-                # , "col_names": ('IMACD', 'IMACDh', 'IMACDs')},
-                {"kind": 'macd', "fast": 16, "slow": 36, "signal": 9},
-                {"kind": 'vwma', "length": 20},  # "col_name": ('IVWMA',)},
-                # {"kind": 'vwap', "length": 20, "col_name": ('IVWAP',)},
-                # , "col_names": ('IBASELINE',)},
-                {"kind": 'sma', "length": 200},
-                # , "col_names": ('IBBL', 'IBBM', 'IBBU', 'IBBB', 'IBBP')},
-                {"kind": 'bbands', "length": 16, "std": 2},
-                {"kind": 'ema', "length": 9},  # , "col_names": ('IEMA',)},
-                # , "col_name": ('IRSI',)},
+                {"kind": 'atr', "length": 14},
                 {"kind": 'rsi', "length": 14, "scalar": 10},
-                {"kind": 'mfi', "length": 14},  # , "col_names": ('IMFI',)},
-                # , "col_names": ('IPVO', 'IPVOh', 'IPVOs')},
-                {"kind": 'pvo', "fast": 9, "slow": 50, "signal": 9},
-                {"kind": 'vp', "width": 14},  # , "col_names": ('IVP',)},
-                # , "col_names": ('IVOL',)},
-                {'kind': 'sma', 'close': 'volume', 'length': 32},
             ]
 
         )
-        state['warm_up'] = 200
-        # set window sizes
-        state['local_window'] = 1
-        state['divergance_window'] = 50
+        state['warm_up'] = 14
         # 4% of account per trade
         state['execution_risk'] = 0.04
         # 2:1 Reward to Risk Ratio minimum
@@ -68,7 +42,6 @@ class QbitTB(Strategy):
 
     def init(self, asset):
         state = self.state
-
         # inital market state
         if (state.get('market_state') == None):
             state['market_state'] = {}
@@ -79,22 +52,10 @@ class QbitTB(Strategy):
             state['history'] = {}
 
         state['history'][asset['symbol']] = self.broker.get_history(
-            asset, (datetime.now() - timedelta(days=3)), datetime.now(), self.resolution)
+            asset, (datetime.now() - timedelta(minutes=125)), datetime.now(), self.resolution)
 
     def universe(self):
-        # universe = {'BTC/USD'}
-
-        universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-                    'MKR/USD', 'SHIB/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
-
-        # universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'DAI/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-        #             'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
-
-        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
-
-        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
-        #             'IHG', 'NVDA', 'TRIP', 'BTC/USD', 'ETH/USD', 'LINK/USD'}
-
+        universe = {'TSLA'}
         return universe
 
     def on_bar(self, symbol, bar):
@@ -109,100 +70,21 @@ class QbitTB(Strategy):
                                                                           [symbol].index.duplicated(keep='first')]
 
         self.state['history'][symbol].ta.strategy(self.state['TaStrategy'])
-        # History Index(['close', 'high', 'low', 'open', 'volume', 'ATRr_14', 'MACD_16_36_9',
-        #     'MACDh_16_36_9', 'MACDs_16_36_9', 'VWMA_20', 'SMA_200', 'BBL_16_2.0',
-        #     'BBM_16_2.0', 'BBU_16_2.0', 'BBB_16_2.0', 'BBP_16_2.0', 'EMA_9',
-        #     'RSI_14', 'MFI_14', 'PVO_9_50_9', 'PVOh_9_50_9', 'PVOs_9_50_9',
-        #     'low_close', 'mean_close', 'high_close', 'pos_volume', 'neg_volume',
-        #     'total_volume', 'SMA_32'],
-        #     dtype='object')
 
-        # try:
-        # Compute Local Points of Control
-        self.computeLocalPointsOfControl(symbol)
-        # Compute RSI Divergance
-        self.computeRSIDivergance(symbol)
         # Compute Market State
         self.computeMarketState(symbol)
 
         # Execute Orders If there should be any
         self.generateInsights(symbol)  # self.insights[symbol]
 
-        # except Exception as e:
-        #     print(f"Error: {e}")
-        #     raise e
 
-    def computeLocalPointsOfControl(self, symbol: str):
-        window = self.state['local_window']
-        history = self.state['history'][symbol]
-        viewColumn = 'close'
-        history.loc[[symbol], ['local_max_poc']] = history[viewColumn][(
-            history[viewColumn].shift(window) < history[viewColumn]) & (history[viewColumn].shift(-window) < history[viewColumn]
-                                                                        )]
-        history.loc[[symbol], ['local_min_poc']] = history[viewColumn][(
-            history[viewColumn].shift(window) > history[viewColumn]) & (history[viewColumn].shift(-window) > history[viewColumn]
-                                                                        )]
-        return history
-
-    def computeRSIDivergance(self, symbol: str):
-        window = self.state['divergance_window']
-        # remove first 14 rows for RSI Warmup
-        history = self.state['history'][symbol]
-        IRSI = history['RSI_14']
-
-        # Long Divergance - RSI is Increasing while price is Decreasing
-        self.state['history'][symbol].loc[:, 'RSI_Divergance_Long'] = np.nan
-        # only use local lows of point of control for reversal
-        longPivot = history['local_min_poc'].dropna()
-        lowerLowsPivots = longPivot.loc[longPivot.shift(1) > longPivot]
-
-        for index, price in lowerLowsPivots[-1:-window:-1].items():
-            _, *previousLocalPoC = longPivot.loc[index: (index[0], index[1]-timedelta(
-                minutes=self.state['divergance_window'])): -1].items()
-            if (len(previousLocalPoC) == 0):
-                continue
-            lastLowIndex, lastPrice = previousLocalPoC[0]
-            if (IRSI.loc[lastLowIndex] < IRSI.loc[index]):
-                #    print(f"Long Divergance PIVOT at Index: {index} - From Index: {lastLowIndex}: {lastPrice:10} -> {price} - From RSI: {IRSI.iloc[lastLowIndex-IRSI_period]} -> {IRSI.iloc[index-IRSI_period]:10}")
-                # the difference between the two points of control / the price difference for ATR use
-                self.state['history'][symbol].loc[index, [
-                    'RSI_Divergance_Long']] = lastPrice-price
-
-        # Bearish divergence - RSI is Decreasing while price is Increasing
-        self.state['history'][symbol].loc[:, 'RSI_Divergance_Short'] = np.nan
-        # only use local maximas of point of control for reversal
-        shortPivot = history['local_max_poc'].dropna()
-        higherHighsPivots = shortPivot.loc[shortPivot.shift(1) < shortPivot]
-
-        for index, price in higherHighsPivots[-1:-window:-1].items():
-            _, *previousLocalPoC = shortPivot.loc[index: (index[0], index[1]-timedelta(
-                minutes=self.state['divergance_window'])): -1].items()
-            if (len(previousLocalPoC) == 0):
-                continue
-            lastHighIndex, lastPrice = previousLocalPoC[0]
-            if (IRSI.loc[lastHighIndex] > IRSI.loc[index]):
-                # print(f"Short Divergance PIVOT at Index: {index} - From Index: {lastHighIndex}: {lastPrice:10} -> {price} - From RSI: {IRSI.iloc[lastHighIndex-IRSI_period]} -> {IRSI.iloc[index-IRSI_period]:10}")
-                self.state['history'][symbol].loc[index, [
-                    'RSI_Divergance_Short']] = price-lastPrice
-
-        return history
 
     def computeMarketState(self, symbol: str):
         marketState = self.state['market_state'][symbol]
         history = self.state['history'][symbol]
-        IMACD = history[['MACD_16_36_9', 'MACDh_16_36_9', 'MACDs_16_36_9']]
         IRSI = history['RSI_14']
-        # print(f"MACD: {IMACD.iloc[-1]}, {IMACD.iloc[-1, 0]}, {IMACD.iloc[-1, 1]}, {IMACD.iloc[-1, 2]}")
-        # print(f"RSI: {IRSI.iloc[-1]}")
+
         marketState = 0
-        if ((IMACD.iloc[-1, 0] > 0)):  # MACD value and  # MACD histogram are both positive
-            marketState += 3
-        elif ((IMACD.iloc[-1, 0] < 0)):  # MACD value and  # MACD histogram are both positive
-            marketState -= 3
-        # if ((IMACD.iloc[-1, 0] > 0) and (IMACD.iloc[-1, 2] < 0)):  # MACD value and  # MACD histogram are both positive
-        #     marketState += 3
-        # elif ((IMACD.iloc[-1, 0] < 0) and (IMACD.iloc[-1, 2] > 0)): # MACD value and  # MACD histogram are both positive
-        #     marketState -= 3
         if (IRSI.iloc[-1] < 30):
             marketState += 2
         elif (IRSI.iloc[-1] > 70):
@@ -216,9 +98,7 @@ class QbitTB(Strategy):
                 marketState += 1
             elif (marketState < 0):
                 marketState -= 1
-
-        # print(f"{symbol} Market State: {marketState}, MACD: {IMACD.iloc[-1, 0]}, RSI: {IRSI.iloc[-1]}")
-        marketState = min(max(marketState, -5), 5)
+        marketState = np.minimum(np.maximum(marketState, -5), 5)
         self.state['market_state'][symbol] = marketState
         return marketState
 
@@ -252,9 +132,8 @@ class QbitTB(Strategy):
             """Calculate the time to live for a given price and entry based on the ATR"""
             return ((np.abs(price - entry)) / ATR)+2
 
-        # RSA Divergance Long
-        if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
-            # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
+        if (latestBar['RSI_14'] < 30):
+            # print(f"Insight - {symbol}: Long RSI: {latestBar['RSI_14']}")
             TP = self.tools.dynamic_round(
                 (latestBar.close + (latestIATR*3.5)), symbol)
             SL = self.tools.dynamic_round(
@@ -267,58 +146,22 @@ class QbitTB(Strategy):
             TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.add_insight(Insight(OrderSide.BUY, symbol,
-                                     StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
-        # RSA Divergance Short
-        if (self.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short']) and marketState > 0):
-            # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
+                                     StrategyTypes.RSI, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
+
+        if (latestBar['RSI_14'] > 70):
+            # print(f"Insight - {symbol}: Short RSI: {latestBar['RSI_14']}")
             TP = self.tools.dynamic_round(
                 (latestBar.close - (latestIATR*3.5)), symbol)
             SL = self.tools.dynamic_round(
                 (latestBar.close + (latestIATR*1.5)), symbol)
             ENTRY = previousBar.low if (abs(
-                previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+                previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open-(.2*latestIATR)), symbol)
             # time to live unfilled
             TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
             TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
-
             self.add_insight(Insight(OrderSide.SELL, symbol,
-                                     StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
-
-        # EMA Crossover Long
-        if ((latestBar['EMA_9'] < latestBar['close']) and (previousBar['EMA_9'] > previousBar['high']) and (np.abs(latestBar['close'] - latestBar['EMA_9']) < latestBar['ATRr_14']) and marketState > 3):
-            # print(
-            #     f"Insight - {symbol}: Long EMA Crossover: EMA:{latestBar['EMA_9']} < {latestBar['close']}")
-            TP = self.tools.dynamic_round(max(latestBar['BBU_16_2.0']+(latestIATR*1.5),
-                                              (latestBar['high']+(latestIATR*3.5))), symbol)
-            SL = self.tools.dynamic_round(
-                max(previousBar['low']-(.5*latestIATR), latestBar['EMA_9']-latestIATR*1.5), symbol)
-            ENTRY = self.tools.dynamic_round(
-                latestBar['EMA_9'], symbol)  # pullback
-            # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
-            # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
-
-            self.add_insight(Insight(OrderSide.BUY, symbol,
-                                     StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
-        # EMA Crossover Short
-        if (self.assets[symbol]['shortable'] and (latestBar['EMA_9'] > latestBar['close']) and (previousBar['EMA_9'] < previousBar['low']) and (np.abs(latestBar['EMA_9'] - latestBar['close']) < latestBar['ATRr_14']) and marketState < -3):
-            # print(
-            #     f"Insight - {symbol}: Short EMA Crossover: EMA:{latestBar['EMA_9']} > {latestBar['close']}")
-            TP = self.tools.dynamic_round(min(latestBar['BBL_16_2.0']-(latestIATR*1.5),
-                                              (latestBar['low']-(latestIATR*3.5))), symbol)
-            SL = self.tools.dynamic_round(min(previousBar['high'] +
-                                              (.5*latestIATR),  latestBar['EMA_9']+latestIATR*1.5), symbol)
-            ENTRY = self.tools.dynamic_round(
-                latestBar['EMA_9'], symbol)  # pullback
- # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
-            # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
-
-            self.add_insight(Insight(OrderSide.SELL, symbol,
-                                     StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
+                                     StrategyTypes.RSI, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
 
         return
 
@@ -354,28 +197,13 @@ class QbitTB(Strategy):
                             self.insights[symbol][i].updateState(
                                 InsightState.REJECTED, f"Low RR: {RR}")
                             continue
-                        #             insight.symbol, 'buy', abs(holding.available))
-                        # calculate number of shares from cash according to risk of 2 percent
 
                         if (insight.quantity == None):
-                            # if (self.assets[symbol]['asset_type'] == 'stock'):
-                            #     diluted_account_margin_size = self.account['buying_power'] * \
-                            #         insight.confidence
-                            #     account_size_at_risk = self.account['cash'] * (
-                            #         insight.confidence*RISK)
-                            # if (self.assets[symbol]['asset_type'] == 'crypto'):
-                            # diluted_account_margin_size = self.account['cash'] * (
-                            #     insight.confidence)
-                            # account_size_at_risk = self.account['cash'] * (
-                            #     insight.confidence*RISK)
-                            diluted_account_margin_size = self.account['cash'] * (
+
+                            diluted_account_margin_size = self.account['buying_power'] * (
                                 insight.confidence)
                             account_size_at_risk = self.account['cash'] * (
                                 insight.confidence*RISK)
-
-                            if (diluted_account_margin_size > 200000):
-                                # Max 200k per trade Alapaca
-                                diluted_account_margin_size = 200000
 
                             riskPerShare = abs(
                                 self.insights[symbol][i].limit_price - insight.SL)
@@ -409,10 +237,9 @@ class QbitTB(Strategy):
                         # Print Insight Before Submitting Order
                         print(self.insights[symbol][i])
 
-                        if (self.positions.get((insight.symbol).replace('/', '')) != None):
+                        if (self.positions.get((insight.symbol)) != None):
                             # Check if there is a position open in the opposite direction
-                            holding = self.positions[(
-                                insight.symbol).replace('/', '')]
+                            holding = self.positions[insight.symbol]
                             # Close position if holding is in the opposite direction of insight
                             if (holding != None or len(holding) != 0):
                                 if (holding['side'] != insight.side):
@@ -527,17 +354,7 @@ class QbitTB(Strategy):
 
                         if (closeOrder):
                             self.insights[symbol][i].close_order_id = closeOrder['order_id']
-                        # match self.assets[symbol]['asset_type']:
-                        #     case 'stock':
-                        #         closeOrder = self.broker.close_position(insight.symbol, qty=insight.quantity)
-                        #     case 'crypto':
-                        #         # Send a Market order to close the position manually
-                        #         closeOrder = self.submit_order(Insight('long' if (insight.side == OrderSide.SELL) else OrderSide.SELL, insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
 
-                        # if (closeOrder):
-                        #     self.insights[symbol][i].updateState(InsightState.CLOSED, f"{cause}: {insight.side:^8}: {insight.limit_price} -> {insight.TP[0]} -> {latestBar.high  if (insight.side == 'long') else latestBar.low}, WON: ${insight.quantity*(insight.TP[0] - insight.limit_price)}")
-
-                    # TODO: check if the trade needs to lower risk by moving stop loss
                     continue
                 case InsightState.CLOSED:
 
@@ -591,15 +408,15 @@ class QbitTB(Strategy):
 if __name__ == "__main__":
 
     # Live broker
-    broker = AlpacaBroker(paper=True)
-    strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-        1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
+    # broker = AlpacaBroker(paper=True)
+    # strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
+    #     1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     # Paper Broker for backtesting
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 27), end_date=datetime(2024, 5, 28))
-    # strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-    #     1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.BACKTEST)
+    broker = PaperBroker(cash=1_000_000, start_date=datetime(
+        2024, 5, 27), end_date=datetime(2024, 5, 28))
+    strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
+        1, TimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 
     strategy.add_events('bar')
 

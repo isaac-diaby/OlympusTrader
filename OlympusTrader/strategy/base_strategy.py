@@ -225,11 +225,13 @@ class BaseStrategy(abc.ABC):
 
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
+                
             finally:
                 self.teardown()
                 # pool.shutdown(wait=False)
                 # loop.close()
             print('Backtest Completed')
+            print("Account:", self.ACCOUNT)
             # TODO: Add backtest results
             exit(0)
             
@@ -350,8 +352,8 @@ class BaseStrategy(abc.ABC):
         symbol = s.upper()
         assetInfo = self.BROKER.get_ticker_info(symbol)
         if assetInfo and assetInfo['status'] == 'active' and assetInfo['tradable']:
-            self.UNIVERSE[symbol] = assetInfo
-            self.INSIGHTS[symbol] = []
+            self.UNIVERSE[assetInfo['symbol']] = assetInfo
+            self.INSIGHTS[assetInfo['symbol']] = []
 
             print(
                 f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')

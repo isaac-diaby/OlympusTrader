@@ -65,6 +65,7 @@ class PaperBroker(BaseBroker):
             self.CURRENT = self.START_DATE
             self.ACCOUNT_HISTORY = {self.CURRENT: self.Account}
             self.BACKTEST_FlOW_CONTROL_BARRIER = threading.Barrier(2)
+            self.BACKTEST_FlOW_CONTROL_BARRIER.reset()
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
 
@@ -104,7 +105,8 @@ class PaperBroker(BaseBroker):
             symbol = asset['symbol'].replace('/', '-')
             formatTF = f'{resolution.amount}{resolution.unit.value[0].lower()}'
             if self.MODE == IStrategyMode.BACKTEST:
-                delta: datetime.timedelta = start - self.CURRENT if shouldDelta else datetime.timedelta()
+                delta: datetime.timedelta = start - \
+                    self.CURRENT if shouldDelta else datetime.timedelta()
                 # print("start: ", self.CURRENT-start, "end: ", self.CURRENT-end)
                 data = yf.download(
                     symbol, start=resolution.get_time_increment(start-delta), end=resolution.get_time_increment(end-delta), interval=formatTF)
@@ -163,14 +165,15 @@ class PaperBroker(BaseBroker):
         if self.MODE == IStrategyMode.BACKTEST:
             # TODO: trade stream for all of the pending, filled, canceled oerders.
             while self.CURRENT <= self.END_DATE and self.RUNNING_TRADE_STREAM:
-                try: 
+                try:
                     print("pending: ", len(self.PENDING_ORDERS),
-                        "active: ", len(self.ACTIVE_ORDERS),
-                        "closed: ", len(self.CLOSE_ORDERS),
-                        "canceled: ", len(self.CANCELED_ORDERS))
-                    
+                          "active: ", len(self.ACTIVE_ORDERS),
+                          "closed: ", len(self.CLOSE_ORDERS),
+                          "canceled: ", len(self.CANCELED_ORDERS))
+
                     for i, order in enumerate(self.PENDING_ORDERS):
-                        currentBar = self._get_current_bar(order['asset']['symbol'])
+                        currentBar = self._get_current_bar(
+                            order['asset']['symbol'])
                         if order['created_at'] == self.CURRENT:
                             order['status'] = TradeUpdateEvent.NEW
                             callback(TradeUpdate(order, TradeUpdateEvent.NEW))
@@ -181,7 +184,8 @@ class PaperBroker(BaseBroker):
                             order['filled_at'] = self.CURRENT
                             order['updated_at'] = self.CURRENT
                             self._update_order(order)
-                            callback(TradeUpdate(order, TradeUpdateEvent.FILLED))
+                            callback(TradeUpdate(
+                                order, TradeUpdateEvent.FILLED))
 
                         elif order['type'] == OrderType.LIMIT:
                             if order['limit_price'] >= currentBar['low'] and order['limit_price'] <= currentBar['high']:
@@ -197,7 +201,8 @@ class PaperBroker(BaseBroker):
                         # update the position information as the position is filled and keep track of all  positions PNL
                         self._update_position(order['asset']['symbol'])
 
-                        currentBar = self._get_current_bar(order['asset']['symbol'])
+                        currentBar = self._get_current_bar(
+                            order['asset']['symbol'])
 
                         # check if the order has take profit or stop loss
                         if order['legs']:
@@ -210,7 +215,7 @@ class PaperBroker(BaseBroker):
                                     take_profit['status'] = TradeUpdateEvent.CLOSED
                                     take_profit['filled_at'] = self.CURRENT
                                     take_profit['updated_at'] = self.CURRENT
-                                    
+
                                     order['stop_price'] = take_profit['limit_price']
                                     order['updated_at'] = self.CURRENT
                                     order['status'] = TradeUpdateEvent.CLOSED
@@ -241,16 +246,19 @@ class PaperBroker(BaseBroker):
                     for order in self.CLOSE_ORDERS:
                         # update the position information as the position is filled and keep track of all  positions PNL
                         self._update_position(order['asset']['symbol'])
-                        currentBar = self._get_current_bar(order['asset']['symbol'])
+                        currentBar = self._get_current_bar(
+                            order['asset']['symbol'])
                         order['stop_price'] = currentBar['open']
                         order['status'] = TradeUpdateEvent.CLOSED
                         order['filled_at'] = self.CURRENT
                         order['updated_at'] = self.CURRENT
                         self._update_order(order)
                         callback(TradeUpdate(
-                                        order, TradeUpdateEvent.CLOSED))
+                            order, TradeUpdateEvent.CLOSED))
 
                     self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+                except threading.BrokenBarrierError:
+                    continue
                 except Exception as e:
                     print("Error: ", e)
                     continue
@@ -461,7 +469,8 @@ class PaperBroker(BaseBroker):
     def format_on_bar(self, bar, symbol: str):
         if self.DataFeed == 'yf':
             assert symbol, 'Symbol must be provided when using yf data feed - format_on_bar()'
-            index = pd.MultiIndex.from_product([[symbol], bar.index], names=['symbol', 'date'])
+            index = pd.MultiIndex.from_product(
+                [[symbol], bar.index], names=['symbol', 'date'])
 
             bar = pd.DataFrame(data={
                 'open': bar['Open'].values,
@@ -498,8 +507,18 @@ class PaperBroker(BaseBroker):
                     # populate HISTORICAL_DATA
                     # get_history method
                     if self.DataFeed == 'yf':
-                        self.HISTORICAL_DATA[asset['symbol']]['bar'] = self.get_history(
-                            asset, self.START_DATE, self.END_DATE, asset['time_frame'], False)
+                        try:
+                            self.HISTORICAL_DATA[asset['symbol']]['bar'] = self.get_history(
+                                asset, self.START_DATE, self.END_DATE, asset['time_frame'], False)
+                            if self.HISTORICAL_DATA[asset['symbol']]['bar'].empty:
+                                raise BaseException({
+                                    "code": "no_data",
+                                    "data": {"symbol": asset['symbol']}
+                                })
+                        except Exception as e:
+                            print("Error: ", e)
+                            assetStreams.remove(asset)
+                            continue
                     else:
                         print('DataFeed not supported')
                 else:
@@ -515,12 +534,14 @@ class PaperBroker(BaseBroker):
                     for asset in assetStreams:
                         if asset['type'] == 'bar':
                             try:
-                                barData = self._get_current_bar(asset['symbol'])
+                                barData = self._get_current_bar(
+                                    asset['symbol'])
                                 if type(barData) == NoneType:
                                     continue
                                 elif barData.empty:
                                     continue
                                 else:
+                                    # callback(barData)
                                     asyncio.run(callback(barData))
 
                             except Exception as e:
@@ -610,10 +631,12 @@ class PaperBroker(BaseBroker):
     def _get_current_bar(self, symbol: str):
         if self.MODE == IStrategyMode.BACKTEST:
             if symbol in self.HISTORICAL_DATA:
-                current_time = self.CURRENT.replace(tzinfo=datetime.timezone.utc)
+                current_time = self.CURRENT.replace(
+                    tzinfo=datetime.timezone.utc)
                 try:
                     idx = pd.IndexSlice
-                    currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol, current_time:current_time], :]
+                    currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol,
+                                                                             current_time:current_time], :]
                     return currentBar
                 except KeyError:
                     return None
@@ -624,6 +647,7 @@ class PaperBroker(BaseBroker):
                 })
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
+
 
 if __name__ == '__main__':
     # os.path.join(os.path.dirname(__file__), 'data')
