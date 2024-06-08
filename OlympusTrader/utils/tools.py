@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from OlympusTrader.strategy.base_strategy import BaseStrategy
@@ -15,11 +15,15 @@ class TradingTools():
     def dynamic_round(self, v: float, symbol: str) -> float:
         """Round float depending on log10 decimal places"""
         if "price_base" not in self.STRATEGY.assets[symbol] or self.STRATEGY.assets[symbol]["price_base"] == None:
-            dynamic_precision = numpy.abs(
-                int(numpy.log10(self.STRATEGY.assets[symbol]["min_price_increment"])))
+            dynamic_precision = np.abs(
+                int(np.log10(self.STRATEGY.assets[symbol]["min_price_increment"])))
             self.STRATEGY.UNIVERSE[symbol]["price_base"] = dynamic_precision+2
 
         return round(v, self.STRATEGY.UNIVERSE[symbol]["price_base"])
+    # TODO: movethis into strategy tools
+    def calculateTimeToLive(self, price, entry, ATR, additional=2):
+        """Calculate the time to live for a given price and entry based on the ATR"""
+        return np.ceil((np.abs(price - entry)) / ATR)+additional
     
     def get_unrealized_pnl(self, symbol: str) -> float:
         """Calculate unrealized PnL for a given symbol"""
