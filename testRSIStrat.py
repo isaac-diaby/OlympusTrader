@@ -25,7 +25,7 @@ class QbitTB(Strategy):
             'IRSI': {'period': 14},
         }
         state['TaStrategy'] = ta.Strategy(
-            name=f"TAVLM23",
+            name=f"RSI_OB/OS",
             description="simple RSI OB/OS",
             ta=[
                 {"kind": 'atr', "length": 14},
@@ -55,7 +55,9 @@ class QbitTB(Strategy):
             asset, (datetime.now() - timedelta(minutes=125)), datetime.now(), self.resolution)
 
     def universe(self):
-        universe = {'TSLA'}
+        universe = {'btc-usd', 'eth-usd', 'xrp-usd'}
+        # universe = {'btc-usd', 'eth-usd', 'xrp-usd', 'ada-usd'}
+        # universe = {'TSLA'}
         return universe
 
     def on_bar(self, symbol, bar):
@@ -66,8 +68,8 @@ class QbitTB(Strategy):
         if (len(self.state['history'][symbol]) < self.state['warm_up']):
             return
         # During back testing we need to update the history with the latest bar
-        self.state['history'][symbol] = self.state['history'][symbol].loc[~self.state['history']
-                                                                          [symbol].index.duplicated(keep='first')]
+        self.state['history'][symbol][self.state['history']
+                                      [symbol].index.duplicated(keep='first')]
 
         self.state['history'][symbol].ta.strategy(self.state['TaStrategy'])
 
@@ -76,8 +78,6 @@ class QbitTB(Strategy):
 
         # Execute Orders If there should be any
         self.generateInsights(symbol)  # self.insights[symbol]
-
-
 
     def computeMarketState(self, symbol: str):
         marketState = self.state['market_state'][symbol]
@@ -114,54 +114,39 @@ class QbitTB(Strategy):
         # Do not trade if market state is 0
         if (marketState == 0):
             return
+        
 
-        # TEST
-        # if (len(self.insights[symbol]) == 0):
-        #     TP = self.tools.dynamic_round(
-        #         (latestBar.close + (latestIATR*10)), symbol)
-        #     SL = self.tools.dynamic_round(
-        #         (latestBar.close - (latestIATR*1.5)), symbol)
-        #     ENTRY = None
-        #     # ENTRY = previousBar.high if (abs(
-        #     #     previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
-        #     self.add_insight(Insight(OrderSide.BUY, symbol,
-        #                              StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
-
-        # TODO: movethis into strategy tools
-        def calculateTimeToLive(price, entry, ATR, additional=2):
-            """Calculate the time to live for a given price and entry based on the ATR"""
-            return ((np.abs(price - entry)) / ATR)+2
-
-        if (latestBar['RSI_14'] < 30):
+        if (latestBar['RSI_14'] < 30 and marketState > 0):
             # print(f"Insight - {symbol}: Long RSI: {latestBar['RSI_14']}")
             TP = self.tools.dynamic_round(
-                (latestBar.close + (latestIATR*3.5)), symbol)
+                (latestBar.close + (latestIATR*6)), symbol)
             SL = self.tools.dynamic_round(
                 (latestBar.close - (latestIATR*1.5)), symbol)
             ENTRY = previousBar.high if (abs(
                 previousBar.high - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
             # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
+            TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.add_insight(Insight(OrderSide.BUY, symbol,
-                                     StrategyTypes.RSI, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
+                                     "RSI_OS", self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
 
-        if (latestBar['RSI_14'] > 70):
+        if (latestBar['RSI_14'] > 70 and marketState < 0):
             # print(f"Insight - {symbol}: Short RSI: {latestBar['RSI_14']}")
             TP = self.tools.dynamic_round(
-                (latestBar.close - (latestIATR*3.5)), symbol)
+                (latestBar.close - (latestIATR*6)), symbol)
             SL = self.tools.dynamic_round(
                 (latestBar.close + (latestIATR*1.5)), symbol)
             ENTRY = previousBar.low if (abs(
                 previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open-(.2*latestIATR)), symbol)
             # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
+            TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
+            
             self.add_insight(Insight(OrderSide.SELL, symbol,
-                                     StrategyTypes.RSI, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
+                                     "RSI_OB", self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
 
         return
 
@@ -416,8 +401,11 @@ if __name__ == "__main__":
     broker = PaperBroker(cash=1_000_000, start_date=datetime(
         2024, 5, 27), end_date=datetime(2024, 5, 28))
     strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-        1, TimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+        1, TimeFrameUnit.Minute), verbose=1, ui=False, mode=IStrategyMode.BACKTEST)
 
-    strategy.add_events('bar')
+    # strategy.add_events('bar')
+    # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
+    strategy.add_events('bar', stored=True, stored_path='data',
+                        start=broker.START_DATE, end=broker.END_DATE)
 
     strategy.run()

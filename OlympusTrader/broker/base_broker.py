@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from .interfaces import ISupportedBrokers
 
-from .interfaces import Asset, IAccount, IOrder, IPosition
+from .interfaces import Asset, IAccount, IOrder, IPosition, TradeUpdateEvent
 from ..utils.insight import Insight
 from ..utils.timeframe import TimeFrame, TimeFrameUnit
 from ..utils.interfaces import IMarketDataStream
@@ -90,7 +90,7 @@ class BaseBroker(abc.ABC):
         """Manage insight order by planing entry and exit orders for a given insight"""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
-        
+
         if not insight.checkValidEntryInsight():
             raise ValueError("Invalid Entry Insight")
         # assert isinstance(asset, Asset), 'asset must be of type Asset object'
@@ -121,12 +121,13 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def format_on_bar(self, bar: Any) -> pd.DataFrame: #(data={}, index=[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
+    # (data={}, index=[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
+    def format_on_bar(self, bar: Any) -> pd.DataFrame:
         """Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}"""
         pass
 
     @override
     @abc.abstractmethod
-    def format_on_trade_update(self, trade: Any) -> IOrder:
+    def format_on_trade_update(self, trade: Any) -> tuple[IOrder, TradeUpdateEvent]:
         """Format stream quote data to { symbol: str, quote: -> bid, bidSize, ask, askSize, timestamp}"""
         pass

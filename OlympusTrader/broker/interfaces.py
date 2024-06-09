@@ -132,7 +132,7 @@ class IAccountState(TypedDict):
     orders: List[IOrder]
 
 class TradeUpdate():
-    def __init__(self, event: TradeUpdateEvent, order: IOrder):
+    def __init__(self, order: IOrder, event: TradeUpdateEvent):
         self.event = event
         self.order = order
 

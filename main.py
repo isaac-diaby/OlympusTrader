@@ -247,11 +247,6 @@ class QbitTB(Strategy):
         #     self.add_insight(Insight(OrderSide.BUY, symbol,
         #                              StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
-        # TODO: movethis into strategy tools
-        def calculateTimeToLive(price, entry, ATR, additional=2):
-            """Calculate the time to live for a given price and entry based on the ATR"""
-            return ((np.abs(price - entry)) / ATR)+2
-
         # RSA Divergance Long
         if (not np.isnan(latestBar['RSI_Divergance_Long']) and marketState < 0):
             # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
@@ -262,9 +257,10 @@ class QbitTB(Strategy):
             ENTRY = previousBar.high if (abs(
                 previousBar.high - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
             # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(
+                latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
+            TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.add_insight(Insight(OrderSide.BUY, symbol,
                                      StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
@@ -278,9 +274,10 @@ class QbitTB(Strategy):
             ENTRY = previousBar.low if (abs(
                 previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
             # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(
+                latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
+            TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.add_insight(Insight(OrderSide.SELL, symbol,
                                      StrategyTypes.RSI_DIVERGANCE, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
@@ -296,9 +293,10 @@ class QbitTB(Strategy):
             ENTRY = self.tools.dynamic_round(
                 latestBar['EMA_9'], symbol)  # pullback
             # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(
+                latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
+            TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.add_insight(Insight(OrderSide.BUY, symbol,
                                      StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
@@ -313,9 +311,10 @@ class QbitTB(Strategy):
             ENTRY = self.tools.dynamic_round(
                 latestBar['EMA_9'], symbol)  # pullback
  # time to live unfilled
-            TTLUF = calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(
+                latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
-            TTLF = calculateTimeToLive(TP, ENTRY, latestIATR)
+            TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
             self.add_insight(Insight(OrderSide.SELL, symbol,
                                      StrategyTypes.EMA_CROSSOVER, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))

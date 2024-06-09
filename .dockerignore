@@ -41,6 +41,7 @@
 **/research
 **/tests
 **/v0.1
+data/**/*
 
 LICENSE
 README.md

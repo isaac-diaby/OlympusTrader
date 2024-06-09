@@ -47,7 +47,7 @@ class BaseStrategy(abc.ABC):
 
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
-                 IStrategyMode = IStrategyMode.LIVE ) -> None:
+                 IStrategyMode = IStrategyMode.LIVE) -> None:
         """Abstract class for strategy implementations."""
         self.NAME = self.__class__.__name__
         self.MODE = mode
@@ -59,8 +59,7 @@ class BaseStrategy(abc.ABC):
         assert TimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
-       
-        
+
         # set the UI shared memory sever
         if self.WITHUI:
             self._startUISharedMemory()
@@ -76,7 +75,7 @@ class BaseStrategy(abc.ABC):
         if self.MODE == IStrategyMode.BACKTEST:
             # check if the broker is paper
             assert self.BROKER.NAME == ISupportedBrokers.PAPER, 'Backtesting is only supported with the paper broker'
-            # # change the broker to feed to backtest mode 
+            # # change the broker to feed to backtest mode
             # self.BROKER.feed = IStrategyMode.BACKTEST
             pass
 
@@ -88,7 +87,7 @@ class BaseStrategy(abc.ABC):
     def start(self):
         """ Start the strategy. This method is called once at the start of the strategy."""
         pass
-        
+
     @override
     @abc.abstractmethod
     def init(self, asset: Asset):
@@ -190,7 +189,6 @@ class BaseStrategy(abc.ABC):
                 # loop.close()
                 exit(0)
 
-        
         elif self.MODE == IStrategyMode.BACKTEST:
             # Backtest
             loop = asyncio.new_event_loop()
@@ -225,7 +223,7 @@ class BaseStrategy(abc.ABC):
 
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
-                
+
             finally:
                 self.teardown()
                 # pool.shutdown(wait=False)
@@ -234,7 +232,6 @@ class BaseStrategy(abc.ABC):
             print("Account:", self.ACCOUNT)
             # TODO: Add backtest results
             exit(0)
-            
 
     def _startUISharedMemory(self):
         """ Starts the UI shared memory."""
@@ -298,7 +295,7 @@ class BaseStrategy(abc.ABC):
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                                 break  # No need to continue
-                            
+
                             if event == TradeUpdateEvent.CLOSED:
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
@@ -315,9 +312,9 @@ class BaseStrategy(abc.ABC):
                         # Check if the position has been closed via SL or TP
                         if insight.symbol == orderdata['asset']['symbol']:
                             # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                            if (event == TradeUpdateEvent.FILL) and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or \
-                                                                    (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or \
-                                                                    (insight.order_id == orderdata['order_id'])):
+                            if (event == TradeUpdateEvent.FILL) and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or
+                                                                     (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
+                                                                     (insight.order_id == orderdata['order_id'])):
                                 # Update the insight closed price
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
@@ -330,7 +327,7 @@ class BaseStrategy(abc.ABC):
     def _start(self):
         """ Start the strategy. """
         assert callable(self.start), 'start must be a callable function'
-         # 1% of account per trade
+        # 1% of account per trade
         print("Running start function")
         self.state['execution_risk'] = 0.01
         # 2:1 Reward to Risk Ratio minimum
@@ -360,13 +357,13 @@ class BaseStrategy(abc.ABC):
         else:
             print(f'Failed to load {symbol} into universe')
 
-    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar'):
+    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar', **kwargs):
         """ Adds bar streams to the strategy."""
         match eventType:
             case 'bar' | 'trade' | 'quote' | 'news':
                 for assetInfo in self.UNIVERSE.values():
                     self.STREAMS.append(IMarketDataStream(symbol=assetInfo.get('symbol'), exchange=assetInfo.get(
-                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType))
+                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType, **kwargs))
             case _:
                 print(f"{eventType} Event not supported")
 
@@ -374,9 +371,8 @@ class BaseStrategy(abc.ABC):
         """ Adds an insight to the strategy."""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
-        
-        insight.set_mode(self.BROKER, self.MODE )
 
+        insight.set_mode(self.BROKER, self.MODE)
 
         self.INSIGHTS[insight.symbol].append(insight)
 
@@ -387,7 +383,7 @@ class BaseStrategy(abc.ABC):
             if bar.empty:
                 print('Bar is None')
                 return
-            
+
             if self.MODE != IStrategyMode.BACKTEST:
                 data = self.BROKER.format_on_bar(bar)
             else:

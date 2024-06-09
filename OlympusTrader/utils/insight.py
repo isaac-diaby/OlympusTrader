@@ -3,12 +3,11 @@ from enum import Enum
 from typing import List, Literal
 
 
-
-
 from .timeframe import TimeFrame
 from ..broker.interfaces import OrderSide, OrderType, OrderClass
 # from ..broker.base_broker import BaseBroker
 from ..utils.interfaces import IStrategyMode
+
 
 class StrategyTypes(Enum):
     RSI_DIVERGANCE = 'RSI_DIVERGANCE'
@@ -39,7 +38,7 @@ class Insight:
     side: OrderSide = None  # buy or sell
     symbol: str = None  # symbol to trade
     quantity: float = None  # quantity to trade
-    type: OrderType = None # market, limit, stop, stop_limit, trailing_stop
+    type: OrderType = None  # market, limit, stop, stop_limit, trailing_stop
     classType: OrderClass = None  # simple, bracket, oco, oto
     limit_price: List[float] = None  # price to enter at
     strategyType: StrategyTypes = None  # strategy type
@@ -92,7 +91,6 @@ class Insight:
             self.classType = OrderClass.BRACKET
         else:
             self.classType = OrderClass.SIMPLE
-        
 
     def __str__(self):
         if self.strategyType == StrategyTypes.MANUAL:
@@ -103,7 +101,8 @@ class Insight:
         print(
             f"Updated Insight State: {self.state:^10} -> {state:^10}: {self.symbol:^8} : {self.strategyType} :", message)
         self.state = state
-        self.updatedAt = datetime.now() if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
         if self.state == InsightState.FILLED:
             self.filledAt = self.updatedAt
         if self.state == InsightState.CLOSED:
@@ -128,7 +127,8 @@ class Insight:
         if not self.checkValidEntryInsight(price):
             return False
         self.limit_price = price
-        self.updatedAt = datetime.now() if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
         self.type = 'LIMIT'
 
         # check if the insight is already executed
@@ -156,9 +156,9 @@ class Insight:
                 if (limit_price > tp and self.side == 'long') or (limit_price < tp and self.side == 'short'):
                     print("invalid entry insight: limit price is above the take profit")
                     return False
-        if self.quantity != None or self.quantity <= 0:
-            print("invalid entry insight: quantity is invalid")
-            return False
+        # if self.quantity:
+        #     print("invalid entry insight: quantity is invalid")
+        #     return False
         return True
 
     def hasExpired(self, shouldUpdateState: bool = False):
@@ -167,7 +167,8 @@ class Insight:
 
         expireAt = self.tf.add_time_increment(
             self.createAt, self.periodUnfilled)
-        hasExpired = expireAt < datetime.now() if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        hasExpired = expireAt < (datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time())
         if (self.state == InsightState.EXECUTED or self.state == InsightState.NEW) and hasExpired and shouldUpdateState:
             self.updateState(InsightState.CANCELED, 'Unfilled TTL expired')
 
@@ -179,7 +180,8 @@ class Insight:
 
         expireAt = self.tf.add_time_increment(
             self.filledAt, self.periodTillTp)
-        hasExpired = expireAt < datetime.now() if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        hasExpired = expireAt < (datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time())
         if (self.state == InsightState.FILLED) and hasExpired and shouldUpdateState:
             self.updateState(InsightState.CLOSED, 'Filled TTL expired')
 
@@ -187,7 +189,8 @@ class Insight:
 
     def updateOrderID(self, order_id: str):
         self.order_id = order_id
-        self.updatedAt = datetime.now() if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
         return self
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
@@ -223,7 +226,7 @@ class Insight:
         message = f"Trade Closed {"✅" if PL > 0 else "❌"}: {self.symbol} - {self.side} - {
             self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}"
         return message
-    
+
     def set_mode(self,  broker, mode: IStrategyMode = IStrategyMode.LIVE):
         self.MODE = mode
         self.BROKER = broker
@@ -232,7 +235,6 @@ class Insight:
             self.createAt = self.BROKER.get_current_time()
             self.updatedAt = self.createAt
 
-        
         # check if the insight is valid except for manual or test insights
         if self.checkValidEntryInsight() and (self.strategyType != StrategyTypes.TEST or self.strategyType != StrategyTypes.MANUAL):
             print(f"Created Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {
@@ -240,9 +242,5 @@ class Insight:
         else:
             # print(f"Invalid Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {self.TP} - SL: {self.SL} - Ratio: {self.getPnLRatio()} - UDA: {self.updatedAt}")
             self.updateState(InsightState.REJECTED, 'Invalid Entry Insight')
-        
+
         return self
-            
-        
-
-
