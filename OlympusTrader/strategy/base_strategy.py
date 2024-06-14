@@ -413,7 +413,11 @@ class BaseStrategy(abc.ABC):
                         start_time = timeit.default_timer()
 
                     # Call the on_bar function and process the bar
-                    self.on_bar(symbol, data)
+                    try:
+                        self.on_bar(symbol, data)
+                    except Exception as e:
+                        print('Error in on_bar:', e)
+                        
                     if self.VERBOSE > 0:
                         print('Time taken on_bar:', symbol,
                               timeit.default_timer() - start_time)

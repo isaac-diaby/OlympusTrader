@@ -2,6 +2,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import os
 import datetime
+from tabnanny import check
 from types import NoneType
 import uuid
 import numpy as np
@@ -172,6 +173,7 @@ class PaperBroker(BaseBroker):
             # TODO: trade stream for all of the pending, filled, canceled oerders.
             while self.CURRENT <= self.END_DATE and self.RUNNING_TRADE_STREAM:
                 try:
+                    self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
                     print("pending: ", len(self.PENDING_ORDERS),
                           "active: ", len(self.ACTIVE_ORDERS),
                           "closed: ", len(self.CLOSE_ORDERS),
@@ -286,7 +288,6 @@ class PaperBroker(BaseBroker):
                         loop.run_until_complete(callback(TradeUpdate(
                             order, TradeUpdateEvent.CANCELED)))
 
-                    self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
                 except threading.BrokenBarrierError:
                     continue
                 except Exception as e:
@@ -537,7 +538,7 @@ class PaperBroker(BaseBroker):
     def _load_historical_bar_data(self, asset: IMarketDataStream):
         try:
             bar_data_path = None
-            if asset['stored']:
+            if asset.get('stored'):
                 if asset['stored_path']:
                     bar_data_path = asset['stored_path'] + \
                         f'/bar/{asset["symbol"]}.h5'
@@ -564,9 +565,11 @@ class PaperBroker(BaseBroker):
             print("Error: ", e.args[0]['code'], e.args[0]['data']['path'])
 
         if self.DataFeed == 'yf':
-
+            # Populate the HISTORICAL_DATA with the bar data 
             self.HISTORICAL_DATA[asset['symbol']]['bar'] = self.get_history(
                 asset, self.START_DATE, self.END_DATE, asset['time_frame'], False)
+            
+            # check if the data is empty
             if self.HISTORICAL_DATA[asset['symbol']]['bar'].empty:
                 raise Exception({
                     "code": "no_data",
@@ -575,14 +578,12 @@ class PaperBroker(BaseBroker):
             print("Loaded data for ", asset['symbol'])
             print(self.HISTORICAL_DATA[asset['symbol']]['bar'].describe())
             # if a stored path is provided save the data to the path
-            if asset['stored_path']:
+            if asset.get('stored_path'):
                 # Create the directory if it does not exist
                 Path(asset['stored_path']+'/bar').mkdir(
                     parents=True, exist_ok=True)
                 # Save the data to the path
                 # print(self.HISTORICAL_DATA[asset['symbol']]['bar'].index.levels)
-                print("Saving data to ",
-                      asset['stored_path']+f'/bar/{asset["symbol"]}.h5')
                 print(self.HISTORICAL_DATA[asset['symbol']]['bar'].head(10))
 
                 # self.HISTORICAL_DATA[asset['symbol']]['bar'].index = self.HISTORICAL_DATA[asset['symbol']]['bar'].index.set_levels(
@@ -594,6 +595,10 @@ class PaperBroker(BaseBroker):
 
                 print("after conversion")
                 print(self.HISTORICAL_DATA[asset['symbol']]['bar'].head(10))
+
+                # Save the data to the path in hdf5 format
+                print("Saving data to ",
+                      asset['stored_path']+f'/bar/{asset["symbol"]}.h5')
                 self.HISTORICAL_DATA[asset['symbol']]['bar'].to_hdf(
                     asset['stored_path']+f'/bar/{asset["symbol"]}.h5', mode='a', key=asset["exchange"], index=True, format='table')
 
@@ -630,7 +635,7 @@ class PaperBroker(BaseBroker):
             while self.CURRENT <= self.END_DATE and self.RUNNING_MARKET_STREAM:
                 try:
                     print("streaming data for ", self.CURRENT)
-                    self.BACKTEST_FlOW_CONTROL_BARRIER.reset()
+                    # self.BACKTEST_FlOW_CONTROL_BARRIER.reset()
                     # futures = set()
                     # with ThreadPoolExecutor(max_workers=len(assetStreams), thread_name_prefix="MarketDataStream") as pool:
                     for asset in assetStreams:
@@ -643,14 +648,10 @@ class PaperBroker(BaseBroker):
                                 elif barData.empty:
                                     continue
                                 else:
-                                    # callback(barData)
-
-                                    # future = loop.run_in_executor(pool, callback, barData)
-                                    # futures.add(future)
 
                                     loop.run_until_complete(callback(barData))
 
-                            except Exception as e:
+                            except BaseException as e:
                                 print("Error: ", e)
                                 continue
                         else:

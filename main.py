@@ -151,7 +151,9 @@ class QbitTB(Strategy):
         IRSI = history['RSI_14']
 
         # Long Divergance - RSI is Increasing while price is Decreasing
-        self.state['history'][symbol].loc[:, 'RSI_Divergance_Long'] = np.nan
+        self.state['history'][symbol].loc[[symbol], ['RSI_Divergance_Long']] = np.nan
+        # self.state['history'][symbol]['RSI_Divergance_Long'] = np.nan
+        # self.state['history'][symbol].loc[:, 'RSI_Divergance_Long'] = np.nan
         # only use local lows of point of control for reversal
         longPivot = history['local_min_poc'].dropna()
         lowerLowsPivots = longPivot.loc[longPivot.shift(1) > longPivot]
@@ -169,7 +171,9 @@ class QbitTB(Strategy):
                     'RSI_Divergance_Long']] = lastPrice-price
 
         # Bearish divergence - RSI is Decreasing while price is Increasing
-        self.state['history'][symbol].loc[:, 'RSI_Divergance_Short'] = np.nan
+        self.state['history'][symbol].loc[[symbol], ['RSI_Divergance_Short']] = np.nan
+        # self.state['history'][symbol]['RSI_Divergance_Short'] = np.nan
+        # self.state['history'][symbol].loc[:, 'RSI_Divergance_Short'] = np.nan
         # only use local maximas of point of control for reversal
         shortPivot = history['local_max_poc'].dropna()
         higherHighsPivots = shortPivot.loc[shortPivot.shift(1) < shortPivot]
@@ -590,16 +594,16 @@ class QbitTB(Strategy):
 if __name__ == "__main__":
 
     # Live broker
-    broker = AlpacaBroker(paper=True)
-    strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-        1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
+    # broker = AlpacaBroker(paper=True)
+    # strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
+    #     1, TimeFrameUnit.Minute), verbose=1, ui=True, mode=IStrategyMode.LIVE)
 
     # Paper Broker for backtesting
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 27), end_date=datetime(2024, 5, 28))
-    # strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
-    #     1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.BACKTEST)
+    broker = PaperBroker(cash=1_000_000, start_date=datetime(
+        2024, 5, 27), end_date=datetime(2024, 5, 28))
+    strategy = QbitTB(broker, variables={}, resolution=TimeFrame(
+        1, TimeFrameUnit.Minute), verbose=1, ui=False, mode=IStrategyMode.BACKTEST)
 
-    strategy.add_events('bar')
+    strategy.add_events('bar', stored=False)
 
     strategy.run()
