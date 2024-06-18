@@ -3,8 +3,8 @@ from enum import Enum
 from typing import List, Literal
 
 
-from .timeframe import TimeFrame
-from ..broker.interfaces import OrderSide, OrderType, OrderClass
+from .timeframe import ITimeFrame
+from ..broker.interfaces import IOrderSide, IOrderType, IOrderClass
 # from ..broker.base_broker import BaseBroker
 from ..utils.interfaces import IStrategyMode
 
@@ -35,17 +35,17 @@ class InsightState(Enum):
 
 class Insight:
     order_id: str = None
-    side: OrderSide = None  # buy or sell
+    side: IOrderSide = None  # buy or sell
     symbol: str = None  # symbol to trade
     quantity: float = None  # quantity to trade
-    type: OrderType = None  # market, limit, stop, stop_limit, trailing_stop
-    classType: OrderClass = None  # simple, bracket, oco, oto
+    type: IOrderType = None  # market, limit, stop, stop_limit, trailing_stop
+    classType: IOrderClass = None  # simple, bracket, oco, oto
     limit_price: List[float] = None  # price to enter at
     strategyType: StrategyTypes = None  # strategy type
     confidence: float = None  # confidence in insight
     TP: List[float] = None  # take profit levels
     SL: float = None  # stop loss
-    tf: TimeFrame = None  # timeframe
+    tf: ITimeFrame = None  # timeframe
     periodUnfilled: int = None  # time to live when unfilled
     periodTillTp: int = None  # predicted time to live when opened to reach take profit
     executionDepends: List[StrategyDependantConfirmation] = [
@@ -63,8 +63,8 @@ class Insight:
     MODE: IStrategyMode = IStrategyMode.LIVE
     BROKER = None
 
-    def __init__(self, side: OrderSide, symbol: str,  StrategyType: StrategyTypes, tf: TimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
-        assert side in OrderSide, 'Invalid Order Side'
+    def __init__(self, side: IOrderSide, symbol: str,  StrategyType: StrategyTypes, tf: ITimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
+        assert side in IOrderSide, 'Invalid Order Side'
         self.side = side  # buy or sell
         self.symbol = symbol  # symbol to trade
         self.quantity = quantity  # quantity to trade
@@ -83,14 +83,14 @@ class Insight:
         self.updatedAt = datetime.now()
 
         if limit_price == None:
-            self.type = OrderType.MARKET
+            self.type = IOrderType.MARKET
         else:
-            self.type = OrderType.LIMIT
+            self.type = IOrderType.LIMIT
 
         if self.TP and self.SL:
-            self.classType = OrderClass.BRACKET
+            self.classType = IOrderClass.BRACKET
         else:
-            self.classType = OrderClass.SIMPLE
+            self.classType = IOrderClass.SIMPLE
 
     def __str__(self):
         if self.strategyType == StrategyTypes.MANUAL:
@@ -144,8 +144,13 @@ class Insight:
 
     def checkValidEntryInsight(self, limit_price: float = None):
         """Check if the insight is valid. limitprice needs to be beween the take profit and stop loss."""
+        if (self.strategyType != StrategyTypes.TEST or self.strategyType != StrategyTypes.MANUAL):
+            return True # skip the check for manual and test insights
+        
         limit_price = limit_price if limit_price != None else self.limit_price
+        # FIXME: use the broker to get the latest price and to check if the market order would be within range of the bracket order 
         if limit_price == None:
+            print("WARNING: invalid entry insight: limit price is not set")
             return False
         if self.SL:
             if (limit_price < self.SL and self.side == 'long') or (limit_price > self.SL and self.side == 'short'):
@@ -236,7 +241,7 @@ class Insight:
             self.updatedAt = self.createAt
 
         # check if the insight is valid except for manual or test insights
-        if self.checkValidEntryInsight() and (self.strategyType != StrategyTypes.TEST or self.strategyType != StrategyTypes.MANUAL):
+        if self.checkValidEntryInsight():
             print(f"Created Insight: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price} - TP: {
                   self.TP} - SL: {self.SL} - Ratio: {self.getPnLRatio()} - UDA: {self.updatedAt}")
         else:

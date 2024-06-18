@@ -6,7 +6,7 @@ if TYPE_CHECKING:
 from ..utils.insight import InsightState
 
 
-class TradingTools():
+class ITradingTools():
     STRATEGY = None
 
     def __init__(self, strategy):
@@ -53,7 +53,7 @@ class TradingTools():
 
 def dynamic_round(v: float) -> float:
     """Round float depending on log10 decimal places"""
-    dynamic_precision = numpy.abs(int(numpy.log10(v)))+2
+    dynamic_precision = np.abs(int(np.log10(v)))+2
     return round(v, dynamic_precision)
 
 

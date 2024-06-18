@@ -12,14 +12,14 @@ import timeit
 from collections import deque
 
 from ..broker.base_broker import BaseBroker
-from ..broker.interfaces import ISupportedBrokers, TradeUpdateEvent, Asset, IAccount, IPosition, IOrder
+from ..broker.interfaces import ISupportedBrokers, ITradeUpdateEvent, IAsset, IAccount, IPosition, IOrder
 
 from .sharedmemory import SharedStrategyManager
 from ..utils.interfaces import IMarketDataStream, IStrategyMode
 from ..utils.insight import Insight, InsightState
-from ..utils.timeframe import TimeFrame, TimeFrameUnit
+from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
 from ..utils.types import AttributeDict
-from ..utils.tools import TradingTools
+from ..utils.tools import ITradingTools
 
 # from ..ui.base_ui import Dashboard
 
@@ -33,8 +33,8 @@ class BaseStrategy(abc.ABC):
     HISTORY: pd.DataFrame = pd.DataFrame(
         columns=['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume'])
     INSIGHTS: dict[str, Insight] = {}
-    UNIVERSE: dict[str, Asset] = {}
-    RESOLUTION = TimeFrame(5, TimeFrameUnit.Minute)
+    UNIVERSE: dict[str, IAsset] = {}
+    RESOLUTION = ITimeFrame(5, ITimeFrameUnit.Minute)
     STREAMS: List[IMarketDataStream] = []
     VARIABLES: AttributeDict
     MODE: IStrategyMode
@@ -42,11 +42,11 @@ class BaseStrategy(abc.ABC):
     SSM: SharedStrategyManager = None
     # DASHBOARD: Dashboard = None
 
-    TOOLS: TradingTools = None
+    TOOLS: ITradingTools = None
     VERBOSE: int = 0
 
     @abc.abstractmethod
-    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: TimeFrame = TimeFrame(1, TimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
+    def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
                  IStrategyMode = IStrategyMode.LIVE) -> None:
         """Abstract class for strategy implementations."""
         self.NAME = self.__class__.__name__
@@ -54,9 +54,9 @@ class BaseStrategy(abc.ABC):
         self.WITHUI = ui
         self.VARIABLES = variables
         self.BROKER = broker
-        self.TOOLS = TradingTools(self)
+        self.TOOLS = ITradingTools(self)
         self.VERBOSE = verbose
-        assert TimeFrame.validate_timeframe(
+        assert ITimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
 
@@ -90,7 +90,7 @@ class BaseStrategy(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def init(self, asset: Asset):
+    def init(self, asset: IAsset):
         """ Initialize the strategy. This method is called once before the start of the strategy on every asset in the universe."""
         pass
 
@@ -205,15 +205,22 @@ class BaseStrategy(abc.ABC):
                             pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
                         # marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
 
+                        #  Insight executor and listener
+                        insighStream = asyncio.run(self._insightListener())
+
                         # UI Shared Memory Server
                         if self.WITHUI:
                             server = self.SSM.get_server()
                             loop.run_in_executor(
                                 pool, server.serve_forever)
                             print('UI Shared Memory Server started')
-
-                        #  Insight executor and listener
-                        insighStream = asyncio.run(self._insightListener())
+                        
+                        while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
+                            print("***-- Running Backtest --***")
+                            time.sleep(5)
+                        self.teardown()
+                        insighStream.cancel()
+                        pool.shutdown(wait=False)
 
                     except Exception as e:
                         self.BROKER.closeTradeStream()
@@ -290,13 +297,13 @@ class BaseStrategy(abc.ABC):
                     case InsightState.EXECUTED:
                         # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
                         if insight.order_id == orderdata['order_id']:
-                            if event == TradeUpdateEvent.FILL:
+                            if event == ITradeUpdateEvent.FILLED:
                                 # Update the insight with the filled price
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
                                 break  # No need to continue
 
-                            if event == TradeUpdateEvent.CLOSED:
+                            if event == ITradeUpdateEvent.CLOSED:
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
                                     orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
                             # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
@@ -312,7 +319,7 @@ class BaseStrategy(abc.ABC):
                         # Check if the position has been closed via SL or TP
                         if insight.symbol == orderdata['asset']['symbol']:
                             # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                            if (event == TradeUpdateEvent.FILL) and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or
+                            if (event == ITradeUpdateEvent.FILLED) and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or
                                                                      (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
                                                                      (insight.order_id == orderdata['order_id'])):
                                 # Update the insight closed price
@@ -380,13 +387,13 @@ class BaseStrategy(abc.ABC):
         """ format the bar stream to the strategy. """
         try:
             # set_index(['symbol', 'timestamp']
-            if bar.empty:
-                print('Bar is None')
-                return
 
             if self.MODE != IStrategyMode.BACKTEST:
                 data = self.BROKER.format_on_bar(bar)
             else:
+                if bar.empty:
+                    print('Bar is None')
+                    return
                 data = bar
 
             self.ACCOUNT = self.BROKER.get_account()
@@ -499,17 +506,17 @@ class BaseStrategy(abc.ABC):
         return self.BROKER
 
     @property
-    def assets(self) -> dict[str, Asset]:
+    def assets(self) -> dict[str, IAsset]:
         """ Returns the universe of the strategy."""
         return self.UNIVERSE
 
     @property
-    def resolution(self) -> TimeFrame:
+    def resolution(self) -> ITimeFrame:
         """ Returns the resolution of the strategy."""
         return self.RESOLUTION
 
     @property
-    def tools(self) -> TradingTools:
+    def tools(self) -> ITradingTools:
         """ Returns the tools of the strategy."""
         return self.TOOLS
 

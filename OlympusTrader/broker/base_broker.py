@@ -1,7 +1,7 @@
 
 import abc
 import datetime
-from typing import Any, Awaitable, Callable, List, Literal, Union, overload
+from typing import Any, Awaitable, Callable, List, Literal, Union
 
 from typing_extensions import override
 import pandas as pd
@@ -10,9 +10,9 @@ from datetime import datetime, timedelta
 
 from .interfaces import ISupportedBrokers
 
-from .interfaces import Asset, IAccount, IOrder, IPosition, TradeUpdateEvent
+from .interfaces import IAsset, IAccount, IOrder, IPosition, ITradeUpdateEvent
 from ..utils.insight import Insight
-from ..utils.timeframe import TimeFrame, TimeFrameUnit
+from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
 from ..utils.interfaces import IMarketDataStream
 
 
@@ -31,7 +31,7 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def get_ticker_info(self, symbol: str) -> Union[Asset, None]:
+    def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
         pass
 
     @override
@@ -78,15 +78,15 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def get_history(self, asset: Asset, start=(datetime.now() - timedelta(days=7)), end=datetime.now(), resolution=TimeFrame(5, TimeFrameUnit.Minute)) -> pd.DataFrame:
+    def get_history(self, asset: IAsset, start=(datetime.now() - timedelta(days=7)), end=datetime.now(), resolution=ITimeFrame(5, ITimeFrameUnit.Minute)) -> pd.DataFrame:
         """Get historical data for a given asset open, high, low, close, volume"""
 
         assert isinstance(
-            resolution, TimeFrame), 'resolution must be of type TimeFrame object'
+            resolution, ITimeFrame), 'resolution must be of type TimeFrame object'
 
     @override
     @abc.abstractmethod
-    def execute_insight_order(self, insight: Insight, asset: Asset) -> IOrder | None:
+    def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:
         """Manage insight order by planing entry and exit orders for a given insight"""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
@@ -128,6 +128,6 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def format_on_trade_update(self, trade: Any) -> tuple[IOrder, TradeUpdateEvent]:
+    def format_on_trade_update(self, trade: Any) -> tuple[IOrder, ITradeUpdateEvent]:
         """Format stream quote data to { symbol: str, quote: -> bid, bidSize, ask, askSize, timestamp}"""
         pass

@@ -9,16 +9,19 @@ class ISupportedBrokers(Enum):
     BASE = 'BaseBroker'
 
 
-class TradeUpdateEvent(Enum):
+class ITradeUpdateEvent(Enum):
+    ACCEPTED = 'accepted'
     NEW = 'new'
-    PARTIALLY_FILLED = 'partially_filled'
-    FILL = 'fill'
+    PARTIAL_FILLED = 'partial_filled'
+    FILLED = 'fill'
     CANCELED = 'canceled'
     REJECTED = 'rejected'
+    EXPIRED = 'expired'
     CLOSED = 'closed'
+    REPLACED = 'replaced'
 
 
-class TimeInForce(Enum):
+class ITimeInForce(Enum):
     DAY = 'day'
     GTC = 'gtc'
     OPG = 'opg'
@@ -26,7 +29,7 @@ class TimeInForce(Enum):
     FOK = 'fok'
 
 
-class OrderClass(Enum):
+class IOrderClass(Enum):
     # Simple Order - with no legs
     SIMPLE = 'simple'
     # Bracket Order - (otooco) # One Triggers One Cancels Other (Take Profit and Stop Loss)
@@ -38,7 +41,7 @@ class OrderClass(Enum):
     TRO = 'tro'  # Trailing Stop Order
 
 
-class OrderType(Enum):
+class IOrderType(Enum):
     MARKET = 'Market'
     LIMIT = 'Limit'
     STOP = 'Stop'
@@ -46,25 +49,25 @@ class OrderType(Enum):
     TRAILING_STOP = 'Trailing_stop'
 
 
-class OrderSide(Enum):
+class IOrderSide(Enum):
     BUY = 'Long'
     SELL = 'Short'
 
 
-class OrderRequest(TypedDict):
+class IOrderRequest(TypedDict):
     symbol: str
     qty: float
-    side: OrderSide
-    type: OrderType
-    time_in_force: TimeInForce
+    side: IOrderSide
+    type: IOrderType
+    time_in_force: ITimeInForce
     limit_price: float
-    order_class: OrderClass
+    order_class: IOrderClass
     take_profit: float
     stop_loss: float
     trail_price: float
 
 
-class Asset(TypedDict):
+class IAsset(TypedDict):
     _id: str
     name: str
     asset_type: Literal['stock', 'crypto']
@@ -87,10 +90,10 @@ class IAccount(TypedDict):
     shorting_enabled: bool
 
 class IPosition(TypedDict):
-    asset: Asset
+    asset: IAsset
     avg_entry_price: float
     qty: float
-    side: OrderSide
+    side: IOrderSide
     market_value: float
     cost_basis: float
     current_price: float
@@ -108,16 +111,16 @@ class IOrderLegs(TypedDict):
 
 class IOrder(TypedDict):
     order_id: str
-    asset: Asset
+    asset: IAsset
     limit_price: float
     filled_price: Optional[float]
     stop_price: Optional[float]
     qty: float
-    side: OrderSide
-    type: OrderType
-    time_in_force: TimeInForce
-    status: TradeUpdateEvent
-    order_class: OrderClass
+    side: IOrderSide
+    type: IOrderType
+    time_in_force: ITimeInForce
+    status: ITradeUpdateEvent
+    order_class: IOrderClass
     created_at: datetime
     updated_at: datetime
     submitted_at: datetime #Timestamp when the order was submitted.
@@ -131,8 +134,8 @@ class IAccountState(TypedDict):
     positions: dict[str, IPosition]
     orders: List[IOrder]
 
-class TradeUpdate():
-    def __init__(self, order: IOrder, event: TradeUpdateEvent):
+class ITradeUpdate():
+    def __init__(self, order: IOrder, event: ITradeUpdateEvent):
         self.event = event
         self.order = order
 

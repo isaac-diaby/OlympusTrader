@@ -22,8 +22,8 @@ from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
-from .interfaces import ISupportedBrokers, Asset, IAccount, IOrder, IPosition
-from ..utils.timeframe import TimeFrame as tf
+from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent
+from ..utils.timeframe import ITimeFrame as tf
 from ..utils.insight import Insight
 
 
@@ -57,7 +57,7 @@ class AlpacaBroker(BaseBroker):
         self.crypto_stream_client = CryptoDataStream(
             os.getenv('ALPACA_API_KEY'),  os.getenv('ALPACA_SECRET_KEY'), feed=CryptoFeed.US, url_override=BaseURL.MARKET_DATA_STREAM + "/v1beta3/crypto/" + CryptoFeed.US)
 
-    def get_history(self, asset: Asset, start: datetime, end: datetime, resolution: tf):
+    def get_history(self, asset: IAsset, start: datetime, end: datetime, resolution: tf):
         # Convert to TimeFrame from OlympusTrader from alpaca
         super().get_history(asset, start, end, resolution)
         
@@ -84,7 +84,7 @@ class AlpacaBroker(BaseBroker):
                 end=end
             )).df
         else:
-            assert False, 'Get History: Asset type must be of type stock or crypto'
+            assert False, 'Get History: IAsset type must be of type stock or crypto'
         # format Data Frame open, high, low, close, volume
         data = data[['open', 'high', 'low', 'close', 'volume']]  # 'timestamp'
         # print(data)
@@ -94,9 +94,9 @@ class AlpacaBroker(BaseBroker):
         try:
             tickerInfo = self.trading_client.get_asset(symbol)
 
-            assert tickerInfo, f'Asset {symbol} not found'
+            assert tickerInfo, f'IAsset {symbol} not found'
 
-            tickerAsset: Asset = Asset(
+            tickerAsset: IAsset = IAsset(
                 id=tickerInfo.id,
                 name=tickerInfo.name,
                 asset_type='stock' if tickerInfo.asset_class == 'us_equity' else 'crypto',
@@ -187,7 +187,7 @@ class AlpacaBroker(BaseBroker):
 
         )
 
-    def execute_insight_order(self, insight: Insight, asset: Asset) -> IOrder | None:
+    def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:
         # TODO: manage insight order by planing entry and exit orders for a given insight
         # https://alpaca.markets/docs/trading/orders/#bracket-orders
         super().execute_insight_order(insight, asset)
@@ -195,7 +195,7 @@ class AlpacaBroker(BaseBroker):
         orderRequest = {
             "symbol": insight.symbol,
             "qty": insight.quantity,
-            "side": OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
+            "side": OrderSide.BUY if insight.side == IOrderSide.BUY else OrderSide.SELL,
             "time_in_force": TimeInForce.GTC,
             "order_class": OrderClass.SIMPLE # OrderClass.BRACKET if insight.TP and insight.SL else OrderClass.SIMPLE,
             # "take_profit": None if insight.TP == None else TakeProfitRequest(
@@ -236,9 +236,9 @@ class AlpacaBroker(BaseBroker):
         
         try:
             match insight.type:
-                case 'MARKET':
+                case IOrderType.MARKET:
                     req = MarketOrderRequest(**orderRequest)
-                case 'LIMIT':
+                case IOrderType.LIMIT:
                     req = LimitOrderRequest(**orderRequest)
                 case _:
                     print(
@@ -473,7 +473,27 @@ class AlpacaBroker(BaseBroker):
             await self.crypto_stream_client.close()
 
     def format_on_trade_update(self, trade: TradeUpdate):
-        return self.format_order(trade.order), trade.event
+        event: ITradeUpdateEvent = None
+        match trade.event:
+            case "fill":
+                event = ITradeUpdateEvent.FILLED
+            case "partial_fill":
+                event = ITradeUpdateEvent.PARTIAL_FILLED
+            case "canceled":
+                event = ITradeUpdateEvent.CANCELED
+            case "rejected":
+                event = ITradeUpdateEvent.REJECTED
+            case "new":
+                event = ITradeUpdateEvent.NEW
+            case "expired":
+                event = ITradeUpdateEvent.EXPIRED
+            case "replaced":
+                event = ITradeUpdateEvent.REPLACED
+            case "accepted":
+                event = ITradeUpdateEvent.ACCEPTED
+            case _:
+                event = trade.event
+        return self.format_order(trade.order), event
 
     def format_on_bar(self, bar: Bar):
         data = pd.DataFrame(data={
