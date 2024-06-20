@@ -7,7 +7,7 @@ import uuid
 import numpy as np
 from typing import List, Literal
 from collections import deque
-import threading
+from threading import Barrier, BrokenBarrierError
 from concurrent.futures import as_completed
 from pathlib import Path
 
@@ -42,7 +42,7 @@ class PaperBroker(BaseBroker):
                                             'quote', 'bar', 'news'], pd.DataFrame]] = {}
     RUNNING_TRADE_STREAM: bool = False
     RUNNING_MARKET_STREAM: bool = False
-    BACKTEST_FlOW_CONTROL_BARRIER: threading.Barrier = None
+    BACKTEST_FlOW_CONTROL_BARRIER: Barrier = None
 
     PENDING_ORDERS: deque[IOrder] = deque()
     ACTIVE_ORDERS: deque[IOrder] = deque()
@@ -71,7 +71,7 @@ class PaperBroker(BaseBroker):
             self.END_DATE = end_date
             self.CURRENT = self.START_DATE
             self.ACCOUNT_HISTORY = {self.CURRENT: self.Account}
-            self.BACKTEST_FlOW_CONTROL_BARRIER = threading.Barrier(3)
+            self.BACKTEST_FlOW_CONTROL_BARRIER = Barrier(3)
             # self.BACKTEST_FlOW_CONTROL_BARRIER.reset()
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
@@ -291,7 +291,7 @@ class PaperBroker(BaseBroker):
                         loop.run_until_complete(callback(ITradeUpdate(
                             order, ITradeUpdateEvent.CANCELED)))
 
-                except threading.BrokenBarrierError:
+                except BrokenBarrierError:
                     continue
                 except Exception as e:
                     print("Error: ", e)
@@ -673,7 +673,8 @@ class PaperBroker(BaseBroker):
                     if self.CURRENT > self.END_DATE:
                         break
                         
-                        
+                except BrokenBarrierError:
+                    continue        
                 except Exception as e:
                     print("Error: ", e)
                     continue

@@ -1,7 +1,7 @@
 import abc
 import asyncio
 import os
-from threading import Thread
+from threading import BrokenBarrierError, Thread
 from typing import Any, List, override, Union, Literal
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -306,7 +306,11 @@ class BaseStrategy(abc.ABC):
                         print('Error in _insightListener:', e)
                         continue
             if self.MODE == IStrategyMode.BACKTEST:
-                self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+                try:
+                    self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+                except BrokenBarrierError as e:
+                    # print('Error in _insightListener:', e)
+                    continue
             else:
                 await asyncio.sleep(5)
             # Update the account and positions
