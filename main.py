@@ -83,17 +83,14 @@ class QbitTB(Strategy):
 
     def universe(self):
         # universe = {'BTC/USD'}
+        # universe = {'AAPL'}
 
         universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-                    'MKR/USD', 'SHIB/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
+                    'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
 
-        # universe = {'AAVE/USD', 'ALGO/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'DAI/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-        #             'MATIC/USD', 'MKR/USD', 'NEAR/USD', 'PAXG/USD', 'SHIB/USD', 'SOL/USD', 'TRX/USD', 'UNI/USD', 'USDT/USD', 'WBTC/USD'}
-
-        # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ', 'IHG', 'NVDA', 'TRIP'}
 
         # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
-        #             'IHG', 'NVDA', 'TRIP', 'BTC/USD', 'ETH/USD', 'LINK/USD'}
+        #             'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX'}
 
         return universe
 
