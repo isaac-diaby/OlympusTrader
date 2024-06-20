@@ -57,6 +57,8 @@ USER trader
 
 # Copy the source code into the container.
 COPY . .
+RUN mkdir -p /data
+RUN chown -R trader:trader /data
 
 # Expose the port that the application listens on.
 # EXPOSE 8501
