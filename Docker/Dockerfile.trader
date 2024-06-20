@@ -51,14 +51,14 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
-
+    
+RUN mkdir -p data
+RUN chown -R trader:trader data
 # Switch to the non-privileged user to run the application.
 USER trader
 
 # Copy the source code into the container.
 COPY . .
-RUN mkdir -p data
-RUN chown -R trader:trader data
 
 # Expose the port that the application listens on.
 # EXPOSE 8501
