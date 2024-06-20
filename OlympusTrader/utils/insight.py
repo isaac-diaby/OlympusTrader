@@ -197,6 +197,11 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
         return self
+    def updateCloseOrderID(self, close_order_id: str):
+        self.close_order_id = close_order_id
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        return self
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
         if order_id != None:
@@ -207,9 +212,16 @@ class Insight:
                          self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
         return self
 
-    def positionClosed(self, price: float, order_id: str):
-        self.close_price = float(price)
-        self.close_order_id = order_id
+    def positionClosed(self, price: float, close_order_id: str, qty: float = None):
+        if qty != None:
+            self.quantity = qty
+        # Handle multiple Take Profit levels
+        if self.close_price != None:
+            self.close_price += price
+            self.close_price /= 2
+        else:
+            self.close_price = price
+        self.updateCloseOrderID(close_order_id)
         self.updateState(InsightState.CLOSED)
         return self
 

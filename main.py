@@ -114,21 +114,6 @@ class QbitTB(Strategy):
         #     'total_volume', 'SMA_32'],
         #     dtype='object')
 
-        # try:
-        # Compute Local Points of Control
-        self.computeLocalPointsOfControl(symbol)
-        # Compute RSI Divergance
-        self.computeRSIDivergance(symbol)
-        # Compute Market State
-        self.computeMarketState(symbol)
-
-        # Execute Orders If there should be any
-        self.generateInsights(symbol)  # self.insights[symbol]
-
-        # except Exception as e:
-        #     print(f"Error: {e}")
-        #     raise e
-
     def computeLocalPointsOfControl(self, symbol: str):
         window = self.state['local_window']
         history = self.state['history'][symbol]
@@ -224,6 +209,13 @@ class QbitTB(Strategy):
         return marketState
 
     def generateInsights(self, symbol: str):
+         # Compute Local Points of Control
+        self.computeLocalPointsOfControl(symbol)
+        # Compute RSI Divergance
+        self.computeRSIDivergance(symbol)
+        # Compute Market State
+        self.computeMarketState(symbol)
+
         history = self.state['history'][symbol].loc[symbol]
         latestBar = history.iloc[-1]
         previousBar = history.iloc[-2]
@@ -606,7 +598,7 @@ if __name__ == "__main__":
     # Live broker
     broker = AlpacaBroker(paper=True)
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        1, ITimeFrameUnit.Minute), verbose=1, ui=True, mode=IStrategyMode.LIVE)
+        1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     # Paper Broker for backtesting
     # broker = PaperBroker(cash=1_000_000, start_date=datetime(

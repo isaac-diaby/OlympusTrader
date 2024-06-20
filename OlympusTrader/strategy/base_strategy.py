@@ -45,6 +45,8 @@ class BaseStrategy(abc.ABC):
     TOOLS: ITradingTools = None
     VERBOSE: int = 0
 
+    _Running = False
+
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
                  IStrategyMode = IStrategyMode.LIVE) -> None:
@@ -109,6 +111,13 @@ class BaseStrategy(abc.ABC):
 
     @override
     @abc.abstractmethod
+    def generateInsights(self, symbol: str):
+        """Called once per bar to generate insights. """
+        print('IS THIS WORKING, Add generateInsights Function? -> def generateInsights(self, symbol: str):')
+        pass
+
+    @override
+    @abc.abstractmethod
     def executeInsight(self, symbol: str):
         """ Called for each active insight in the strategy. 
         it allows you to conrol the execution of the insight and manage the order.
@@ -145,17 +154,17 @@ class BaseStrategy(abc.ABC):
     def run(self):
         """ starts the strategy. """
         nest_asyncio.apply()
+        self._Running = True
 
         # check if universe is empty
         assert len(self.UNIVERSE) > 0, 'Universe is empty'
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
         if self.MODE == IStrategyMode.LIVE:
             if self.BROKER.NAME == ISupportedBrokers.ALPACA:
                 # Exchange specific setup
                 pass
-
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
 
             try:
                 with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStreams") as pool:
@@ -185,58 +194,74 @@ class BaseStrategy(abc.ABC):
                 print("Interrupted execution by user")
             finally:
                 self.teardown()
+                self._Running = False
                 # pool.shutdown(wait=False)
                 # loop.close()
                 exit(0)
 
         elif self.MODE == IStrategyMode.BACKTEST:
             # Backtest
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
+            if self.VERBOSE > 0:
+                print(f"Running Backtest - {datetime.datetime.now()}")
+                start_time = timeit.default_timer()
             try:
-                print('Running Backtest')
-                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStreams") as pool:
-                    try:
-                        #  Trading data streams
-                        tradeStream = loop.run_in_executor(
-                            pool, self.BROKER.startTradeStream, self._on_trade_update)
-                        marketDataStream = loop.run_in_executor(
-                            pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
-                        # marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
+                pool = ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="OlympusTraderStreams")
 
-                        #  Insight executor and listener
-                        insighStream = asyncio.run(self._insightListener())
+                try:
+                    #  Trading data streams
+                    tradeStream = loop.run_in_executor(
+                        pool, self.BROKER.startTradeStream, self._on_trade_update)
+                    marketDataStream = loop.run_in_executor(
+                        pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+                    # marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
 
-                        # UI Shared Memory Server
-                        if self.WITHUI:
-                            server = self.SSM.get_server()
-                            loop.run_in_executor(
-                                pool, server.serve_forever)
-                            print('UI Shared Memory Server started')
-                        
-                        while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
-                            print("***-- Running Backtest --***")
-                            time.sleep(5)
-                        self.teardown()
-                        insighStream.cancel()
-                        pool.shutdown(wait=False)
+                    insighStream = loop.create_task(
+                        self._insightListener(), name="OlympusTraderInsightListener")
 
-                    except Exception as e:
-                        self.BROKER.closeTradeStream()
-                        print(f'Exception from Threads: {e}')
+                    insighStream = loop.run_in_executor(
+                        pool, loop.run_forever)
+                    # UI Shared Memory Server
+                    if self.WITHUI:
+                        server = self.SSM.get_server()
+                        loop.run_in_executor(
+                            pool, server.serve_forever)
+                        print('UI Shared Memory Server started')
+
+                    while not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
+                        if self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
+                            break
+
+                    while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
+                        # print("***-- Running Backtest --***")
+                        if not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
+                            break
+                        # TODO: Teardown on last candle
+                        # self.teardown()
+
+                    self._Running = False
+                    tradeStream.cancel()
+                    marketDataStream.cancel()
+                    insighStream.cancel()
+                    pool.shutdown(wait=False)
+
+                except Exception as e:
+                    print(f'Exception from Threads: {e}')
 
                 # loop.run_forever()
 
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
+                self.BROKER.closeTradeStream()
+                self.BROKER.closeStream(self.STREAMS)
+                insighStream.cancel()
 
-            finally:
-                self.teardown()
-                # pool.shutdown(wait=False)
-                # loop.close()
-            print('Backtest Completed')
-            print("Account:", self.ACCOUNT)
+
+            if self.VERBOSE > 0:
+                print('Backtest Completed:',
+                          timeit.default_timer() - start_time)
+                
+            print(self.BROKER.get_results())
             # TODO: Add backtest results
             exit(0)
 
@@ -263,26 +288,31 @@ class BaseStrategy(abc.ABC):
         """ Listen to the insights and manage the orders. """
         print('Running Insight Listener')
         loop = asyncio.get_running_loop()
-        while True:
+        while self._Running:
             for symbol in self.INSIGHTS.keys():
 
                 if (len(self.INSIGHTS[symbol]) > 0):
                     try:
-                        if self.VERBOSE > 0:
-                            print(f'Execute Insight: {
-                                symbol}- {datetime.datetime.now()}')
-                            start_time = timeit.default_timer()
+                        # if self.VERBOSE > 0:
+                        # print(f'Execute Insight: {
+                        #     symbol}- {datetime.datetime.now()}')
+                        # start_time = timeit.default_timer()
+                        # TODO: also feed latest price to the insight for better accr - maybe
                         self.executeInsight(symbol)
-                        if self.VERBOSE > 0:
-                            print('Time taken executeInsight:', symbol,
-                                  timeit.default_timer() - start_time)
+                        # if self.VERBOSE > 0:
+                        # print('Time taken executeInsight:', symbol,
+                        #       timeit.default_timer() - start_time)
                     except Exception as e:
                         print('Error in _insightListener:', e)
                         continue
-            await asyncio.sleep(10)
+            if self.MODE == IStrategyMode.BACKTEST:
+                self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+            else:
+                await asyncio.sleep(5)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
+        print("End of Insight Listener")
 
     async def _on_trade_update(self, trade):
         """ format the trade stream to the strategy. """
@@ -297,34 +327,40 @@ class BaseStrategy(abc.ABC):
                     case InsightState.EXECUTED:
                         # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
                         if insight.order_id == orderdata['order_id']:
-                            if event == ITradeUpdateEvent.FILLED:
-                                # Update the insight with the filled price
-                                self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
-                                break  # No need to continue
-
-                            if event == ITradeUpdateEvent.CLOSED:
-                                self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
-                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
-                            # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
-                            if event == 'canceled':
-                                # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
-                                self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
-                                    InsightState.CANCELED, 'Order Canceled')
-                            if event == 'rejected':
-                                self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
-                                    InsightState.REJECTED, 'Order Rejected')
-                                break
+                            match event:
+                                case ITradeUpdateEvent.FILLED:
+                                    # Update the insight with the filled price
+                                    self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
+                                        orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
+                                # case ITradeUpdateEvent.CLOSED:
+                                #     self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
+                                #         orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
+                                
+                                case ITradeUpdateEvent.PARTIAL_FILLED:
+                                    # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
+                                    pass
+                                case ITradeUpdateEvent.CANCELED:
+                                    # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
+                                    self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
+                                        InsightState.CANCELED, 'Order Canceled')
+                                    
+                                    
+                                case  ITradeUpdateEvent.REJECTED:
+                                    self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
+                                        InsightState.REJECTED, 'Order Rejected')
+                                    break
+                                case _:
+                                    pass
                     case InsightState.FILLED | InsightState.CLOSED:
                         # Check if the position has been closed via SL or TP
                         if insight.symbol == orderdata['asset']['symbol']:
                             # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                            if (event == ITradeUpdateEvent.FILLED) and ((orderdata['qty'] == insight.quantity and orderdata['side'] != insight.side) or
-                                                                     (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
-                                                                     (insight.order_id == orderdata['order_id'])):
+                            if (((event == ITradeUpdateEvent.FILLED) and ((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
+                                                                        (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
+                                                                        (insight.order_id == orderdata['order_id'])):
                                 # Update the insight closed price
                                 self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'])
+                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['qty'])
                                 break  # No need to continue
         else:
             # 'Order not in universe'
@@ -422,9 +458,10 @@ class BaseStrategy(abc.ABC):
                     # Call the on_bar function and process the bar
                     try:
                         self.on_bar(symbol, data)
+                        self.generateInsights(symbol)
                     except Exception as e:
                         print('Error in on_bar:', e)
-                        
+
                     if self.VERBOSE > 0:
                         print('Time taken on_bar:', symbol,
                               timeit.default_timer() - start_time)

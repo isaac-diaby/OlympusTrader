@@ -29,5 +29,11 @@ class Strategy(BaseStrategy):
     def teardown(self):
         super().teardown()
 
+    @override
+    def generateInsights(self, symbol: str):
+        # Execute Orders If there should be any
+        super().generateInsights(symbol)
+
+    @override
     def executeInsight(self, symbol: str):
         super().executeInsight(symbol)

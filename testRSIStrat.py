@@ -55,9 +55,10 @@ class QbitTB(Strategy):
             asset, (datetime.now() - timedelta(minutes=125)), datetime.now(), self.resolution)
 
     def universe(self):
-        universe = {'btc-usd', 'eth-usd', 'xrp-usd'}
+        # universe = {'btc-usd', 'eth-usd', 'xrp-usd'}
         # universe = {'btc-usd', 'eth-usd', 'xrp-usd', 'ada-usd'}
-        # universe = {'TSLA'}
+        # universe = {'aapl'}
+        universe = {'btc-usd'}
         return universe
 
     def on_bar(self, symbol, bar):
@@ -72,12 +73,6 @@ class QbitTB(Strategy):
                                       [symbol].index.duplicated(keep='first')]
 
         self.state['history'][symbol].ta.strategy(self.state['TaStrategy'])
-
-        # Compute Market State
-        self.computeMarketState(symbol)
-
-        # Execute Orders If there should be any
-        self.generateInsights(symbol)  # self.insights[symbol]
 
     def computeMarketState(self, symbol: str):
         marketState = self.state['market_state'][symbol]
@@ -103,6 +98,9 @@ class QbitTB(Strategy):
         return marketState
 
     def generateInsights(self, symbol: str):
+        # Compute Market State
+        self.computeMarketState(symbol)
+
         history = self.state['history'][symbol].loc[symbol]
         latestBar = history.iloc[-1]
         previousBar = history.iloc[-2]
@@ -114,8 +112,8 @@ class QbitTB(Strategy):
         # Do not trade if market state is 0
         if (marketState == 0):
             return
-        
-              # TEST
+
+            # TEST
         # if (len(self.insights[symbol]) == 0):
         #     if (marketState > 0):
         #         print(f"Insight - {symbol}: TEST: Long")
@@ -140,8 +138,6 @@ class QbitTB(Strategy):
         #         self.add_insight(Insight(IOrderSide.SELL, symbol,
         #                              StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
-        
-
         if (latestBar['RSI_14'] < 30 and marketState > 0):
             # print(f"Insight - {symbol}: Long RSI: {latestBar['RSI_14']}")
             TP = self.tools.dynamic_round(
@@ -151,7 +147,8 @@ class QbitTB(Strategy):
             ENTRY = previousBar.high if (abs(
                 previousBar.high - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
             # time to live unfilled
-            TTLUF = self.tools.calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(
+                latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
             TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
@@ -167,10 +164,11 @@ class QbitTB(Strategy):
             ENTRY = previousBar.low if (abs(
                 previousBar.low - latestBar.close) < latestIATR) else self.tools.dynamic_round((latestBar.open-(.2*latestIATR)), symbol)
             # time to live unfilled
-            TTLUF = self.tools.calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+            TTLUF = self.tools.calculateTimeToLive(
+                latestBar['close'], ENTRY, latestIATR)
             # time to live till take profit
             TTLF = self.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
-            
+
             self.add_insight(Insight(IOrderSide.SELL, symbol,
                                      "RSI_OB", self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
 
@@ -424,8 +422,10 @@ if __name__ == "__main__":
     #     1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     # Paper Broker for backtesting
+    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
+    #     2024, 5, 27), end_date=datetime(2024, 5, 28)) # 1 day
     broker = PaperBroker(cash=1_000_000, start_date=datetime(
-        2024, 5, 27), end_date=datetime(2024, 5, 28))
+        2024, 5, 27, 14), end_date=datetime(2024, 5, 28, 16)) # 2 hours
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=1, ui=False, mode=IStrategyMode.BACKTEST)
 
