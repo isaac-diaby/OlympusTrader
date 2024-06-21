@@ -604,7 +604,7 @@ class PaperBroker(BaseBroker):
                 print("Saving data to ",
                       asset['stored_path']+f'/bar/{asset["symbol"]}.h5')
                 self.HISTORICAL_DATA[asset['symbol']]['bar'].to_hdf(
-                    asset['stored_path']+f'/bar/{asset["symbol"]}.h5', mode='a', key=IAsset["exchange"], index=True, format='table')
+                    asset['stored_path']+f'/bar/{asset["symbol"]}.h5', mode='a', key=asset["exchange"], index=True, format='table')
 
                 return True
 

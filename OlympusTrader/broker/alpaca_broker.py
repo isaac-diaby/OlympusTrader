@@ -94,7 +94,7 @@ class AlpacaBroker(BaseBroker):
         try:
             tickerInfo = self.trading_client.get_asset(symbol)
 
-            assert tickerInfo, f'IAsset {symbol} not found'
+            assert tickerInfo, f'Asset {symbol} not found'
 
             tickerAsset: IAsset = IAsset(
                 id=tickerInfo.id,
