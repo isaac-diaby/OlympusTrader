@@ -1,7 +1,10 @@
 from typing import override
 
+
 from .base_strategy import BaseStrategy
 from ..broker.base_broker import BaseBroker
+from ..utils.insight import Insight
+
 from ..utils.types import AttributeDict
 
 
@@ -35,5 +38,5 @@ class Strategy(BaseStrategy):
         super().generateInsights(symbol)
 
     @override
-    def executeInsight(self, symbol: str):
-        super().executeInsight(symbol)
+    def executeInsight(self, insight: Insight):
+        super().executeInsight(insight)

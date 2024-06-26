@@ -159,7 +159,7 @@ class ITimeFrame:
             
     def get_time_increment(self, time: datetime) -> datetime:
         """ 
-        Get the current time increment
+        Get the current time frame 
         """
         match self.unit_value:
             case ITimeFrameUnit.Minute:
@@ -177,7 +177,7 @@ class ITimeFrame:
                 return False
     def get_next_time_increment(self, time: datetime) -> datetime:
         """ 
-        Get the next time increment
+        Get the next time frame increment
         """
         match self.unit_value:
             case ITimeFrameUnit.Minute:

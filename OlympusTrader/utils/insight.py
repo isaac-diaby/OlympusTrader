@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import List, Literal
+from uuid import uuid4
 
 
 from .timeframe import ITimeFrame
@@ -34,6 +35,7 @@ class InsightState(Enum):
 
 
 class Insight:
+    INSIGHT_ID = uuid4()
     order_id: str = None
     side: IOrderSide = None  # buy or sell
     symbol: str = None  # symbol to trade
@@ -174,6 +176,7 @@ class Insight:
             self.createAt, self.periodUnfilled)
         hasExpired = expireAt < (datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time())
+
         if (self.state == InsightState.EXECUTED or self.state == InsightState.NEW) and hasExpired and shouldUpdateState:
             self.updateState(InsightState.CANCELED, 'Unfilled TTL expired')
 

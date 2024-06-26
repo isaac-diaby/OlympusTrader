@@ -152,6 +152,7 @@ class AlpacaBroker(BaseBroker):
         orders: List[IOrder] = []
         for order in res:
             orders.append(self.format_order(order))
+        return orders
 
     def get_order(self, order_id):
         return self.format_order(self.trading_client.get_order_by_id(order_id))
@@ -392,7 +393,8 @@ class AlpacaBroker(BaseBroker):
 
     def close_order(self, order_id):
         try:
-            return self.trading_client.cancel_order_by_id(order_id)
+            self.trading_client.cancel_order_by_id(order_id)
+            return order_id
         except alpaca.common.exceptions.APIError as e:
             if e.code == 42210000:
                 error = BaseException({
