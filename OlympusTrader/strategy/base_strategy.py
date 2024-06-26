@@ -3,6 +3,7 @@ import asyncio
 import os
 from threading import BrokenBarrierError, Thread
 from typing import Any, List, override, Union, Literal
+from uuid import uuid4
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import time
@@ -118,31 +119,30 @@ class BaseStrategy(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def executeInsight(self, symbol: str):
+    def executeInsight(self, insight: Insight):
         """ Called for each active insight in the strategy. 
         it allows you to conrol the execution of the insight and manage the order.
         """
         print('IS THIS WORKING, Add executeInsight Function? ->  async def executeInsight(self, symbol: str):')
-        for i, insight in enumerate(self.insights[symbol]):
-            match insight.state:
-                # case InsightState.NEW:
-                #     pass
-                # case InsightState.EXECUTED:
-                #     pass
-                # case InsightState.FILLED:
-                #     pass
-                # case InsightState.EXPIRED:
-                #     pass
-                # case InsightState.CANCELED:
-                #     pass
-                # case InsightState.REJECTED:
-                #     pass
-                # case InsightState.CLOSED:
-                #     pass
-                case _:
-                    print(
-                        'Implement the insight state in the executeInsight function:', insight.state)
-                    pass
+        match insight.state:
+            # case InsightState.NEW:
+            #     pass
+            # case InsightState.EXECUTED:
+            #     pass
+            # case InsightState.FILLED:
+            #     pass
+            # case InsightState.CLOSED:
+            #     pass
+            # case InsightState.REJECTED:
+            #     pass
+            # case InsightState.CANCELED:
+            #     pass
+            # case InsightState.EXPIRED:
+            #     pass
+            case _:
+                print(
+                    'Implement the insight state in the executeInsight function:', insight.state)
+                pass
 
     @override
     @abc.abstractmethod
@@ -228,6 +228,7 @@ class BaseStrategy(abc.ABC):
                             pool, server.serve_forever)
                         print('UI Shared Memory Server started')
 
+                    # TODO: Should probably use another barrier to check if the streams are running correctly after pulling the historical data
                     while not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
                         if self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
                             break
@@ -256,13 +257,11 @@ class BaseStrategy(abc.ABC):
                 self.BROKER.closeStream(self.STREAMS)
                 insighStream.cancel()
 
-
             if self.VERBOSE > 0:
                 print('Backtest Completed:',
-                          timeit.default_timer() - start_time)
-                
+                      timeit.default_timer() - start_time)
+
             print(self.BROKER.get_results())
-            # TODO: Add backtest results
             exit(0)
 
     def _startUISharedMemory(self):
@@ -289,30 +288,34 @@ class BaseStrategy(abc.ABC):
         print('Running Insight Listener')
         loop = asyncio.get_running_loop()
         while self._Running:
-            for symbol in self.INSIGHTS.keys():
+            # TODO: could use a thread pool executor to run the executeInsight() functions
+            for i in list(self.INSIGHTS):
+                insight = self.INSIGHTS[i]
+                if insight is None:
+                    continue
+                try:
+                    # if self.VERBOSE > 0:
+                    # print(f'Execute Insight: {
+                    #     symbol}- {datetime.datetime.now()}')
+                    # start_time = timeit.default_timer()
 
-                if (len(self.INSIGHTS[symbol]) > 0):
-                    try:
-                        # if self.VERBOSE > 0:
-                        # print(f'Execute Insight: {
-                        #     symbol}- {datetime.datetime.now()}')
-                        # start_time = timeit.default_timer()
-                        # TODO: also feed latest price to the insight for better accr - maybe
-                        self.executeInsight(symbol)
-                        # if self.VERBOSE > 0:
-                        # print('Time taken executeInsight:', symbol,
-                        #       timeit.default_timer() - start_time)
-                    except Exception as e:
-                        print('Error in _insightListener:', e)
-                        continue
+                    # TODO: also could feed latest price to the insight for better accr - maybe
+                    self.executeInsight(insight)
+                    
+                    # if self.VERBOSE > 0:
+                    # print('Time taken executeInsight:', symbol,
+                    #       timeit.default_timer() - start_time)
+                except Exception as e:
+                    print('Error in _insightListener:', e)
+                    continue
             if self.MODE == IStrategyMode.BACKTEST:
                 try:
                     self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
                 except BrokenBarrierError as e:
                     # print('Error in _insightListener:', e)
-                    continue
+                    pass
             else:
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
@@ -322,53 +325,57 @@ class BaseStrategy(abc.ABC):
         """ format the trade stream to the strategy. """
         orderdata, event = self.BROKER.format_on_trade_update(trade)
         # check if there is data and that the order symbol is in the universe
-        if orderdata and orderdata['asset']['symbol'] in self.UNIVERSE:
-            print(
-                f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
-            self.ORDERS.append(orderdata)
-            for i, insight in enumerate(self.INSIGHTS[orderdata['asset']['symbol']]):
-                match insight.state:
-                    case InsightState.EXECUTED:
-                        # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
-                        if insight.order_id == orderdata['order_id']:
-                            match event:
-                                case ITradeUpdateEvent.FILLED:
-                                    # Update the insight with the filled price
-                                    self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
-                                        orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
-                                # case ITradeUpdateEvent.CLOSED:
-                                #     self.INSIGHTS[orderdata['asset']['symbol']][i].positionFilled(
-                                #         orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
-                                
-                                case ITradeUpdateEvent.PARTIAL_FILLED:
-                                    # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
-                                    pass
-                                case ITradeUpdateEvent.CANCELED:
-                                    # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
-                                    self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
-                                        InsightState.CANCELED, 'Order Canceled')
-                                    
-                                    
-                                case  ITradeUpdateEvent.REJECTED:
-                                    self.INSIGHTS[orderdata['asset']['symbol']][i].updateState(
-                                        InsightState.REJECTED, 'Order Rejected')
-                                    break
-                                case _:
-                                    pass
-                    case InsightState.FILLED | InsightState.CLOSED:
-                        # Check if the position has been closed via SL or TP
-                        if insight.symbol == orderdata['asset']['symbol']:
-                            # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
-                            if (((event == ITradeUpdateEvent.FILLED) and ((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
-                                                                        (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
-                                                                        (insight.order_id == orderdata['order_id'])):
-                                # Update the insight closed price
-                                self.INSIGHTS[orderdata['asset']['symbol']][i].positionClosed(
+        if orderdata and orderdata['asset']['symbol'] not in self.UNIVERSE:
+              # 'Order not in universe'
+            return
+        print(
+            f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
+        self.ORDERS.append(orderdata)
+        for i, insight in self.INSIGHTS.items():
+            match insight.state:
+                case InsightState.EXECUTED:
+                    # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
+                    if insight.order_id == orderdata['order_id']:
+                        match event:
+                            case ITradeUpdateEvent.FILLED:
+                                # Update the insight with the filled price
+                                self.INSIGHTS[i].positionFilled(
+                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
+
+                            # case ITradeUpdateEvent.CLOSED:
+                            #     self.INSIGHTS[i].positionFilled(
+                            #         orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
+
+                            case ITradeUpdateEvent.PARTIAL_FILLED:
+                                # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
+                                pass
+                            case ITradeUpdateEvent.CANCELED:
+                                # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
+                                self.INSIGHTS[i].updateState(
+                                    InsightState.CANCELED, 'Order Canceled')
+
+                            case  ITradeUpdateEvent.REJECTED:
+                                self.INSIGHTS[i].updateState(
+                                    InsightState.REJECTED, 'Order Rejected')
+                                break
+                            case _:
+                                pass
+                case InsightState.FILLED | InsightState.CLOSED:
+                    # Check if the position has been closed via SL or TP
+                    if insight.symbol == orderdata['asset']['symbol']:
+                        # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
+                        if (event == ITradeUpdateEvent.FILLED) and ((((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
+                            (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
+                                (insight.order_id == orderdata['order_id'])):
+                            # Update the insight closed price
+                            if self.MODE != IStrategyMode.BACKTEST:
+                                self.INSIGHTS[i].positionClosed(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['qty'])
-                                break  # No need to continue
-        else:
-            # 'Order not in universe'
-            pass
+                            else:
+                                self.INSIGHTS[i].positionClosed(
+                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'] , orderdata['order_id'], orderdata['qty'])
+                            break  # No need to continue
+
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 
     def _start(self):
@@ -397,8 +404,6 @@ class BaseStrategy(abc.ABC):
         assetInfo = self.BROKER.get_ticker_info(symbol)
         if assetInfo and assetInfo['status'] == 'active' and assetInfo['tradable']:
             self.UNIVERSE[assetInfo['symbol']] = assetInfo
-            self.INSIGHTS[assetInfo['symbol']] = []
-
             print(
                 f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
         else:
@@ -421,7 +426,7 @@ class BaseStrategy(abc.ABC):
 
         insight.set_mode(self.BROKER, self.MODE)
 
-        self.INSIGHTS[insight.symbol].append(insight)
+        self.INSIGHTS[insight.INSIGHT_ID] = insight
 
     async def _on_bar(self, bar: Any):
         """ format the bar stream to the strategy. """
