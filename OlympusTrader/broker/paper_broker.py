@@ -15,10 +15,10 @@ from pathlib import Path
 import pandas as pd
 
 from .base_broker import BaseBroker
-from .interfaces import ITimeInForce, ISupportedBrokers, IOrderClass, IOrderRequest, IOrderSide, IOrderType, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
-from ..utils.insight import Insight
+from .interfaces import IQuote, ITimeInForce, ISupportedBrokers, IOrderClass, IOrderRequest, IOrderSide, IOrderType, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
+from ..insight.insight import Insight
 from .interfaces import IAccount, IOrder, IPosition, IAsset, IOrderLegs
-from ..utils.interfaces import IMarketDataStream, IStrategyMode
+from ..strategy.interfaces import IMarketDataStream, IStrategyMode
 from ..utils.timeframe import ITimeFrame
 
 
@@ -28,7 +28,7 @@ import yfinance as yf
 class PaperBroker(BaseBroker):
     MODE: IStrategyMode = IStrategyMode.BACKTEST
 
-    Account: IAccount = None
+    ACCOUNT: IAccount = None
     Positions: dict[str, IPosition] = {}
     Orders: dict[str, IOrder] = {}
     LEVERAGE: int = 4
@@ -53,14 +53,14 @@ class PaperBroker(BaseBroker):
 
     TICKER_INFO: dict[str, IAsset] = {}
 
-    def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "USD", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf'):
+    def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf'):
 
         super().__init__(ISupportedBrokers.PAPER, True, feed)
         self.MODE = mode
         self.LEVERAGE = leverage
         self.STARTING_CASH = cash
-        self.Account = IAccount(account_id='PAPER_ACCOUNT', cash=self.STARTING_CASH, currency=currency,
-                                buying_power=cash*self.LEVERAGE, shorting_enabled=allow_short)
+        self.ACCOUNT = IAccount(account_id='PAPER_ACCOUNT', equity=self.STARTING_CASH, cash=self.STARTING_CASH, currency=currency,
+                                buying_power=cash*self.LEVERAGE, leverage=self.LEVERAGE, shorting_enabled=allow_short)
 
         # Set the backtest configuration
         if self.MODE == IStrategyMode.BACKTEST:
@@ -70,7 +70,7 @@ class PaperBroker(BaseBroker):
             self.START_DATE = start_date
             self.END_DATE = end_date
             self.CURRENT = self.START_DATE
-            self.ACCOUNT_HISTORY = {self.CURRENT: self.Account}
+            self.update_account_history()
             self.BACKTEST_FlOW_CONTROL_BARRIER = Barrier(3)
             # self.BACKTEST_FlOW_CONTROL_BARRIER.reset()
         else:
@@ -166,6 +166,24 @@ class PaperBroker(BaseBroker):
                 "data": {"order_id": order_id}
             })
 
+    def get_latest_quote(self, asset: IAsset) -> IQuote:
+        # FIXME: Temp: Get the latest quote at bar close and bid ask spread at is high and low
+        if self.DataFeed == 'yf':
+            currentBar = self._get_current_bar(
+                asset['symbol']).iloc[0]
+            return IQuote(
+                symbol=asset['symbol'],
+                bid=currentBar.low,
+                ask=currentBar.high,
+                bid_size=0,
+                ask_size=0,
+                volume=currentBar.volume,
+                timestamp=self.CURRENT
+            )
+        else:
+            raise NotImplementedError(
+                f'DataFeed {self.DataFeed} not supported')
+
     def startTradeStream(self, callback):
         super().startTradeStream(callback)
         self.RUNNING_TRADE_STREAM = True
@@ -185,6 +203,7 @@ class PaperBroker(BaseBroker):
                             order['asset']['symbol'])
                         if currentBar is None:
                             continue
+                        currentBar = currentBar.iloc[0]
 
                         if order['created_at'] == self.CURRENT:
                             order['status'] = ITradeUpdateEvent.NEW
@@ -193,29 +212,30 @@ class PaperBroker(BaseBroker):
                                 callback(ITradeUpdate(order, ITradeUpdateEvent.NEW)))
                         if order['type'] == IOrderType.MARKET:
                             # Market order - FILLED at the current close price
-                            order['filled_price'] = currentBar['open'][0]
+                            order['filled_price'] = currentBar.open
                             order['status'] = ITradeUpdateEvent.FILLED
                             order['filled_at'] = self.CURRENT
                             order['updated_at'] = self.CURRENT
                             # update buying power difference
-                            bp_change =  (order['qty'] * \
-                                order['limit_price']) - (order['qty'] * \
-                                order['filled_price'])
+                            bp_change = (order['qty'] *
+                                         order['limit_price']) - (order['qty'] *
+                                                                  order['filled_price'])
                             if (self.Account['buying_power'] - bp_change) < 0:
                                 # cant afford the new price
-                                order['status'] = ITradeUpdateEvent.CANCELED
+                                order['status'] = ITradeUpdateEvent.REJECTED
                                 self._update_order(order)
                                 loop.run_until_complete(callback(ITradeUpdate(
-                                    order, ITradeUpdateEvent.CANCELED)))
+                                    order, ITradeUpdateEvent.REJECTED)))
                                 continue
 
-                            self.Account['buying_power'] -= bp_change
+                            self.Account['cash'] -= np.round(
+                                bp_change/self.LEVERAGE, 2)
                             self._update_order(order)
                             loop.run_until_complete(callback(ITradeUpdate(
                                 order, ITradeUpdateEvent.FILLED)))
 
                         elif order['type'] == IOrderType.LIMIT:
-                            if order['limit_price'] >=  currentBar['low'][0] and order['limit_price'] <=  currentBar['high'][0]:
+                            if order['limit_price'] >= currentBar.low and order['limit_price'] <= currentBar.high:
                                 order['filled_price'] = order['limit_price']
                                 order['status'] = ITradeUpdateEvent.FILLED
                                 order['filled_at'] = self.CURRENT
@@ -232,6 +252,7 @@ class PaperBroker(BaseBroker):
                             order['asset']['symbol'])
                         if currentBar is None:
                             continue
+                        currentBar = currentBar.iloc[0]
 
                         # check if the order has take profit or stop loss
                         if order['legs']:
@@ -239,7 +260,7 @@ class PaperBroker(BaseBroker):
 
                             if order['legs']['take_profit']:
                                 take_profit = order['legs']['take_profit']
-                                if take_profit['limit_price'] >= currentBar['low'][0] and take_profit['limit_price'] <= currentBar['high'][0]:
+                                if take_profit['limit_price'] >= currentBar.low and take_profit['limit_price'] <= currentBar.high:
                                     take_profit['filled_price'] = take_profit['limit_price']
                                     take_profit['status'] = ITradeUpdateEvent.CLOSED
                                     take_profit['filled_at'] = self.CURRENT
@@ -258,7 +279,7 @@ class PaperBroker(BaseBroker):
                                         order, ITradeUpdateEvent.CLOSED)))
                             elif order['legs']['stop_loss']:
                                 stop_loss = order['legs']['stop_loss']
-                                if stop_loss['limit_price'] >= currentBar['low'][0] and stop_loss['limit_price'] <= currentBar['high'][0]:
+                                if stop_loss['limit_price'] >= currentBar.low and stop_loss['limit_price'] <= currentBar.high:
                                     stop_loss['filled_price'] = stop_loss['limit_price']
                                     stop_loss['status'] = ITradeUpdateEvent.CLOSED
                                     stop_loss['filled_at'] = self.CURRENT
@@ -286,8 +307,9 @@ class PaperBroker(BaseBroker):
                             order['asset']['symbol'])
                         if currentBar is None:
                             continue
+                        currentBar = currentBar.iloc[0]
 
-                        order['stop_price'] = currentBar['open'][0]
+                        order['stop_price'] = currentBar.open
                         order['status'] = ITradeUpdateEvent.CLOSED
                         order['filled_at'] = self.CURRENT
                         order['updated_at'] = self.CURRENT
@@ -321,9 +343,9 @@ class PaperBroker(BaseBroker):
             raise NotImplementedError(f'Mode {self.MODE} not supported')
 
     def _update_position(self, symbol: str, close_price: float = None):
-        currentBar = self._get_current_bar(symbol)
+        currentBar = self._get_current_bar(symbol).iloc[0]
         oldPosition = self.Positions[symbol].copy()
-        self.Positions[symbol]['current_price'] = currentBar['close'][0] if not close_price else close_price
+        self.Positions[symbol]['current_price'] = currentBar.close if not close_price else close_price
 
         if self.Positions[symbol]['qty'] != 0:
             self.Positions[symbol]['market_value'] = self.Positions[symbol]['current_price'] * \
@@ -331,13 +353,13 @@ class PaperBroker(BaseBroker):
                        )  # qunaity can be negative for short positions
             self.Positions[symbol]['unrealized_pl'] = self.Positions[symbol]['market_value'] - \
                 self.Positions[symbol]['cost_basis']
-            changeInPL = round(self.Positions[symbol]['unrealized_pl'] - \
-                oldPosition['unrealized_pl'], 2)
-            self.Account['buying_power'] += changeInPL
+            changeInPL = round(self.Positions[symbol]['unrealized_pl'] -
+                               oldPosition['unrealized_pl'], 2)
             self.Account['cash'] += changeInPL
         else:
             # self.Positions[symbol]['market_value']
-            self.Account['buying_power'] += self.Positions[symbol]['cost_basis']
+            self.Account['cash'] += np.round(self.Positions[symbol]
+                                             ['market_value'] / self.LEVERAGE, 2)
             # TODO: Later we can remove the position from the Positions dictionary
             # del self.Positions[symbol]
         # print("Updated Position: ",
@@ -363,27 +385,27 @@ class PaperBroker(BaseBroker):
                             self._update_position(order['asset']['symbol'])
                             if order['side'] == IOrderSide.BUY:
                                 self.Positions[order['asset']
-                                                ['symbol']]['qty'] += order['qty']
+                                               ['symbol']]['qty'] += order['qty']
                             else:
                                 self.Positions[order['asset']
-                                                ['symbol']]['qty'] -= order['qty']
+                                               ['symbol']]['qty'] -= order['qty']
                             if self.Positions[order['asset']
-                                               ['symbol']]['qty'] > 0:
+                                              ['symbol']]['qty'] > 0:
                                 self.Positions[order['asset']
-                                                ['symbol']]['side'] = IOrderSide.BUY
+                                               ['symbol']]['side'] = IOrderSide.BUY
                             else:
                                 self.Positions[order['asset']
-                                                ['symbol']]['side'] = IOrderSide.SELL
+                                               ['symbol']]['side'] = IOrderSide.SELL
 
                             self.Positions[order['asset']
-                                            ['symbol']]['avg_entry_price'] = (self.Positions[order['asset']
-                                                                                              ['symbol']]['avg_entry_price'] + order['filled_price']) / 2
+                                           ['symbol']]['avg_entry_price'] = (self.Positions[order['asset']
+                                                                                            ['symbol']]['avg_entry_price'] + order['filled_price']) / 2
                             self.Positions[order['asset']
-                                            ['symbol']]['market_value'] = (self.Positions[order['asset']
-                                                                                           ['symbol']]['market_value'] + order['filled_price'] * order['qty']) / 2
+                                           ['symbol']]['market_value'] = (self.Positions[order['asset']
+                                                                                         ['symbol']]['market_value'] + order['filled_price'] * order['qty']) / 2
                             self.Positions[order['asset']
-                                            ['symbol']]['cost_basis'] = self.Positions[order['asset']
-                                                                                        ['symbol']]['market_value']
+                                           ['symbol']]['cost_basis'] = self.Positions[order['asset']
+                                                                                      ['symbol']]['market_value']
                             self._update_position(order['asset']['symbol'])
                         else:
                             # add positions dictionary
@@ -402,7 +424,6 @@ class PaperBroker(BaseBroker):
                     # Add the order to the active orders
                     if self.Positions[order['asset']['symbol']]['qty'] != 0:
                         self.ACTIVE_ORDERS.append(order)
-                    
 
             case ITradeUpdateEvent.CANCELED:
                 if (oldOrder['status'] == ITradeUpdateEvent.NEW) or (oldOrder in self.PENDING_ORDERS):
@@ -417,8 +438,7 @@ class PaperBroker(BaseBroker):
                     self.CANCELED_ORDERS.remove(oldOrder)
 
                 # Clear buying power wwithheld by the order
-                self.Account['buying_power'] += order['qty'] * \
-                    order['limit_price']
+                self.Account['cash'] += np.round((order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
 
             case ITradeUpdateEvent.CLOSED:
                 if oldOrder:
@@ -428,10 +448,10 @@ class PaperBroker(BaseBroker):
                         self.CANCELED_ORDERS.remove(oldOrder)
                     if order['side'] == IOrderSide.BUY:
                         self.Positions[order['asset']
-                                        ['symbol']]['qty'] -= order['qty']
+                                       ['symbol']]['qty'] -= order['qty']
                     else:
                         self.Positions[order['asset']
-                                        ['symbol']]['qty'] += order['qty']
+                                       ['symbol']]['qty'] += order['qty']
 
                     # Clear buying power wwithheld by the order
                     # self.Account['buying_power'] += order['qty'] * order['limit_price']
@@ -493,9 +513,9 @@ class PaperBroker(BaseBroker):
 
         if orderRequest['type'] == IOrderType.MARKET:
             currentBar = self._get_current_bar(
-                            orderRequest['symbol'])
-            orderRequest['limit_price'] = currentBar['close'][0]
-        
+                orderRequest['symbol']).iloc[0]
+            orderRequest['limit_price'] = currentBar.close
+
         marginRequired = orderRequest['qty'] * orderRequest['limit_price']
         buying_power = self.Account["buying_power"]
 
@@ -504,7 +524,7 @@ class PaperBroker(BaseBroker):
             if (orderRequest['side'] == IOrderSide.SELL and self.Positions.get(orderRequest['symbol'])['qty'] < 0) or \
                     (orderRequest['side'] == IOrderSide.BUY and self.Positions.get(orderRequest['symbol'])['qty'] > 0):
                 buying_power += self.Positions[orderRequest['symbol']
-                                                ]['market_value']
+                                               ]['market_value']
 
         if buying_power < marginRequired:
             raise BaseException({
@@ -562,12 +582,27 @@ class PaperBroker(BaseBroker):
                     "stop_loss"), trailing_stop=legs.get("trailing_stop"))
 
             )
-            self.Account['buying_power'] -= marginRequired
+            self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)
             self._update_order(order)
             return order
 
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
+
+    def update_account_history(self):
+        self.ACCOUNT_HISTORY[self.CURRENT] = self.Account
+
+    def update_account_balance(self):
+        self.ACCOUNT['buying_power'] = np.round(
+            self.ACCOUNT['cash'] * self.LEVERAGE, 2)
+        posistion_value = 0
+        if len(self.Positions) == 0:
+            self.ACCOUNT['equity'] = self.ACCOUNT['cash']
+        else:
+            for position in self.Positions.values():
+                posistion_value += np.round(position['market_value'], 2)
+            self.ACCOUNT['equity'] = self.ACCOUNT['cash'] + \
+                np.round(posistion_value / self.LEVERAGE, 2)
 
     def format_on_bar(self, bar, symbol: str):
         if self.DataFeed == 'yf':
@@ -587,6 +622,18 @@ class PaperBroker(BaseBroker):
             print('DataFeed not supported')
             return None
 
+    def format_on_quote(self, quote: IQuote):
+        # data = {
+        #     'symbol': quote.symbol,
+        #     'ask_price': quote.ask_price,
+        #     'ask_size': quote.ask_size,
+        #     'bid_price': quote.bid_price,
+        #     'bid_size': quote.bid_size,
+        #     'volume': (quote.bid_size + quote.ask_size),
+        #     'timestamp': quote.timestamp
+        # }
+        return quote
+
     def format_on_trade_update(self, trade: ITradeUpdate):
         if isinstance(trade, ITradeUpdate):
             # self.add_order(trade.order)
@@ -602,7 +649,8 @@ class PaperBroker(BaseBroker):
             if asset.get('stored'):
                 if asset['stored_path']:
                     bar_data_path = asset['stored_path'] + \
-                        f'/bar/{asset["symbol"]}_{asset["time_frame"].unit.value}.h5'
+                        f'/bar/{asset["symbol"]
+                                }_{asset["time_frame"].unit.value}.h5'
                     if os.path.exists(bar_data_path):
                         print("Loading data from ", bar_data_path)
                         self.HISTORICAL_DATA[asset['symbol']
@@ -648,7 +696,8 @@ class PaperBroker(BaseBroker):
 
                 # Save the data to the path in hdf5 format
                 bar_data_path = asset['stored_path'] + \
-                        f'/bar/{asset["symbol"]}_{asset["time_frame"].unit.value}.h5'
+                    f'/bar/{asset["symbol"]
+                            }_{asset["time_frame"].unit.value}.h5'
                 print("Saving data to ", bar_data_path)
                 self.HISTORICAL_DATA[asset['symbol']]['bar'].to_hdf(
                     bar_data_path, mode='a', key=asset["exchange"], index=True, format='table')
@@ -664,7 +713,7 @@ class PaperBroker(BaseBroker):
         if self.MODE == IStrategyMode.BACKTEST:
             # Load Market data from yfinance for all assets
             self.HISTORICAL_DATA = {}
-            TF = assetStreams[0]['time_frame'] # strategy time frame
+            TF = assetStreams[0]['time_frame']  # strategy time frame
 
             for asset in assetStreams:
                 self.HISTORICAL_DATA[asset['symbol']] = {}
@@ -693,8 +742,8 @@ class PaperBroker(BaseBroker):
                     for asset in assetStreams:
                         if asset['type'] == 'bar':
                             try:
-                                barData = self._get_current_bar(
-                                    asset['symbol'])
+                                # Get the current bar data with the index
+                                barData = self._get_current_bar(asset['symbol'])
                                 if type(barData) == NoneType:
                                     continue
                                 elif barData.empty:
@@ -715,10 +764,15 @@ class PaperBroker(BaseBroker):
                         #     print("Result: ", result)
 
                     self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+
+                    # LOG the account history
+                    self.update_account_history()
                     # Go to next time frame
                     # FIXME: Implement time frame increment
                     self.CURRENT = TF.get_next_time_increment(self.CURRENT)
                     if self.CURRENT > self.END_DATE:
+                        self.update_account_history()
+                        self.BACKTEST_FlOW_CONTROL_BARRIER.abort()
                         break
 
                 except BrokenBarrierError:
@@ -858,6 +912,18 @@ class PaperBroker(BaseBroker):
             }
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
+
+    @property
+    def Account(self) -> dict:
+        """ Returns the state of the strategy."""
+        self.update_account_balance()
+        return self.ACCOUNT
+
+    @Account.setter
+    def Account(self, account: dict):
+        """ Sets the state of the strategy."""
+        self.ACCOUNT = account
+        self.update_account_balance()
 
 
 if __name__ == '__main__':

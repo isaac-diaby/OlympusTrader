@@ -4,9 +4,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from OlympusTrader.broker.interfaces import IOrderSide
 from OlympusTrader.broker.paper_broker import PaperBroker
-from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState, StrategyDependantConfirmation
+from OlympusTrader.insight.insight import Insight, StrategyTypes, InsightState, StrategyDependantConfirmation
 from OlympusTrader.utils.timeframe import ITimeFrame, ITimeFrameUnit
-from OlympusTrader.utils.interfaces import IStrategyMode
+from OlympusTrader.strategy.interfaces import IStrategyMode
 from OlympusTrader.utils.tools import dynamic_round
 from OlympusTrader import AlpacaBroker, Strategy
 import numpy as np
@@ -181,8 +181,8 @@ class QbitTB(Strategy):
         return
 
     def executeInsight(self, insight):
-        RISK = self.state['execution_risk']
-        RewardRiskRatio = self.state['RewardRiskRatio']
+        RISK = self.execution_risk
+        RewardRiskRatio = self.minRewardRiskRatio
 
         history = self.state['history'][insight.symbol].loc[insight.symbol]
         latestBar = history.iloc[-1]

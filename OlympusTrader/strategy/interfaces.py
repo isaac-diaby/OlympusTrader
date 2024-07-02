@@ -1,20 +1,19 @@
 from datetime import datetime
 from typing import Literal, Optional, TypedDict, Required, List
 from enum import Enum
-from typing import TYPE_CHECKING
 
 
-from .timeframe import ITimeFrame
 
-from pandas import Timestamp
+from ..utils.timeframe import ITimeFrame
+
 
 
 class IMarketDataStream(TypedDict):
-    symbol: str
+    symbol: Required[str]
     exchange: str
-    time_frame: ITimeFrame
+    time_frame: Required[ITimeFrame]
     asset_type: Literal['stock', 'crypto'] = 'crypto'
-    type: Literal['trade', 'quote', 'bar', 'news'] = 'bar'
+    type: Required[Literal['trade', 'quote', 'bar', 'news']] = 'bar'
     stored: Optional[bool] = False
     stored_path: Optional[str] = None
     start: Optional[datetime] = None

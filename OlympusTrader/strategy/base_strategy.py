@@ -6,24 +6,28 @@ from typing import Any, List, override, Union, Literal
 from uuid import uuid4
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-import time
 import datetime
 import nest_asyncio
 import timeit
 from collections import deque
 
+import pandas_ta as ta
+
 from ..broker.base_broker import BaseBroker
 from ..broker.interfaces import ISupportedBrokers, ITradeUpdateEvent, IAsset, IAccount, IPosition, IOrder
 
 from .sharedmemory import SharedStrategyManager
-from ..utils.interfaces import IMarketDataStream, IStrategyMode
-from ..utils.insight import Insight, InsightState
+from .interfaces import IMarketDataStream, IStrategyMode
+from ..insight.insight import Insight, InsightState
 from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
 from ..utils.types import AttributeDict
 from ..utils.tools import ITradingTools
 
+from ..alpha.base_alpha import BaseAlpha
+from ..insight.executors.base_executor import BaseExecutor
 # from ..ui.base_ui import Dashboard
-
+import warnings
+warnings.simplefilter(action="ignore", category=FutureWarning)
 
 class BaseStrategy(abc.ABC):
     NAME: str = "BaseStrategy"
@@ -31,8 +35,7 @@ class BaseStrategy(abc.ABC):
     ACCOUNT: IAccount = {}
     POSITIONS: dict[str, IPosition] = {}
     ORDERS: deque[IOrder] = deque([])
-    HISTORY: pd.DataFrame = pd.DataFrame(
-        columns=['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    HISTORY: dict[str, pd.DataFrame] = {}
     INSIGHTS: dict[str, Insight] = {}
     UNIVERSE: dict[str, IAsset] = {}
     RESOLUTION = ITimeFrame(5, ITimeFrameUnit.Minute)
@@ -44,9 +47,33 @@ class BaseStrategy(abc.ABC):
     # DASHBOARD: Dashboard = None
 
     TOOLS: ITradingTools = None
+
+    # DEBUG
     VERBOSE: int = 0
 
     _Running = False
+    STARTING_CASH: float = None
+
+    # ALPHA MODELS
+    ALPHA_MODELS: List[BaseAlpha] = []
+
+    # Insight Executors Models
+    INSIGHT_EXECUTORS: dict[InsightState, deque[BaseExecutor]] = {
+        InsightState.NEW: deque([]),
+        InsightState.EXECUTED: deque([]),
+        InsightState.FILLED: deque([]),
+        InsightState.CLOSED: deque([]),
+        InsightState.REJECTED: deque([]),
+        InsightState.CANCELED: deque([])
+    }
+    """Insight Executors Models"""
+
+    # Strategy Execution Parameters
+    TaStrategy: ta.Strategy = None
+    WARM_UP: int = 0
+    execution_risk: float = 0.01  # 1% of account per trade
+    minRewardRiskRatio: float = 2.0  # 2:1 Reward to Risk Ratio minimum
+    baseConfidence: float = 0.1  # Base Confidence level for the strategy
 
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
@@ -58,7 +85,7 @@ class BaseStrategy(abc.ABC):
         self.VARIABLES = variables
         self.BROKER = broker
         self.TOOLS = ITradingTools(self)
-        self.VERBOSE = verbose
+        self.VERBOSE = verbose  # TODO: Log Levels should be an derived from env file
         assert ITimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
@@ -67,12 +94,13 @@ class BaseStrategy(abc.ABC):
         if self.WITHUI:
             self._startUISharedMemory()
 
-        self._start()
+        # Set up TA Strategy
+        self.TaStrategy = ta.Strategy(
+            name=self.NAME, description="Olympus Trader Framework", ta=[])
 
+        self.start()
         # Load the universe
         self._loadUniverse()
-        for asset in self.UNIVERSE.values():
-            self.init(asset)
 
         # Set backtesting configuration
         if self.MODE == IStrategyMode.BACKTEST:
@@ -84,6 +112,7 @@ class BaseStrategy(abc.ABC):
 
         self.ACCOUNT = self.BROKER.get_account()
         self.POSITIONS = self.BROKER.get_positions()
+        self.STARTING_CASH = self.ACCOUNT['cash']
 
     @override
     @abc.abstractmethod
@@ -95,7 +124,6 @@ class BaseStrategy(abc.ABC):
     @abc.abstractmethod
     def init(self, asset: IAsset):
         """ Initialize the strategy. This method is called once before the start of the strategy on every asset in the universe."""
-        pass
 
     @override
     @abc.abstractmethod
@@ -137,8 +165,6 @@ class BaseStrategy(abc.ABC):
             #     pass
             # case InsightState.CANCELED:
             #     pass
-            # case InsightState.EXPIRED:
-            #     pass
             case _:
                 print(
                     'Implement the insight state in the executeInsight function:', insight.state)
@@ -151,10 +177,43 @@ class BaseStrategy(abc.ABC):
         print('Teardown Function? -> def teardown(self):')
         self.BROKER.close_all_positions()
 
+    def _start(self):
+        """Start the alpha models."""
+        # assert callable(self.start), 'start must be a callable function'
+        # print("Running start function")
+
+        for alpha in self.ALPHA_MODELS:
+            alpha.start()
+        # self.start()
+
+    def _init(self, asset: IAsset):
+        """ Initialize the strategy. """
+        assert callable(self.init), 'init must be a callable function'
+        for alpha in self.ALPHA_MODELS:
+            alpha.init(asset)
+        self.init(asset)
+
+    def _generateInsights(self, symbol: str):
+        """ Generate insights for the strategy. """
+        assert callable(
+            self.generateInsights), 'generateInsights must be a callable function'
+        for alpha in self.ALPHA_MODELS:
+            result = alpha.generateInsights(symbol)
+            if result.success:
+                if result.insight is not None:
+                    self.add_insight(result.insight)
+            else:
+                print(f"Alpha {result.alpha} Failed: {result.message}")
+
+        self.generateInsights(symbol)
+
     def run(self):
         """ starts the strategy. """
         nest_asyncio.apply()
         self._Running = True
+
+        # set up the strategy
+        self._start()
 
         # check if universe is empty
         assert len(self.UNIVERSE) > 0, 'Universe is empty'
@@ -285,6 +344,8 @@ class BaseStrategy(abc.ABC):
 
     async def _insightListener(self):
         """ Listen to the insights and manage the orders. """
+        assert callable(
+            self.executeInsight), 'executeInsight must be a callable function'
         print('Running Insight Listener')
         loop = asyncio.get_running_loop()
         while self._Running:
@@ -299,12 +360,27 @@ class BaseStrategy(abc.ABC):
                     #     symbol}- {datetime.datetime.now()}')
                     # start_time = timeit.default_timer()
 
+                    # Execute the insight Executors
+                    passed = True
+                    for executor in self.INSIGHT_EXECUTORS[insight.state]:
+                        result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
+                        # Executor manage the insight state and mutates the insight
+                        if not result.passed:
+                            print(f'Executor {result.executor}: {result.message}')
+                            passed = False
+                            break
+
+                    if not passed:
+                        continue
+
                     # TODO: also could feed latest price to the insight for better accr - maybe
-                    self.executeInsight(insight)
-                    
+                    self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+
                     # if self.VERBOSE > 0:
                     # print('Time taken executeInsight:', symbol,
                     #       timeit.default_timer() - start_time)
+                except KeyError as e:
+                    continue
                 except Exception as e:
                     print('Error in _insightListener:', e)
                     continue
@@ -326,7 +402,7 @@ class BaseStrategy(abc.ABC):
         orderdata, event = self.BROKER.format_on_trade_update(trade)
         # check if there is data and that the order symbol is in the universe
         if orderdata and orderdata['asset']['symbol'] not in self.UNIVERSE:
-              # 'Order not in universe'
+            # 'Order not in universe'
             return
         print(
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}:{orderdata['qty']:^8}: {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']}, {orderdata['order_id']}")
@@ -365,29 +441,31 @@ class BaseStrategy(abc.ABC):
                     if insight.symbol == orderdata['asset']['symbol']:
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
                         if (event == ITradeUpdateEvent.FILLED) and ((((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
-                            (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
-                                (insight.order_id == orderdata['order_id'])):
+                                                                    (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
+                                                                    (insight.order_id == orderdata['order_id'])):
                             # Update the insight closed price
                             if self.MODE != IStrategyMode.BACKTEST:
                                 self.INSIGHTS[i].positionClosed(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['qty'])
                             else:
                                 self.INSIGHTS[i].positionClosed(
-                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'] , orderdata['order_id'], orderdata['qty'])
+                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['qty'])
                             break  # No need to continue
 
+                        if len(insight.partial_closes) > 0:
+                            for i, partialClose in enumerate(insight.partial_closes):
+                                if partialClose['order_id'] == orderdata['order_id']:
+                                    if (event == ITradeUpdateEvent.FILLED):
+                                        # Update the insight closed price
+                                        if self.MODE != IStrategyMode.BACKTEST:
+                                            self.INSIGHTS[i].partial_closes[i].set_filled_price(
+                                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'])
+                                        else:
+                                            self.INSIGHTS[i].partial_closes[i].set_filled_price(
+                                                orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'])
+                                        break
+
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
-
-    def _start(self):
-        """ Start the strategy. """
-        assert callable(self.start), 'start must be a callable function'
-        # 1% of account per trade
-        print("Running start function")
-        self.state['execution_risk'] = 0.01
-        # 2:1 Reward to Risk Ratio minimum
-        self.state['RewardRiskRatio'] = 2.0
-
-        self.start()
 
     def _loadUniverse(self):
         """ Loads the universe of the strategy."""
@@ -395,15 +473,19 @@ class BaseStrategy(abc.ABC):
         universeSet = set(self.universe())
         for symbol in universeSet:
             self._loadAsset(symbol)
-        if len(self.UNIVERSE) == 0:
-            print('No assets loaded into the universe')
+        assert (len(self.UNIVERSE) != 0), 'No assets loaded into the universe'
 
-    def _loadAsset(self, s: str):
+        for asset in self.UNIVERSE.values():
+            # Init all assets in the strategy
+            self._init(asset)
+
+    def _loadAsset(self, symbol: str):
         """ Loads the asset into the universe of the strategy."""
-        symbol = s.upper()
+        symbol = symbol.upper()
         assetInfo = self.BROKER.get_ticker_info(symbol)
         if assetInfo and assetInfo['status'] == 'active' and assetInfo['tradable']:
             self.UNIVERSE[assetInfo['symbol']] = assetInfo
+            self.HISTORY[assetInfo['symbol']] = pd.DataFrame()
             print(
                 f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
         else:
@@ -419,12 +501,48 @@ class BaseStrategy(abc.ABC):
             case _:
                 print(f"{eventType} Event not supported")
 
+    def add_alpha(self, alpha: BaseAlpha):
+        """ Adds an alpha to the strategy."""
+        assert isinstance(alpha, BaseAlpha), 'alpha must be of type BaseAlpha object'
+
+        alpha.registerAlpha()
+
+    def add_alphas(self, alphas: List[BaseAlpha]):
+        """ Adds a list of alphas to the strategy."""
+        assert isinstance(
+            alphas, List), 'alphas must be of type List[BaseAlpha] object'
+        for alpha in alphas:
+            self.add_alpha(alpha)
+
+    def add_executor(self, executor: BaseExecutor):
+        """ Adds an executor to the strategy."""
+        assert isinstance(executor, BaseExecutor), 'executor must be of type BaseExecutor object'
+
+        self.INSIGHT_EXECUTORS[executor.state].append(executor)
+
+    def add_executors(self, executors: List[BaseExecutor]):
+        """ Adds a list of executors to the strategy."""
+        assert isinstance(executors, List), 'executors must be of type List[BaseExecutor] object'
+        for executor in executors:
+            self.add_executor(executor)
+
+    def add_ta(self, ta: List[dict]):
+        """ Adds a technical analysis to the strategy."""
+        assert isinstance(
+            ta, List), 'ta must be of type List[dict] object'
+        if len(ta) == 0:
+            return
+
+        for ind in ta:
+            if ind not in self.TaStrategy.ta:
+                self.TaStrategy.ta.append(ind)
+
     def add_insight(self, insight: Insight):
         """ Adds an insight to the strategy."""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
 
-        insight.set_mode(self.BROKER, self.MODE)
+        insight.set_mode(self.BROKER, self.assets[insight.symbol], self.MODE)
 
         self.INSIGHTS[insight.INSIGHT_ID] = insight
 
@@ -457,17 +575,28 @@ class BaseStrategy(abc.ABC):
                 timestamp = data.index[0][1]
                 # Check if the bar is part of the resolution of the strategy
                 if self.resolution.is_time_increment(timestamp):
-                    self.HISTORY = pd.concat([self.HISTORY, data])
-                    # print('New Bar is part of the resolution of the strategy', data)
                     if self.VERBOSE > 0:
                         print(f'New Bar is part of the resolution of the strategy: {
                               symbol} - {timestamp} - {datetime.datetime.now()}')
                         start_time = timeit.default_timer()
 
+                    self.HISTORY[symbol] = pd.concat(
+                        [self.HISTORY[symbol], data])
+                    # Remove duplicates keys in the histoiry as sometimes when getting warm up data we get duplicates
+                    self.HISTORY[symbol] = self.HISTORY[symbol].loc[~self.HISTORY[symbol].index.duplicated(
+                        keep='first')]
+                    # Needs to be warm up
+                    if (len(self.HISTORY[symbol]) < self.WARM_UP):
+                        print(f"Waiting for warm up: {symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}")
+                        return
+
+                    # Run the pandas TA
+                    self.HISTORY[symbol].ta.strategy(self.TaStrategy)
+
                     # Call the on_bar function and process the bar
                     try:
                         self.on_bar(symbol, data)
-                        self.generateInsights(symbol)
+                        self._generateInsights(symbol)
                     except Exception as e:
                         print('Error in on_bar:', e)
 
@@ -570,3 +699,18 @@ class BaseStrategy(abc.ABC):
     def streams(self) -> dict:
         """ Returns the streams of the strategy."""
         return self.STREAMS
+
+    @property
+    def warm_up(self) -> int:
+        """ Returns the warm up period of the strategy."""
+        return self.WARM_UP
+
+    @warm_up.setter
+    def warm_up(self, warm_up: int):
+        """ Sets the warm up period of the strategy."""
+        if warm_up < 0:
+            raise ValueError('Warm up period must be greater than 0')
+        if warm_up <= self.WARM_UP:
+            # print('Warm up period cannot be reduced')
+            return
+        self.WARM_UP = warm_up

@@ -11,12 +11,12 @@ import alpaca
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
 from alpaca.data.live import StockDataStream, CryptoDataStream
-from alpaca.data.requests import StockBarsRequest, CryptoBarsRequest
+from alpaca.data.requests import StockBarsRequest, CryptoBarsRequest, StockLatestQuoteRequest, CryptoLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed, CryptoFeed
 from alpaca.common.enums import BaseURL
 from alpaca.trading.models import Position, Order, TradeUpdate
-from alpaca.data.models import Bar
+from alpaca.data.models import Bar, Quote
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
 from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
@@ -24,7 +24,7 @@ from alpaca.trading.stream import TradingStream
 from .base_broker import BaseBroker
 from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent
 from ..utils.timeframe import ITimeFrame as tf
-from ..utils.insight import Insight
+from ..insight.insight import Insight
 
 
 class AlpacaBroker(BaseBroker):
@@ -34,7 +34,6 @@ class AlpacaBroker(BaseBroker):
     stock_stream_client: StockDataStream = None
     crypto_client: CryptoHistoricalDataClient = None
     crypto_stream_client: CryptoDataStream = None
-
 
     def __init__(self, paper: bool, feed: DataFeed = DataFeed.IEX):
         super().__init__(ISupportedBrokers.ALPACA, paper, feed)
@@ -60,7 +59,7 @@ class AlpacaBroker(BaseBroker):
     def get_history(self, asset: IAsset, start: datetime, end: datetime, resolution: tf):
         # Convert to TimeFrame from OlympusTrader from alpaca
         super().get_history(asset, start, end, resolution)
-        
+
         timeframe = TimeFrame(resolution.amount, resolution.unit)
         data = None
         if (asset['asset_type'] == 'stock'):
@@ -108,7 +107,7 @@ class AlpacaBroker(BaseBroker):
                 shortable=tickerInfo.shortable,
                 fractionable=tickerInfo.fractionable,
                 min_order_size=tickerInfo.min_order_size,
-                min_price_increment= tickerInfo.price_increment if tickerInfo.price_increment else 0.01,
+                min_price_increment=tickerInfo.price_increment if tickerInfo.price_increment else 0.01,
             )
             return tickerAsset
         except alpaca.common.exceptions.APIError as e:
@@ -118,8 +117,8 @@ class AlpacaBroker(BaseBroker):
     def get_account(self):
         res = self.trading_client.get_account()
         res.non_marginable_buying_power
-        account: IAccount = IAccount(account_id=res.id, cash=float(res.cash), currency=res.currency,
-                                     buying_power=float(res.buying_power), shorting_enabled=res.shorting_enabled)
+        account: IAccount = IAccount(account_id=res.id, equity=float(res.equity), cash=float(res.cash), currency=res.currency,
+                                     buying_power=float(res.buying_power), leverage=float(res.multiplier), shorting_enabled=res.shorting_enabled)
         return account
 
     def get_position(self, symbol):
@@ -188,6 +187,15 @@ class AlpacaBroker(BaseBroker):
 
         )
 
+    def get_latest_quote(self, asset: IAsset):
+        if asset['asset_type'] == 'crypto':
+            quote = self.crypto_client.get_crypto_latest_quote(
+                CryptoLatestQuoteRequest(asset['symbol']))
+        elif asset['asset_type'] == 'stock':
+            quote = self.stock_client.get_stock_latest_quote(
+                StockLatestQuoteRequest(asset['symbol']))
+        return self.format_on_quote(quote)
+
     def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:
         # TODO: manage insight order by planing entry and exit orders for a given insight
         # https://alpaca.markets/docs/trading/orders/#bracket-orders
@@ -198,7 +206,8 @@ class AlpacaBroker(BaseBroker):
             "qty": insight.quantity,
             "side": OrderSide.BUY if insight.side == IOrderSide.BUY else OrderSide.SELL,
             "time_in_force": TimeInForce.GTC,
-            "order_class": OrderClass.SIMPLE # OrderClass.BRACKET if insight.TP and insight.SL else OrderClass.SIMPLE,
+            # OrderClass.BRACKET if insight.TP and insight.SL else OrderClass.SIMPLE,
+            "order_class": OrderClass.SIMPLE
             # "take_profit": None if insight.TP == None else TakeProfitRequest(
             #     limit_price=insight.TP[-1]
             # ),
@@ -234,7 +243,6 @@ class AlpacaBroker(BaseBroker):
             # "crypto orders not allowed for advanced order_class: otoco or OTO"}
             orderRequest["order_class"] = OrderClass.SIMPLE
 
-        
         try:
             match insight.type:
                 case IOrderType.MARKET:
@@ -404,7 +412,6 @@ class AlpacaBroker(BaseBroker):
                 raise error
             raise e
 
-
     def startTradeStream(self, callback: Awaitable):
         super().startTradeStream(callback)
         self.trading_stream_client.subscribe_trade_updates(callback)
@@ -436,7 +443,8 @@ class AlpacaBroker(BaseBroker):
                     self.crypto_stream_client.subscribe_bars(
                         callback, assetStream.get('symbol'))
             else:
-                raise NotImplementedError(f"Stream type {assetStream['type']} not supported")
+                raise NotImplementedError(
+                    f"Stream type {assetStream['type']} not supported")
             # TODO: add support for quotes
 
         if StockStreamCount:
@@ -506,4 +514,16 @@ class AlpacaBroker(BaseBroker):
             'volume': bar.volume,
         }, index=[(bar.symbol, bar.timestamp)], columns=['open', 'high', 'low', 'close', 'volume'])
         # data.set_index(['symbol', )], inplace=True)
+        return data
+
+    def format_on_quote(self, quote: Quote):
+        data = {
+            'symbol': quote.symbol,
+            'ask_price': quote.ask_price,
+            'ask_size': quote.ask_size,
+            'bid_price': quote.bid_price,
+            'bid_size': quote.bid_size,
+            'volume': (quote.bid_size + quote.ask_size),
+            'timestamp': quote.timestamp
+        }
         return data

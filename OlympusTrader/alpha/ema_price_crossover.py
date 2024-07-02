@@ -1,0 +1,88 @@
+import numpy as np
+
+from ..broker.interfaces import IOrderSide
+from .base_alpha import BaseAlpha
+from ..insight.insight import Insight, StrategyDependantConfirmation
+
+
+class EMAPriceCrossoverAlpha(BaseAlpha):
+    """
+    ### EMA Crossover Alpha
+    This alpha model generates insights based on EMA Crossover.
+
+    Parameters:
+    - strategy: BaseStrategy - Strategy instance
+    - atrPeriod: int - ATR Period
+    - emaPeriod: int - EMA Period
+    - baseConfidenceModifierField: str - Field to modify base confidence
+
+    """
+    atrColumn: str
+    emaColumn: str
+
+    def __init__(self, strategy, atrPeriod=14, emaPeriod=14, baseConfidenceModifierField=None):
+        super().__init__(strategy, "EMA_PRICE_CROSSOVER", "0.1", baseConfidenceModifierField)
+        self.TA = [
+            {"kind": 'atr', "length": atrPeriod},
+            {"kind": 'ema', "length": emaPeriod}
+        ]
+        self.STRATEGY.warm_up = max(atrPeriod, emaPeriod)
+        self.atrColumn = f'ATRr_{atrPeriod}'
+        self.emaColumn = f'EMA_{emaPeriod}'
+
+    def start(self):
+        pass
+
+    def init(self, asset):
+        pass
+
+    def generateInsights(self, symbol):
+        try:
+            latestBar = self.get_latest_bar(symbol)
+            previousBar = self.get_previos_bar(symbol)
+            latestIATR = latestBar[self.atrColumn]
+            baseConfidence = self.STRATEGY.baseConfidence
+            # Modify Confidence based on baseConfidenceModifierField
+            if (self.baseConfidenceModifierField):
+                baseConfidence *= abs(self.get_baseConfidenceModifier(symbol))
+
+            if baseConfidence <= 0:
+                return self.returnResults(message="Base Confidence is 0.")
+
+            # Generate EMA Crossover Long
+            # and marketState > 3):
+            if ((latestBar[self.emaColumn] < latestBar['close']) and (previousBar[self.emaColumn] > previousBar['high']) and (np.abs(latestBar['close'] - latestBar[self.emaColumn]) < latestBar[self.atrColumn])):
+                TP = self.STRATEGY.tools.dynamic_round(
+                    latestBar['high']+(latestIATR*3.5), symbol)
+                SL = self.STRATEGY.tools.dynamic_round(
+                    max(previousBar['low']-(.5*latestIATR), latestBar[self.emaColumn]-latestIATR*1.5), symbol)
+                ENTRY = self.STRATEGY.tools.dynamic_round(
+                    latestBar['EMA_9'], symbol)  # pullback
+                # time to live unfilled
+                TTLUF = self.STRATEGY.tools.calculateTimeToLive(
+                    latestBar['close'], ENTRY, latestIATR)
+                # time to live till take profit
+                TTLF = self.STRATEGY.tools.calculateTimeToLive(
+                    TP, ENTRY, latestIATR)
+
+                return self.returnResults(Insight(IOrderSide.BUY, symbol, self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
+
+            # Generate EMA Crossover Short
+            # and marketState < -3):
+            if (self.STRATEGY.assets[symbol]['shortable'] and (latestBar[self.emaColumn] > latestBar['close']) and (previousBar[self.emaColumn] < previousBar['low']) and (np.abs(latestBar[self.emaColumn] - latestBar['close']) < latestBar[self.atrColumn])):
+                TP = self.STRATEGY.tools.dynamic_round(
+                    latestBar['low']-(latestIATR*3.5), symbol)
+                SL = self.STRATEGY.tools.dynamic_round(
+                    min(previousBar['high']+(.5*latestIATR), latestBar[self.emaColumn]+latestIATR*1.5), symbol)
+                ENTRY = self.STRATEGY.tools.dynamic_round(
+                    latestBar['EMA_9'], symbol)
+                # time to live unfilled
+                TTLUF = self.STRATEGY.tools.calculateTimeToLive(
+                    latestBar['close'], ENTRY, latestIATR)
+                # time to live till take profit
+                TTLF = self.STRATEGY.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
+
+                return self.returnResults(Insight(IOrderSide.SELL, symbol, self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
+            return self.returnResults()
+        except Exception as e:
+            return self.returnResults(success=False, message=str(e))

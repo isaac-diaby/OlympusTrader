@@ -35,7 +35,7 @@ MODE: IStrategyMode = STRATEGY.get_variable('MODE')
 account_col, open_pnl_col, mode_col = st.columns(3)
 with account_col:
     st.metric("Balance", STRATEGY.get_variable(
-        'account')["cash"] or 0.0, delta=0.0)
+        'account')["equity"] or 0.0, delta=0.0)
 with open_pnl_col:
     pass
     # st.metric("Open PnL", (STRATEGY.get_variable('tools').get_all_unrealized_pnl()) or 0.0)

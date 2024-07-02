@@ -84,10 +84,12 @@ class IAsset(TypedDict):
 
 class IAccount(TypedDict):
     account_id: str
+    equity: float
     cash: float
     currency: str
     buying_power: float
     shorting_enabled: bool
+    leverage: float
 
 class IPosition(TypedDict):
     asset: IAsset
@@ -126,7 +128,15 @@ class IOrder(TypedDict):
     submitted_at: datetime #Timestamp when the order was submitted.
     filled_at: Optional[datetime] #Timestamp when the order was filled.
     legs: Optional[IOrderLegs]
-    
+
+class IQuote(TypedDict):
+    symbol: str
+    bid: float
+    ask: float
+    bid_size: float
+    ask_size: float
+    volume: float
+    timestamp: datetime
 
 
 class IAccountState(TypedDict):
@@ -140,4 +150,4 @@ class ITradeUpdate():
         self.order = order
 
     def __str__(self):
-        return f'{self.event} - {self.symbol} - {self.qty} - {self.price} - {self.side} - {self.time}'
+        return f'{self.event} - {self.order["symbol"]} - {self.order["qty"]} - {self.order["side"]} - {self.order["updated_at"]}'
