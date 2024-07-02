@@ -8,12 +8,12 @@ import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-from .interfaces import ISupportedBrokers
+from .interfaces import IQuote, ISupportedBrokers
 
 from .interfaces import IAsset, IAccount, IOrder, IPosition, ITradeUpdateEvent
-from ..utils.insight import Insight
+from ..insight.insight import Insight
 from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
-from ..utils.interfaces import IMarketDataStream
+from ..strategy.interfaces import IMarketDataStream
 
 
 class BaseBroker(abc.ABC):
@@ -73,6 +73,10 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
+    def get_latest_quote(self, asset: IAsset) -> IQuote:
+        pass
+    @override
+    @abc.abstractmethod
     def close_order(self, order_id: str) -> any:
         pass
 
@@ -91,7 +95,7 @@ class BaseBroker(abc.ABC):
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
 
-        if not insight.checkValidEntryInsight():
+        if not insight.validate()[0]:
             raise ValueError("Invalid Entry Insight")
         # assert isinstance(asset, Asset), 'asset must be of type Asset object'
 
@@ -121,13 +125,20 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    # (data={}, index=[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
     def format_on_bar(self, bar: Any) -> pd.DataFrame:
-        """Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}"""
-        pass
+        """
+        Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}
+        -  (data={}, index=[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
 
+        """
+        pass
+    @override
+    @abc.abstractmethod
+    def format_on_quote(self, quote: Any) -> IQuote:
+        """Format stream quote data"""
+        pass
     @override
     @abc.abstractmethod
     def format_on_trade_update(self, trade: Any) -> tuple[IOrder, ITradeUpdateEvent]:
-        """Format stream quote data to { symbol: str, quote: -> bid, bidSize, ask, askSize, timestamp}"""
+        """Format stream Trade Order data and event"""
         pass

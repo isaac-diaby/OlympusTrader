@@ -3,9 +3,8 @@ from typing import override
 
 from .base_strategy import BaseStrategy
 from ..broker.base_broker import BaseBroker
-from ..utils.insight import Insight
+from ..insight.insight import Insight
 
-from ..utils.types import AttributeDict
 
 
 class Strategy(BaseStrategy):

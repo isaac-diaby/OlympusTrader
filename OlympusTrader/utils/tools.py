@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from OlympusTrader.strategy.base_strategy import BaseStrategy
 
-from ..utils.insight import InsightState
+from ..insight.insight import InsightState
 
 
 class ITradingTools():
