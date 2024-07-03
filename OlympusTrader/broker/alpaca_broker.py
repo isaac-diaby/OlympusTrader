@@ -419,7 +419,7 @@ class AlpacaBroker(BaseBroker):
 
     async def closeTradeStream(self):
         self.trading_stream_client.stop()
-        self.trading_stream_client.close()
+        await self.trading_stream_client.close()
 
     def streamMarketData(self, callback: Awaitable, assetStreams):
         super().streamMarketData(callback, assetStreams)
@@ -469,18 +469,28 @@ class AlpacaBroker(BaseBroker):
     #     elif assetType == 'crypto':
     #         self.crypto_stream_client.run()
 
-    async def closeStream(self, assetType, type):
+    async def closeStream(self, assetStreams):
         # TODO: unsubscribe from streams type close stream should be called when strategy is stopped - close WSS connection
-        if assetType == 'stock':
-            self.stock_stream_client.stop()
-            if type == 'bars':
-                self.stock_stream_client.unsubscribe_bars()
+        closeStockBarStream = False
+        closeCryptoBarStream = False
+        for assetStream in assetStreams:
+            if assetStream['type'] == 'bar':
+                assetType = assetStream['asset_type']
+                symbol = assetStream['symbol']
+                if assetType == 'stock':
+                    self.stock_stream_client.unsubscribe_bars(symbol)
+                    if not closeStockBarStream:
+                        closeStockBarStream = True
+                elif assetType == 'crypto':
+                    self.crypto_stream_client.unsubscribe_bars(symbol)
+                    if not closeCryptoBarStream:
+                        closeCryptoBarStream = True
+
+        if closeStockBarStream:    
             self.stock_stream_client.close()
-        elif assetType == 'crypto':
-            self.crypto_stream_client.stop()
-            if type == 'bars':
-                self.crypto_stream_client.unsubscribe_bars()
-            await self.crypto_stream_client.close()
+        if closeCryptoBarStream:
+           self.crypto_stream_client.stop()
+
 
     def format_on_trade_update(self, trade: TradeUpdate):
         event: ITradeUpdateEvent = None

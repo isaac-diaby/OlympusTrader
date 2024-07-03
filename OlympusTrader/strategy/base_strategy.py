@@ -174,7 +174,7 @@ class BaseStrategy(abc.ABC):
     @abc.abstractmethod
     def teardown(self):
         """ Called once at the end of the strategy. """
-        print('Teardown Function? -> def teardown(self):')
+        print("Tear Down: Closing all positions")
         self.BROKER.close_all_positions()
 
     def _start(self):
@@ -242,20 +242,23 @@ class BaseStrategy(abc.ABC):
                             print('UI Shared Memory Server started')
 
                         #  Insight executor and listener
-                        insighStream = asyncio.run(self._insightListener())
+                        insighStream = loop.create_task(
+                        self._insightListener(), name="OlympusTraderInsightListener")
+
+                        insighStream = loop.run_in_executor(
+                            pool, loop.run_forever)
 
                     except Exception as e:
-                        self.BROKER.closeTradeStream()
                         print(f'Exception from Threads: {e}')
-                loop.run_forever()
 
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
             finally:
                 self.teardown()
+                # asyncio.run(self.BROKER.closeTradeStream())
+                pool.shutdown(wait=False)
+                asyncio.run(self.BROKER.closeStream(self.STREAMS))
                 self._Running = False
-                # pool.shutdown(wait=False)
-                # loop.close()
                 exit(0)
 
         elif self.MODE == IStrategyMode.BACKTEST:
@@ -299,10 +302,8 @@ class BaseStrategy(abc.ABC):
                         # TODO: Teardown on last candle
                         # self.teardown()
 
-                    self._Running = False
-                    tradeStream.cancel()
-                    marketDataStream.cancel()
-                    insighStream.cancel()
+                   
+                    self.teardown()
                     pool.shutdown(wait=False)
 
                 except Exception as e:
@@ -312,9 +313,14 @@ class BaseStrategy(abc.ABC):
 
             except KeyboardInterrupt:
                 print("Interrupted execution by user")
-                self.BROKER.closeTradeStream()
-                self.BROKER.closeStream(self.STREAMS)
-                insighStream.cancel()
+                # self.BROKER.closeTradeStream()
+                # self.BROKER.closeStream(self.STREAMS)
+                # insighStream.cancel()
+            finally:
+                self.teardown()
+                asyncio.run(self.BROKER.closeTradeStream())
+                asyncio.run(self.BROKER.closeStream(self.STREAMS))
+                self._Running = False
 
             if self.VERBOSE > 0:
                 print('Backtest Completed:',
