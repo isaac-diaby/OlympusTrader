@@ -2,14 +2,15 @@
 alpaca-py
 yfinance
 
-numpy
-pandas
 
 TA-Lib
 pandas_ta
 scipy
 
 streamlit
+
+numpy==1.26.4 # Required for pandas_ta
+pandas
 
 # Dev-dependencies
 python-dotenv
