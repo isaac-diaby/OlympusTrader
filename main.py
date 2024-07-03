@@ -53,7 +53,7 @@ class QbitTB(Strategy):
         # load warm up history
 
         self.history[asset['symbol']] = pd.concat([self.history[asset['symbol']], self.broker.get_history(
-            asset, self.resolution.add_time_increment(datetime.now(),  self.warm_up*-3), datetime.now(), self.resolution)])
+            asset, self.resolution.add_time_increment(datetime.now(),  ((self.warm_up*-3)+1)), datetime.now(), self.resolution)])
 
     def universe(self):
         universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
@@ -119,11 +119,10 @@ if __name__ == "__main__":
 
     # Live Broker 
     broker = AlpacaBroker(paper=True)
+
+    # Every Minute Strategy
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
-    # 4 Hours
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 
     strategy.add_alphas([
         RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
@@ -163,25 +162,6 @@ if __name__ == "__main__":
         DefaultOnRejectExecutor(strategy)
     ])
 
-    # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
-    strategy.add_events('bar', stored=True, stored_path='data',
-                        start=broker.START_DATE, end=broker.END_DATE)
-
-    strategy.run()
-
-
-
-    
-
-    strategy.INSIGHT_EXECUTORS[InsightState.NEW].extendleft(
-        [MinimumRiskToRewardExecutor(strategy, strategy.minRewardRiskRatio)])
-
-    # Paper Broker for backtesting
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 27), end_date=datetime(2024, 5, 28))
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=1, ui=False, mode=IStrategyMode.BACKTEST)
-
-    strategy.add_events('bar', stored=False)
+    strategy.add_events('bar')
 
     strategy.run()
