@@ -4,7 +4,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from OlympusTrader.strategy.sharedmemory import SharedStrategyManager
-from OlympusTrader.utils.interfaces import IStrategyMode
+from OlympusTrader.strategy.interfaces import IStrategyMode
 from OlympusTrader.strategy.base_strategy import BaseStrategy
 
 # if TYPE_CHECKING:
@@ -57,7 +57,7 @@ st.subheader("Strategy Performance Metrics")
 # st.dataframe(metrics)
 
 st.subheader("Strategy Insights")
-insights = STRATEGY.get_variable('insights')
+insights = str(STRATEGY.get_variable('insights'))
 insights
 
 # if __name__ == '__main__':
