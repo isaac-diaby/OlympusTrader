@@ -250,6 +250,7 @@ class Insight:
                         if retry:
                             return self.close(retry=False)
                     else:
+                        # The position has already been closed as the balance is 0
                         self.updateState(
                             InsightState.CANCELED, f"No funds to close position")
 
@@ -341,7 +342,7 @@ class Insight:
         if not self.checkValidEntryInsight():
             cause = 'Invalid Entry Insight'
             return (False, cause)
-        if not self.checkIfShortable(shouldUpdateState=False):
+        if not self.checkIfCanShort(shouldUpdateState=False):
             cause = 'Short not allowed'
             return (False, cause)
         if self.state == InsightState.FILLED:
@@ -371,10 +372,13 @@ class Insight:
             return False
         return True
 
-    def checkIfShortable(self, shouldUpdateState: bool = False):
+    def checkIfCanShort(self, shouldUpdateState: bool = False):
         """Check if the asset is shortable. If the asset is not shortable, the insight will be rejected."""
-        # Not shortable
-        if ((self.side == IOrderSide.SELL) and not self.ASSET[self.symbol]['shortable']):
+        # Skip the check if going long
+        if self.side == IOrderSide.BUY:
+            return True
+        # Check if the asset is shortable
+        if ((self.side == IOrderSide.SELL) and self.ASSET['shortable']):
             return True
 
         if shouldUpdateState:
@@ -384,7 +388,7 @@ class Insight:
 
     def checkValidEntryInsight(self, limit_price: float = None):
         """Check if the insight is valid. limitprice needs to be beween the take profit and stop loss."""
-        if (self.strategyType != StrategyTypes.TEST or self.strategyType != StrategyTypes.MANUAL):
+        if (self.strategyType == StrategyTypes.TEST or self.strategyType == StrategyTypes.MANUAL):
             return True  # skip the check for manual and test insights
 
         limit_price = limit_price if limit_price != None else self.limit_price
@@ -448,8 +452,10 @@ class Insight:
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time())
         if (self.state == InsightState.FILLED) and hasExpired and shouldUpdateState:
             if self.close():
-                self.updateState(InsightState.CLOSED,
-                                 'Filled Time To Live expired')
+                # Close state switch should handled by the strategy
+                # self.updateState(InsightState.CLOSED,
+                #                  'Filled Time To Live expired')
+                pass
 
         return hasExpired
 
