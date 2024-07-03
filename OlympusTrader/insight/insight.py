@@ -264,6 +264,8 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
         if self.state == InsightState.FILLED:
+            if self._cancelling:
+                self._cancelling = False
             self.filledAt = self.updatedAt
         if self.state == InsightState.CLOSED:
             self.closedAt = self.updatedAt

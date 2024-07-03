@@ -21,7 +21,7 @@ class ITradingTools():
 
         return round(v, self.STRATEGY.UNIVERSE[symbol]["price_base"])
     # TODO: movethis into strategy tools
-    def calculateTimeToLive(self, price, entry, ATR, additional=2):
+    def calculateTimeToLive(self, price: float, entry: float, ATR: float, additional: int = 2) -> int:
         """Calculate the time to live for a given price and entry based on the ATR"""
         return np.ceil((np.abs(price - entry)) / ATR)+additional
     

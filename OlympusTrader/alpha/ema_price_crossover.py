@@ -41,6 +41,10 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
             latestBar = self.get_latest_bar(symbol)
             previousBar = self.get_previos_bar(symbol)
             latestIATR = latestBar[self.atrColumn]
+            latestBarIEMA = latestBar[self.emaColumn]
+            previousBarIATR = previousBar[self.atrColumn]
+            previousBarIEMA = previousBar[self.emaColumn]
+
             baseConfidence = self.STRATEGY.baseConfidence
             # Modify Confidence based on baseConfidenceModifierField
             if (self.baseConfidenceModifierField):
@@ -51,13 +55,13 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
 
             # Generate EMA Crossover Long
             # and marketState > 3):
-            if ((latestBar[self.emaColumn] < latestBar['close']) and (previousBar[self.emaColumn] > previousBar['high']) and (np.abs(latestBar['close'] - latestBar[self.emaColumn]) < latestBar[self.atrColumn])):
+            if ((latestBarIEMA < latestBar['close']) and (previousBarIEMA > previousBar['high']) and (np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR) and (np.abs(latestBar['close'] - latestBarIEMA) < latestIATR)):
                 TP = self.STRATEGY.tools.dynamic_round(
                     latestBar['high']+(latestIATR*3.5), symbol)
                 SL = self.STRATEGY.tools.dynamic_round(
-                    max(previousBar['low']-(.5*latestIATR), latestBar[self.emaColumn]-latestIATR*1.5), symbol)
+                    max(previousBar['low']-(.5*latestIATR), latestBarIEMA-latestIATR*1.5), symbol)
                 ENTRY = self.STRATEGY.tools.dynamic_round(
-                    latestBar['EMA_9'], symbol)  # pullback
+                    latestBarIEMA, symbol)  # pullback
                 # time to live unfilled
                 TTLUF = self.STRATEGY.tools.calculateTimeToLive(
                     latestBar['close'], ENTRY, latestIATR)
@@ -69,13 +73,13 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
 
             # Generate EMA Crossover Short
             # and marketState < -3):
-            if (self.STRATEGY.assets[symbol]['shortable'] and (latestBar[self.emaColumn] > latestBar['close']) and (previousBar[self.emaColumn] < previousBar['low']) and (np.abs(latestBar[self.emaColumn] - latestBar['close']) < latestBar[self.atrColumn])):
+            if (self.STRATEGY.assets[symbol]['shortable'] and (latestBarIEMA > latestBar['close']) and (previousBarIEMA < previousBar['low']) and (np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR) and (np.abs(latestBarIEMA - latestBar['close']) < latestIATR)):
                 TP = self.STRATEGY.tools.dynamic_round(
                     latestBar['low']-(latestIATR*3.5), symbol)
                 SL = self.STRATEGY.tools.dynamic_round(
-                    min(previousBar['high']+(.5*latestIATR), latestBar[self.emaColumn]+latestIATR*1.5), symbol)
+                    min(previousBar['high']+(.5*latestIATR), latestBarIEMA+latestIATR*1.5), symbol)
                 ENTRY = self.STRATEGY.tools.dynamic_round(
-                    latestBar['EMA_9'], symbol)
+                    latestBarIEMA, symbol)
                 # time to live unfilled
                 TTLUF = self.STRATEGY.tools.calculateTimeToLive(
                     latestBar['close'], ENTRY, latestIATR)

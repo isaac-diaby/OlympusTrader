@@ -190,10 +190,10 @@ class AlpacaBroker(BaseBroker):
     def get_latest_quote(self, asset: IAsset):
         if asset['asset_type'] == 'crypto':
             quote = self.crypto_client.get_crypto_latest_quote(
-                CryptoLatestQuoteRequest(asset['symbol']))
+                CryptoLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
         elif asset['asset_type'] == 'stock':
             quote = self.stock_client.get_stock_latest_quote(
-                StockLatestQuoteRequest(asset['symbol']))
+                StockLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
         return self.format_on_quote(quote)
 
     def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:

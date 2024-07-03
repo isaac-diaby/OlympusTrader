@@ -53,7 +53,7 @@ class QbitTB(Strategy):
         # load warm up history
 
         self.history[asset['symbol']] = pd.concat([self.history[asset['symbol']], self.broker.get_history(
-            asset, self.resolution.add_time_increment(datetime.now(),  ((self.warm_up*-3)+1)), datetime.now(), self.resolution)])
+            asset, self.resolution.add_time_increment(datetime.now(),  ((self.warm_up*-4))), datetime.now(), self.resolution)])
 
     def universe(self):
         universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',

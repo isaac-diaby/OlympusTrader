@@ -371,8 +371,11 @@ class BaseStrategy(abc.ABC):
                     for executor in self.INSIGHT_EXECUTORS[insight.state]:
                         result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
                         # Executor manage the insight state and mutates the insight
-                        if not result.passed:
+                        if not result.success:
                             print(f'Executor {result.executor}: {result.message}')
+                            passed = False
+                            break
+                        elif not result.passed:
                             passed = False
                             break
 
