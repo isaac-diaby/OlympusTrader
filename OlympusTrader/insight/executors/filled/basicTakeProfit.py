@@ -29,10 +29,10 @@ class BasicTakeProfitExecutor(BaseExecutor):
             currentTP = insight.TP[0]
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.high > currentTP) or (latestQuote["bid"] > currentTP):
+                    if (latestBar.high > currentTP) or (latestQuote["bid_price"] > currentTP):
                         shouldClose = True
                 case IOrderSide.SELL:
-                    if (latestBar.low < currentTP) or (latestQuote["ask"] < currentTP):
+                    if (latestBar.low < currentTP) or (latestQuote["ask_price"] < currentTP):
                         shouldClose = True
             if shouldClose:
                 if len(insight.TP) > 1:
@@ -40,11 +40,11 @@ class BasicTakeProfitExecutor(BaseExecutor):
                         insight.quantity/2)
 
                     if self.STRATEGY.insights[insight.INSIGHT_ID].close(quantity=quantityToClose):
-                        return self.returnResults(False, True, f"Price broke the take profit level: {currentTP}. Closing half position.")
+                        return self.returnResults(False, True, f"Price broke the take profit level: {insight.symbol} : {currentTP}. Closing half position.")
                 else:
                     # Close the position if the last TP level is reached
                     if self.STRATEGY.insights[insight.INSIGHT_ID].close():
-                        return self.returnResults(False, True, f"Price broke the take profit level: {currentTP}. Closing position.")
-            return self.returnResults(True, True, f"Take profit price has not been reached yet: {currentTP}")
+                        return self.returnResults(False, True, f"Price broke the take profit level: {insight.symbol} : {currentTP}. Closing position.")
+            return self.returnResults(True, True, f"Take profit price has not been reached yet: {insight.symbol} : {currentTP}")
         except Exception as e:
             return self.returnResults(False, False, f"Error taking profit: {e}")

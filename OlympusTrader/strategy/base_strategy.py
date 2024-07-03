@@ -378,6 +378,9 @@ class BaseStrategy(abc.ABC):
                         elif not result.passed:
                             passed = False
                             break
+                        if self.VERBOSE > 0:
+                            print(
+                                f'Executor {result.executor}: {result.message}')
 
                     if not passed:
                         continue
@@ -426,18 +429,22 @@ class BaseStrategy(abc.ABC):
                                 # Update the insight with the filled price
                                 self.INSIGHTS[i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
+                                break
 
                             # case ITradeUpdateEvent.CLOSED:
                             #     self.INSIGHTS[i].positionFilled(
                             #         orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
 
                             case ITradeUpdateEvent.PARTIAL_FILLED:
-                                # TODO: also keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price,
-                                pass
+                                # keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price
+                                self.INSIGHTS[i].partialFilled(orderdata['qty'])
+                                break
+                                
                             case ITradeUpdateEvent.CANCELED:
                                 # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
                                 self.INSIGHTS[i].updateState(
                                     InsightState.CANCELED, 'Order Canceled')
+                                break
 
                             case  ITradeUpdateEvent.REJECTED:
                                 self.INSIGHTS[i].updateState(

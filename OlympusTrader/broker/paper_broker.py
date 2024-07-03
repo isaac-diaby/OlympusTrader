@@ -171,15 +171,10 @@ class PaperBroker(BaseBroker):
         if self.DataFeed == 'yf':
             currentBar = self._get_current_bar(
                 asset['symbol']).iloc[0]
-            return IQuote(
-                symbol=asset['symbol'],
-                bid=currentBar.low,
-                ask=currentBar.high,
-                bid_size=0,
-                ask_size=0,
-                volume=currentBar.volume,
-                timestamp=self.CURRENT
-            )
+            quote = self.format_on_quote(currentBar)
+            quote['symbol'] = asset['symbol']
+            return quote
+
         else:
             raise NotImplementedError(
                 f'DataFeed {self.DataFeed} not supported')
@@ -622,16 +617,16 @@ class PaperBroker(BaseBroker):
             print('DataFeed not supported')
             return None
 
-    def format_on_quote(self, quote: IQuote):
-        # data = {
-        #     'symbol': quote.symbol,
-        #     'ask_price': quote.ask_price,
-        #     'ask_size': quote.ask_size,
-        #     'bid_price': quote.bid_price,
-        #     'bid_size': quote.bid_size,
-        #     'volume': (quote.bid_size + quote.ask_size),
-        #     'timestamp': quote.timestamp
-        # }
+    def format_on_quote(self, quote):
+        data = IQuote(
+                symbol=None,
+                bid=quote.low,
+                ask=quote.high,
+                bid_size=0,
+                ask_size=0,
+                volume=quote.volume,
+                timestamp=self.CURRENT
+            )
         return quote
 
     def format_on_trade_update(self, trade: ITradeUpdate):

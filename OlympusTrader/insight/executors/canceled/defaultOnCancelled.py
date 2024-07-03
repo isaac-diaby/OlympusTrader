@@ -24,6 +24,6 @@ class DefaultOnCancelledExecutor(BaseExecutor):
                         return self.returnResults(True, True, "Insight already filled. Not deleting.")
 
             del self.STRATEGY.insights[insight.INSIGHT_ID]
-            return self.returnResults(True, True)
+            return self.returnResults(True, True, "Insight Cancelled Successfully.")
         except Exception as e:
             return self.returnResults(False, False, f"Error deleting insight: {e}")

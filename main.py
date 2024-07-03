@@ -11,6 +11,7 @@ from OlympusTrader.utils.tools import dynamic_round
 # Alphas
 from OlympusTrader.alpha.rsi_divergance_alpha import RSIDiverganceAlpha
 from OlympusTrader.alpha.ema_price_crossover import EMAPriceCrossoverAlpha
+# from OlympusTrader.alpha.test_entry import TestEntryAlpha
 
 # Executors
 from OlympusTrader.insight.executors.new.cancelAllOppositeSide import CancelAllOppositeSidetExecutor
@@ -39,7 +40,7 @@ class QbitTB(Strategy):
             {"kind": 'rsi', "length": 14, "scalar": 10}
             ])
         self.warm_up = 36
-        self.execution_risk = 0.04  # 4% of account per trade
+        self.execution_risk = 0.02  # 2% of account per trade
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.1
 
@@ -127,6 +128,7 @@ if __name__ == "__main__":
     strategy.add_alphas([
         RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
         EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        # TestEntryAlpha(strategy)
     ])
     # New Executors
     strategy.add_executors([

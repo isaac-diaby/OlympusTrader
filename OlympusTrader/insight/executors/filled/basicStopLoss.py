@@ -31,16 +31,16 @@ class BasicStopLossExecutor(BaseExecutor):
             shouldClose = False
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.low < insight.SL) or (latestQuote['bid'] < insight.SL):
+                    if (latestBar.low < insight.SL) or (latestQuote['bid_price'] < insight.SL):
                         shouldClose = True
                 case IOrderSide.SELL:
-                    if (latestBar.high > insight.SL) or (latestQuote['ask'] > insight.SL):
+                    if (latestBar.high > insight.SL) or (latestQuote['ask_price'] > insight.SL):
                         shouldClose = True
             if shouldClose:
                 if self.STRATEGY.insights[insight.INSIGHT_ID].close():
-                    return self.returnResults(False, True, f"Price broke the stop loss level: {insight.SL}. Closing position.")
+                    return self.returnResults(False, True, f"Price broke the stop loss level: {insight.symbol} : {insight.SL}. Closing position.")
                 return self.returnResults(False, False, f"Error closing position.")
 
-            return self.returnResults(True, True, f"Stop loss price set to: {insight.SL}")
+            return self.returnResults(True, True, f"Stop loss price has not been reached: {insight.symbol} : {insight.SL}")
         except Exception as e:
             return self.returnResults(False, False, f"Error Checking Stop Loss: {e}")

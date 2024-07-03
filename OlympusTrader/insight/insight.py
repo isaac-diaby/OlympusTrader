@@ -12,6 +12,7 @@ from ..strategy.interfaces import IStrategyMode
 if TYPE_CHECKING:
     from ..broker.base_broker import BaseBroker
 
+
 def get_BaseBroker():
     from ..broker.base_broker import BaseBroker
     return BaseBroker
@@ -69,6 +70,7 @@ class Insight:
     INSIGHT_ID = uuid4()
     order_id: str = None
     side: IOrderSide = None  # buy or sell
+    opposite_side: IOrderSide = None
     symbol: str = None  # symbol to trade
     quantity: float = None  # quantity to trade
     type: IOrderType = None  # market, limit, stop, stop_limit, trailing_stop
@@ -76,7 +78,7 @@ class Insight:
     limit_price: List[float] = None
     """Entry Price"""
     TP: List[float] = None
-    """Take profit levels"""
+    """Take profit levels - The last index is the final take profit level"""
     SL: float = None
     """Stop loss level"""
     strategyType: StrategyTypes = None  # strategy type
@@ -97,6 +99,7 @@ class Insight:
 
     marketChanged: bool = False
     _cancelling: bool = False
+    _partial_filled_quantity: float = None
 
     MODE: IStrategyMode = IStrategyMode.LIVE
     BROKER: get_BaseBroker = None
@@ -105,11 +108,14 @@ class Insight:
     def __init__(self, side: IOrderSide, symbol: str,  strategyType: StrategyTypes, tf: ITimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
         assert side in IOrderSide, 'Invalid Order Side'
         self.side = side  # buy or sell
+        self.opposite_side = IOrderSide.BUY if (
+            self.side == IOrderSide.SELL) else IOrderSide.SELL
         self.symbol = symbol  # symbol to trade
         self.quantity = quantity  # quantity to trade
         self.limit_price = limit_price  # price to enter at
         self.strategyType = strategyType  # strategy type
-        self.confidence = confidence  # confidence in insight
+        # confidence in insight clamp between 0.01 and 1
+        self.confidence = min(max(confidence, 0.01), 1)
         self.TP = TP  # take profit levels
         self.SL = SL  # stop loss
         self.tf = tf  # timeframe
@@ -140,14 +146,14 @@ class Insight:
 
         if self.state == InsightState.NEW or self.state == InsightState.FILLED:
             try:
-                if partialCloseInsight == None:
-                    order = self.BROKER.execute_insight_order(self, self.ASSET)
-                elif closeInsight:
-                    order = self.BROKER.execute_insight_order(Insight(IOrderSide.BUY if (
-                        self.side == IOrderSide.SELL) else IOrderSide.SELL, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity), self.ASSET)
-                else:
+                if partialCloseInsight != None:
                     order = self.BROKER.execute_insight_order(
                         partialCloseInsight, self.ASSET)
+                elif closeInsight:
+                    order = self.BROKER.execute_insight_order(Insight(
+                        self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity), self.ASSET)
+                else:
+                    order = self.BROKER.execute_insight_order(self, self.ASSET)
                 if order:
                     if self.state == InsightState.NEW:
                         self.updateOrderID(
@@ -199,6 +205,9 @@ class Insight:
                 order = self.BROKER.close_order(self.order_id)
                 if order:
                     self._cancelling = True
+                    if self._partial_filled_quantity != None:
+                        print("Partial Filled Quantity: ", self._partial_filled_quantity,
+                              self.quantity, " - And has been canceled before filled")
                     # Strategy should handle the incoming cancelation of the position
                     # self.updateState(
                     #     InsightState.CANCELED, f"Order ID: {order['order_id']}")
@@ -233,8 +242,8 @@ class Insight:
                     if closeOrder:
                         return True
                 else:
-                    closePartialOrder = self.submit(partialCloseInsight=Insight(IOrderSide.BUY if (
-                        self.side == IOrderSide.SELL) else IOrderSide.SELL, self.symbol, StrategyTypes.MANUAL, self.tf, quantity))
+                    closePartialOrder = self.submit(partialCloseInsight=Insight(
+                        self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, quantity))
                     if closePartialOrder:
                         self.TP.pop(0)  # Remove the first TP level
                         return True
@@ -400,14 +409,24 @@ class Insight:
             return False
 
         if self.SL:
-            if (limit_price < self.SL and self.side == 'long') or (limit_price > self.SL and self.side == 'short'):
+            if (limit_price < self.SL and self.side == IOrderSide.BUY) or (limit_price > self.SL and self.side == IOrderSide.SELL):
                 print("invalid entry insight: limit price is below the stop loss")
                 return False
         if self.TP:
-            for tp in self.TP:
-                if (limit_price > tp and self.side == 'long') or (limit_price < tp and self.side == 'short'):
-                    print("invalid entry insight: limit price is above the take profit")
+            if len(self.TP) == 1:
+                if (limit_price < self.TP[0] and self.side == IOrderSide.BUY) or (limit_price > self.TP[0] and self.side == IOrderSide.SELL):
+                    print("invalid entry insight: limit price is below the take profit")
                     return False
+            else:
+                if self.side == IOrderSide.BUY:
+                    self.TP.sort()
+                else:
+                    self.TP.sort(reverse=True)
+                for tp in self.TP:
+                    if (limit_price > tp and self.side == IOrderSide.BUY) or (limit_price < tp and self.side == IOrderSide.SELL):
+                        print(
+                            "invalid entry insight: limit price is above the take profit")
+                        return False
         else:
             print("invalid entry insight: quantity is not set")
             return False
@@ -480,6 +499,12 @@ class Insight:
         self.quantity = qty
         self.updateState(InsightState.FILLED, f"Trade Filled: {
                          self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
+        return self
+
+    def partialFilled(self, qty: float,):
+        if self._partial_filled_quantity == None:
+            self._partial_filled_quantity = 0
+        self._partial_filled_quantity += qty
         return self
 
     def positionClosed(self, price: float, close_order_id: str, qty: float = None):

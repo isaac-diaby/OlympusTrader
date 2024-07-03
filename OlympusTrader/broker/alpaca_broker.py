@@ -22,7 +22,7 @@ from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
-from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent
+from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote
 from ..utils.timeframe import ITimeFrame as tf
 from ..insight.insight import Insight
 
@@ -194,7 +194,7 @@ class AlpacaBroker(BaseBroker):
         elif asset['asset_type'] == 'stock':
             quote = self.stock_client.get_stock_latest_quote(
                 StockLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
-        return self.format_on_quote(quote)
+        return self.format_on_quote(quote[asset['symbol']])
 
     def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:
         # TODO: manage insight order by planing entry and exit orders for a given insight
@@ -527,13 +527,14 @@ class AlpacaBroker(BaseBroker):
         return data
 
     def format_on_quote(self, quote: Quote):
-        data = {
-            'symbol': quote.symbol,
-            'ask_price': quote.ask_price,
-            'ask_size': quote.ask_size,
-            'bid_price': quote.bid_price,
-            'bid_size': quote.bid_size,
-            'volume': (quote.bid_size + quote.ask_size),
-            'timestamp': quote.timestamp
-        }
+        quote
+        data = IQuote(
+            symbol = quote.symbol,
+            ask_price = quote.ask_price,
+            ask_size = quote.ask_size,
+            bid_price =quote.bid_price,
+            bid_size = quote.bid_size,
+            volume = (quote.bid_size + quote.ask_size),
+            timestamp = quote.timestamp
+        )
         return data

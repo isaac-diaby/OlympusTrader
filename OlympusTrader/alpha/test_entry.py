@@ -70,26 +70,29 @@ class TestEntryAlpha(BaseAlpha):
                     periodTillTp=10
                 ))
             else:
-                TP = self.STRATEGY.tools.dynamic_round(
-                    latestBar.close - (latestIATR*10), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    latestBar.close + (latestIATR*1.5), symbol)
-                ENTRY = self.STRATEGY.tools.dynamic_round(
-                    latestBar['close'], symbol)
+                if self.STRATEGY.assets[symbol]["shortable"]:
+                    TP = self.STRATEGY.tools.dynamic_round(
+                        latestBar.close - (latestIATR*10), symbol)
+                    SL = self.STRATEGY.tools.dynamic_round(
+                        latestBar.close + (latestIATR*1.5), symbol)
+                    ENTRY = self.STRATEGY.tools.dynamic_round(
+                        latestBar['close'], symbol)
 
-                return self.returnResults(insight=Insight(
-                    side=IOrderSide.SELL,
-                    symbol=symbol,
-                    strategyType=StrategyTypes.TEST,
-                    tf=self.STRATEGY.resolution,
-                    quantity=None,
-                    # limit_price=ENTRY,
-                    TP=[TP],
-                    SL=SL,
-                    confidence=baseConfidence,
-                    periodUnfilled=5,
-                    periodTillTp=10
-                ))
+                    return self.returnResults(insight=Insight(
+                        side=IOrderSide.SELL,
+                        symbol=symbol,
+                        strategyType=StrategyTypes.TEST,
+                        tf=self.STRATEGY.resolution,
+                        quantity=None,
+                        # limit_price=ENTRY,
+                        TP=[TP],
+                        SL=SL,
+                        confidence=baseConfidence,
+                        periodUnfilled=5,
+                        periodTillTp=10
+                    ))
+                else:
+                    return self.returnResults(message="Asset is not shortable.")
             #     return self.returnResults(message="Insight already exists.")
         except Exception as e:
-            return self.returnResults(message=str(e))
+            return self.returnResults(success=False, message=str(e))

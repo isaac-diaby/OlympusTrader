@@ -20,7 +20,7 @@ class DefaultOnClosedExecutor(BaseExecutor):
 
             if insight.close_order_id is not None:
                 del self.STRATEGY.insights[insight.INSIGHT_ID]
-                return self.returnResults(True, True)
+                return self.returnResults(True, True, "Insight Closed Successfully.")
             else:
                 # set the insight back to filled as it has no close order id
                 self.STRATEGY.insights[insight.INSIGHT_ID].updateState(

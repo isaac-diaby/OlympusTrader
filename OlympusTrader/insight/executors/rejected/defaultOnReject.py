@@ -18,6 +18,6 @@ class DefaultOnRejectExecutor(BaseExecutor):
         # Set the default state of the insight
         try:
             del self.STRATEGY.insights[insight.INSIGHT_ID]
-            return self.returnResults(False, True)
+            return self.returnResults(False, True, "Insight Rejected Successfully.")
         except Exception as e:
             return self.returnResults(False, False, f"Error deleting insight: {e}")
