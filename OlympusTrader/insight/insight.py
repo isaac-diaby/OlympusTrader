@@ -414,7 +414,7 @@ class Insight:
                 return False
         if self.TP:
             if len(self.TP) == 1:
-                if (limit_price < self.TP[0] and self.side == IOrderSide.BUY) or (limit_price > self.TP[0] and self.side == IOrderSide.SELL):
+                if (limit_price > self.TP[0] and self.side == IOrderSide.BUY) or (limit_price < self.TP[0] and self.side == IOrderSide.SELL):
                     print("invalid entry insight: limit price is below the take profit")
                     return False
             else:
