@@ -99,6 +99,9 @@ class Insight:
 
     marketChanged: bool = False
     _cancelling: bool = False
+    """Flag to check if the insight is being canceled"""
+    _closing: bool = False
+    """Flag to check if the insight is being closed"""
     _partial_filled_quantity: float = None
 
     MODE: IStrategyMode = IStrategyMode.LIVE
@@ -228,7 +231,7 @@ class Insight:
         return False
 
     def close(self, quantity: float = None, retry: bool = True):
-        if self.state == InsightState.FILLED:
+        if self.state == InsightState.FILLED and not self._closing:
             partialClose = False
             try:
                 if quantity != None:
@@ -240,6 +243,7 @@ class Insight:
                 if partialClose == False:
                     closeOrder = self.submit(closeInsight=True)
                     if closeOrder:
+                        self._closing = True
                         return True
                 else:
                     closePartialOrder = self.submit(partialCloseInsight=Insight(
@@ -262,8 +266,9 @@ class Insight:
                         # The position has already been closed as the balance is 0
                         self.updateState(
                             InsightState.CANCELED, f"No funds to close position")
+        if not self._closing:
+            print("Insight is not in a valid state to be closed")
 
-        print("Insight is not in a valid state to be closed")
         return False
 
     def updateState(self, state: InsightState, message: str = None):
