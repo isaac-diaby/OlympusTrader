@@ -165,6 +165,7 @@ class AlpacaBroker(BaseBroker):
                 side = "short"
             case _:
                 side = "unknown"
+        #  TODO: add support for order legs
 
         return IOrder(
             order_id=order.id,
@@ -175,6 +176,7 @@ class AlpacaBroker(BaseBroker):
                 order.limit_price) if order.limit_price else None,
             stop_price=float(order.stop_price) if order.stop_price else None,
             qty=float(order.qty),
+            filled_qty=float(order.filled_qty),
             side=side,
             type=order.type.value,
             order_class=order.order_class.value,
@@ -183,7 +185,8 @@ class AlpacaBroker(BaseBroker):
             created_at=order.created_at,
             updated_at=order.updated_at,
             submitted_at=order.submitted_at,
-            filled_at=order.filled_at
+            filled_at=order.filled_at,
+            # legs=order.legs,
 
         )
 

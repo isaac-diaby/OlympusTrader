@@ -428,7 +428,7 @@ class BaseStrategy(abc.ABC):
                             case ITradeUpdateEvent.FILLED:
                                 # Update the insight with the filled price
                                 self.INSIGHTS[i].positionFilled(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['qty'])
+                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata["filled_qty"])
                                 break
 
                             # case ITradeUpdateEvent.CLOSED:
@@ -437,7 +437,7 @@ class BaseStrategy(abc.ABC):
 
                             case ITradeUpdateEvent.PARTIAL_FILLED:
                                 # keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price
-                                self.INSIGHTS[i].partialFilled(orderdata['qty'])
+                                self.INSIGHTS[i].partialFilled(orderdata['filled_qty'])
                                 break
                                 
                             case ITradeUpdateEvent.CANCELED:
@@ -462,10 +462,10 @@ class BaseStrategy(abc.ABC):
                             # Update the insight closed price
                             if self.MODE != IStrategyMode.BACKTEST:
                                 self.INSIGHTS[i].positionClosed(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['qty'])
+                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['filled_qty'])
                             else:
                                 self.INSIGHTS[i].positionClosed(
-                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['qty'])
+                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['filled_qty'])
                             break  # No need to continue
 
                         if len(insight.partial_closes) > 0:

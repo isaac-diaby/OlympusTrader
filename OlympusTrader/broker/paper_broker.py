@@ -204,10 +204,11 @@ class PaperBroker(BaseBroker):
                             order['status'] = ITradeUpdateEvent.NEW
                             self._update_order(order)
                             loop.run_until_complete(
-                                callback(ITradeUpdate(order, ITradeUpdateEvent.NEW)))
+                                callback(ITradeUpdate(order, order['status'])))
                         if order['type'] == IOrderType.MARKET:
                             # Market order - FILLED at the current close price
                             order['filled_price'] = currentBar.open
+
                             order['status'] = ITradeUpdateEvent.FILLED
                             order['filled_at'] = self.CURRENT
                             order['updated_at'] = self.CURRENT
@@ -220,24 +221,26 @@ class PaperBroker(BaseBroker):
                                 order['status'] = ITradeUpdateEvent.REJECTED
                                 self._update_order(order)
                                 loop.run_until_complete(callback(ITradeUpdate(
-                                    order, ITradeUpdateEvent.REJECTED)))
+                                    order, order['status'])))
                                 continue
 
                             self.Account['cash'] -= np.round(
                                 bp_change/self.LEVERAGE, 2)
+                            order['filled_qty'] = order['qty']
                             self._update_order(order)
                             loop.run_until_complete(callback(ITradeUpdate(
-                                order, ITradeUpdateEvent.FILLED)))
+                                order, order['status'])))
 
                         elif order['type'] == IOrderType.LIMIT:
                             if order['limit_price'] >= currentBar.low and order['limit_price'] <= currentBar.high:
                                 order['filled_price'] = order['limit_price']
+                                order['filled_qty'] = order['qty']
                                 order['status'] = ITradeUpdateEvent.FILLED
                                 order['filled_at'] = self.CURRENT
                                 order['updated_at'] = self.CURRENT
                                 self._update_order(order)
                                 loop.run_until_complete(callback(ITradeUpdate(
-                                    order, ITradeUpdateEvent.FILLED)))
+                                    order, order['status'])))
 
                     for i, order in enumerate(list(self.ACTIVE_ORDERS)):
                         # update the position information as the position is filled and keep track of all  positions PNL
@@ -263,7 +266,7 @@ class PaperBroker(BaseBroker):
 
                                     order['stop_price'] = take_profit['limit_price']
                                     order['updated_at'] = self.CURRENT
-                                    order['status'] = ITradeUpdateEvent.CLOSED
+                                    order['status'] = take_profit['status']
                                     order['legs']['take_profit'] = take_profit
 
                                     self._update_order(order)
@@ -271,7 +274,7 @@ class PaperBroker(BaseBroker):
                                         order['asset']['symbol'], take_profit['filled_price'])
 
                                     loop.run_until_complete(callback(ITradeUpdate(
-                                        order, ITradeUpdateEvent.CLOSED)))
+                                        order, order['status'])))
                             elif order['legs']['stop_loss']:
                                 stop_loss = order['legs']['stop_loss']
                                 if stop_loss['limit_price'] >= currentBar.low and stop_loss['limit_price'] <= currentBar.high:
@@ -282,7 +285,7 @@ class PaperBroker(BaseBroker):
 
                                     order['stop_price'] = stop_loss['limit_price']
                                     order['updated_at'] = self.CURRENT
-                                    order['status'] = ITradeUpdateEvent.CLOSED
+                                    order['status'] = stop_loss['status']
                                     order['legs']['stop_loss'] = stop_loss
 
                                     self._update_order(order)
@@ -290,7 +293,7 @@ class PaperBroker(BaseBroker):
                                         order['asset']['symbol'], stop_loss['filled_price'])
 
                                     loop.run_until_complete(callback(ITradeUpdate(
-                                        order, ITradeUpdateEvent.CLOSED)))
+                                        order,  order['status'])))
                         else:
                             # USually a market order or limit order without take profit or stop loss
                             pass
@@ -312,14 +315,14 @@ class PaperBroker(BaseBroker):
                         self._update_position(
                             order['asset']['symbol'], order['stop_price'])
                         loop.run_until_complete(callback(ITradeUpdate(
-                            order, ITradeUpdateEvent.CLOSED)))
+                            order, order['status'])))
 
                     for i, order in enumerate(list(self.CANCELED_ORDERS)):
                         order['status'] = ITradeUpdateEvent.CANCELED
                         order['updated_at'] = self.CURRENT
                         self._update_order(order)
                         loop.run_until_complete(callback(ITradeUpdate(
-                            order, ITradeUpdateEvent.CANCELED)))
+                            order, order['status'])))
 
                 except BrokenBarrierError:
                     continue
@@ -433,7 +436,8 @@ class PaperBroker(BaseBroker):
                     self.CANCELED_ORDERS.remove(oldOrder)
 
                 # Clear buying power wwithheld by the order
-                self.Account['cash'] += np.round((order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
+                self.Account['cash'] += np.round(
+                    (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
 
             case ITradeUpdateEvent.CLOSED:
                 if oldOrder:
@@ -564,6 +568,7 @@ class PaperBroker(BaseBroker):
                 filled_price=None,
                 stop_price=None,
                 qty=orderRequest['qty'],
+                filled_qty=None,
                 side=orderRequest['side'],
                 type=orderRequest['type'],
                 time_in_force=orderRequest['time_in_force'],
@@ -619,14 +624,14 @@ class PaperBroker(BaseBroker):
 
     def format_on_quote(self, quote):
         data = IQuote(
-                symbol=None,
-                bid=quote.low,
-                ask=quote.high,
-                bid_size=0,
-                ask_size=0,
-                volume=quote.volume,
-                timestamp=self.CURRENT
-            )
+            symbol=None,
+            bid=quote.low,
+            ask=quote.high,
+            bid_size=0,
+            ask_size=0,
+            volume=quote.volume,
+            timestamp=self.CURRENT
+        )
         return quote
 
     def format_on_trade_update(self, trade: ITradeUpdate):
@@ -738,7 +743,8 @@ class PaperBroker(BaseBroker):
                         if asset['type'] == 'bar':
                             try:
                                 # Get the current bar data with the index
-                                barData = self._get_current_bar(asset['symbol'])
+                                barData = self._get_current_bar(
+                                    asset['symbol'])
                                 if type(barData) == NoneType:
                                     continue
                                 elif barData.empty:
@@ -823,6 +829,7 @@ class PaperBroker(BaseBroker):
                 filled_price=None,
                 stop_price=None,
                 qty=quantityToClose,
+                filled_qty=None,
                 side=counterPosistionSide,
                 type=IOrderType.MARKET,
                 time_in_force=ITimeInForce.GTC,

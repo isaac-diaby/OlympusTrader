@@ -118,6 +118,7 @@ class IOrder(TypedDict):
     filled_price: Optional[float]
     stop_price: Optional[float]
     qty: float
+    filled_qty: float
     side: IOrderSide
     type: IOrderType
     time_in_force: ITimeInForce
