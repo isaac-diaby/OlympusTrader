@@ -28,9 +28,9 @@ from OlympusTrader.insight.executors.rejected.defaultOnReject import DefaultOnRe
 from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClosedExecutor
 
 
-
 import warnings
 warnings.simplefilter(action="ignore", category=FutureWarning)
+
 
 class QbitTB(Strategy):
     def start(self):
@@ -38,7 +38,7 @@ class QbitTB(Strategy):
             {"kind": 'macd', "fast": 16, "slow": 36, "signal": 9},
             {"kind": 'atr', "length": 14},
             {"kind": 'rsi', "length": 14, "scalar": 10}
-            ])
+        ])
         self.warm_up = 36
         self.execution_risk = 0.02  # 2% of account per trade
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
@@ -71,7 +71,6 @@ class QbitTB(Strategy):
 
     def generateInsights(self, symbol: str):
         pass
- 
 
     def executeInsight(self, insight: Insight):
         match insight.state:
@@ -118,7 +117,7 @@ class QbitTB(Strategy):
 
 if __name__ == "__main__":
 
-    # Live Broker 
+    # Live Broker
     broker = AlpacaBroker(paper=True)
 
     # Every Minute Strategy
@@ -126,8 +125,10 @@ if __name__ == "__main__":
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     strategy.add_alphas([
-        RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50,
+                           atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+        EMAPriceCrossoverAlpha(
+            strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
         # TestEntryAlpha(strategy)
     ])
     # New Executors

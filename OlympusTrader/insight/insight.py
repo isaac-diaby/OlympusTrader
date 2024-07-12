@@ -125,7 +125,7 @@ class Insight:
         self.periodUnfilled = periodUnfilled  # time to live when unfilled
         # predicted time to live when opened to reach take profit
         self.periodTillTp = periodTillTp
-        self.executionDependends = executionDepends  # execution depends on
+        self.executionDepends = executionDepends  # execution depends on
         self.state = InsightState.NEW
         self.createAt = datetime.now()
         self.updatedAt = datetime.now()

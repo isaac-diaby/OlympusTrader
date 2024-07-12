@@ -29,6 +29,7 @@ from ..insight.executors.base_executor import BaseExecutor
 import warnings
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
+
 class BaseStrategy(abc.ABC):
     NAME: str = "BaseStrategy"
     BROKER: BaseBroker
@@ -112,7 +113,7 @@ class BaseStrategy(abc.ABC):
 
         self.ACCOUNT = self.BROKER.get_account()
         self.POSITIONS = self.BROKER.get_positions()
-        self.STARTING_CASH = self.ACCOUNT['cash']
+        self.STARTING_CASH = self.ACCOUNT['equity']
 
     @override
     @abc.abstractmethod
@@ -243,7 +244,7 @@ class BaseStrategy(abc.ABC):
 
                         #  Insight executor and listener
                         insighStream = loop.create_task(
-                        self._insightListener(), name="OlympusTraderInsightListener")
+                            self._insightListener(), name="OlympusTraderInsightListener")
 
                         insighStream = loop.run_in_executor(
                             pool, loop.run_forever)
@@ -302,7 +303,6 @@ class BaseStrategy(abc.ABC):
                         # TODO: Teardown on last candle
                         # self.teardown()
 
-                   
                     self.teardown()
                     pool.shutdown(wait=False)
 
@@ -335,12 +335,22 @@ class BaseStrategy(abc.ABC):
             print('UI is not enabled')
             return
         try:
-            assert os.getenv(
-                'SSM_PASSWORD'), 'SSM_PASSWORD not found in environment variables'
+            assert os.getenv("SSM_PASSWORD"), 'SSM_PASSWORD not found in environment variables'
             SharedStrategyManager.register(
                 'get_strategy', callable=lambda: self)
             SharedStrategyManager.register(
-                'get_account', callable=lambda: self.ACCOUNT)
+                'get_account', callable=lambda: self.account)
+            SharedStrategyManager.register(
+                'get_starting_cash', callable=lambda: self.STARTING_CASH)
+            SharedStrategyManager.register(
+                'get_mode', callable=lambda: self.MODE.value)
+            SharedStrategyManager.register(
+                'get_assets', callable=lambda: self.assets)
+            SharedStrategyManager.register(
+                'get_positions', callable=lambda: self.positions)
+            SharedStrategyManager.register(
+                'get_insights', callable=self._safe_insights)
+            
             self.SSM = SharedStrategyManager(
                 address=('', 50000), authkey=os.getenv('SSM_PASSWORD').encode())
 
@@ -369,10 +379,12 @@ class BaseStrategy(abc.ABC):
                     # Execute the insight Executors
                     passed = True
                     for executor in self.INSIGHT_EXECUTORS[insight.state]:
-                        result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
+                        result = executor.run(
+                            self.INSIGHTS[insight.INSIGHT_ID])
                         # Executor manage the insight state and mutates the insight
                         if not result.success:
-                            print(f'Executor {result.executor}: {result.message}')
+                            print(f'Executor {result.executor}: {
+                                  result.message}')
                             passed = False
                             break
                         elif not result.passed:
@@ -437,9 +449,10 @@ class BaseStrategy(abc.ABC):
 
                             case ITradeUpdateEvent.PARTIAL_FILLED:
                                 # keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price
-                                self.INSIGHTS[i].partialFilled(orderdata['filled_qty'])
+                                self.INSIGHTS[i].partialFilled(
+                                    orderdata['filled_qty'])
                                 break
-                                
+
                             case ITradeUpdateEvent.CANCELED:
                                 # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
                                 self.INSIGHTS[i].updateState(
@@ -519,7 +532,8 @@ class BaseStrategy(abc.ABC):
 
     def add_alpha(self, alpha: BaseAlpha):
         """ Adds an alpha to the strategy."""
-        assert isinstance(alpha, BaseAlpha), 'alpha must be of type BaseAlpha object'
+        assert isinstance(
+            alpha, BaseAlpha), 'alpha must be of type BaseAlpha object'
 
         alpha.registerAlpha()
 
@@ -532,13 +546,15 @@ class BaseStrategy(abc.ABC):
 
     def add_executor(self, executor: BaseExecutor):
         """ Adds an executor to the strategy."""
-        assert isinstance(executor, BaseExecutor), 'executor must be of type BaseExecutor object'
+        assert isinstance(
+            executor, BaseExecutor), 'executor must be of type BaseExecutor object'
 
         self.INSIGHT_EXECUTORS[executor.state].append(executor)
 
     def add_executors(self, executors: List[BaseExecutor]):
         """ Adds a list of executors to the strategy."""
-        assert isinstance(executors, List), 'executors must be of type List[BaseExecutor] object'
+        assert isinstance(
+            executors, List), 'executors must be of type List[BaseExecutor] object'
         for executor in executors:
             self.add_executor(executor)
 
@@ -603,7 +619,8 @@ class BaseStrategy(abc.ABC):
                         keep='first')]
                     # Needs to be warm up
                     if (len(self.HISTORY[symbol]) < self.WARM_UP):
-                        print(f"Waiting for warm up: {symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}")
+                        print(f"Waiting for warm up: {
+                              symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}")
                         return
 
                     # Run the pandas TA
@@ -645,16 +662,17 @@ class BaseStrategy(abc.ABC):
         return self.BROKER.close_position(symbol, qty, percent)
 
     # dynamic function to get variables from the strategy class - used in the UI shared server.
-    def get_variable(self, var='account'):
-        """ Get a variable from the strategy class."""
-        if not self.WITHUI:
-            print('UI is not enabled')
-            return None
-        try:
-            if getattr(self, var):
-                return getattr(self, var)
-        except AttributeError as e:
-            return None
+    # def get_variable(self, var='account'):
+    #     """ Get a variable from the strategy class."""
+    #     if not self.WITHUI:
+    #         print('UI is not enabled')
+    #         return None
+    #     try:
+    #         if getattr(self, var):
+    #             return getattr(self, var)
+    #     except AttributeError as e:
+    #         return None
+    
 
     @property
     def account(self) -> IAccount:
@@ -680,7 +698,35 @@ class BaseStrategy(abc.ABC):
     def insights(self) -> dict[str, Insight]:
         """ Returns the insights of the strategy."""
         return self.INSIGHTS
-
+    def _safe_insights(self) -> dict[str, dict[str, Any]]:
+        """ Returns the insights of the strategy. for the UI"""
+        safe_insights = {}
+        for insightID in self.INSIGHTS:
+            insight = self.INSIGHTS[insightID]
+            safe_insights[str(insightID)] = {
+                'symbol': insight.symbol,
+                'state': str(insight.state.value),
+                'side': str(insight.side.value),
+                'limit_price': insight.limit_price,
+                'current_price': self.history[insight.symbol].iloc[-1]['close'],
+                'take_profit': insight.TP,
+                'stop_loss': insight.SL,
+                'quantity': insight.quantity,
+                'strategy': str(insight.strategyType),
+                'execution_dependency': str(insight.executionDepends),
+                'order_id': insight.order_id,
+                'confidence': insight.confidence,
+                'RRR': insight.getPnLRatio(),
+                "TTL_unfilled": insight.periodUnfilled,
+                "TTL_filled": insight.periodTillTp,
+                'close_order_id': insight.close_order_id,
+                'close_price': insight.close_price,
+                'created_at': insight.createAt,
+                'updated_at': insight.updatedAt,
+                'filled_at': insight.filledAt,
+                'closed_at': insight.closedAt,
+            }
+        return safe_insights
     @property
     def state(self) -> dict:
         """ Returns the state of the strategy."""
