@@ -45,86 +45,63 @@ Create a .env file for your environment variables as of now the only available b
 ```py
 
 from OlympusTrader.utils.insight import Insight, StrategyTypes, InsightState
-
 from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
-
 from OlympusTrader import AlpacaBroker, Strategy
-
-
 
 class  QbitTB(Strategy):
 
-def  start(self):
+	def  start(self):
+		# Your strategy starting point is the first thing that runs and only runs once so you can use it to load models or set base variables
+		pass
 
-# Your strategy starting point is the first thing that runs and only runs once so you can use it to load models or set base variables
-
-pass
-
-def  init(self,  asset):
-
-# Your strategy init point for each asset in the universe
-
-state = self.state
-
-pass
+	def  init(self,  asset):
+		# Your strategy init point for each asset in the universe
+		state = self.state
+		pass
 
 
 
-def  universe(self):
-
-# The universe of assets that you want to trade
-
-universe =  {'BTC/USD',  'ETH/USD',  'TSLA'}
-
-return universe
+	def  universe(self):
+		# The universe of assets that you want to trade
+		universe =  {'BTC/USD',  'ETH/USD',  'TSLA'}
+		return universe
 
 
 
-def  on_bar(self,  symbol,  bar):
-
-# Your strategy, self.insights[symbol].append(Insight(YOUR INSIGHT DATA))
-
-pass
+	def  on_bar(self,  symbol,  bar):
+		# Your strategy, self.insights[symbol].append(Insight(YOUR INSIGHT DATA))
+		pass
 
 
 
-def  generateInsights(self,  symbol:  str):
-
-# Generate insights for your strategy. This is run after the on_bar function
-
-pass
+	def  generateInsights(self,  symbol:  str):
+		# Generate insights for your strategy. This is run after the on_bar function
+		pass
 
 
 
-def  executeInsight(self,  insight: Insight):
+	def  executeInsight(self,  insight: Insight):
 
 
 
-for i, insight in  enumerate(self.insights[symbol]):
+		for i, insight in  enumerate(self.insights[symbol]):
+			match insight.state:
+				case InsightState.NEW:
+				# How to execution new insights that are generated
+					pass
 
-match insight.state:
+				case InsightState.FILLED:
+				# How to manage open insights
+					pass
 
-case InsightState.NEW:
-
-# How to execution new insights that are generated
-
-pass
-
-case InsightState.FILLED:
-
-# How to manage open insights
-
-pass
-
-# ... other cases
-
-case _:
-
-pass
+				# ... other cases
+				case _:
+					pass
 
 
 
-def  teardown(self):
+	def  teardown(self):
+		pass
 
 # Close all open positions and pending orders om tear down
 
@@ -133,16 +110,10 @@ self.BROKER.close_all_positions()
 
 
 if __name__ ==  "__main__":
-
-broker = AlpacaBroker(paper=True)  # Set your broker and paper to True for a demo account
-
-
-
-strategy = QbitTB(broker,  {},  resolution=TimeFrame(1, TimeFrameUnit.Minute),  ui=True)  # Set your strategy resolution and ui to True to use the Streamlit dashboard
-
-strategy.add_events('bar')  # Add events to your strategy
-
-strategy.run()  # To run your live/ demo account trade
+	broker = AlpacaBroker(paper=True)  # Set your broker and paper to True for a demo account
+	strategy = QbitTB(broker,  {},  resolution=TimeFrame(1, TimeFrameUnit.Minute),  ui=True)  # Set your strategy resolution and ui to True to use the Streamlit dashboard
+	strategy.add_events('bar')  # Add events to your strategy
+	strategy.run()  # To run your live/ demo account trade
 
 ```
 
@@ -155,16 +126,8 @@ If you want to get started with backtesting your strategy you can use the backte
 ```py
 
 broker = PaperBroker(cash=1_000_000,  start_date=datetime(2024,  5,  27),  end_date=datetime(2024,  5,  31))
-
-strategy = QbitTB(broker,  variables={},  resolution=TimeFrame(
-
-1, TimeFrameUnit.Minute),  verbose=0,  ui=True,  mode=IStrategyMode.BACKTEST)
-
-#
-
-strategy.add_events('bar',  stored=True,  stored_path='data',
-
-start=broker.START_DATE,  end=broker.END_DATE)
+strategy = QbitTB(broker,  variables={},  resolution=TimeFrame(1, TimeFrameUnit.Minute),  verbose=0,  ui=True,  mode=IStrategyMode.BACKTEST)
+strategy.add_events('bar',  stored=True,  stored_path='data', start=broker.START_DATE,  end=broker.END_DATE)
 
 ```
 
@@ -179,19 +142,13 @@ Another added benefit of using Alpha models is that it each alpha model should i
 ```py
 
 from OlympusTrader.alpha.test_entry import TestEntryAlpha
-
 from OlympusTrader.alpha.ema_price_crossover import EMAPriceCrossoverAlpha
 
 
-
 strategy.add_alphas([
-
-TestEntryAlpha(strategy)
-
-EMAPriceCrossoverAlpha(strategy,  atrPeriod=14,  emaPeriod=9,  baseConfidenceModifierField='market_state'),
-
+	TestEntryAlpha(strategy),
+	EMAPriceCrossoverAlpha(strategy,  atrPeriod=14,  emaPeriod=9,  baseConfidenceModifierField='market_state'),
 ])
-
 ```
 
 Using the add_alphas function you can add multiple alpha models to your strategy and they will be run before your own generateInsights function. You can read about what each alpha does in the OlympusTrader.alpha folder.
@@ -209,98 +166,61 @@ You can manually manage and execute your insights with the executeInsight(self, 
 ```py
 
 from OlympusTrader.insight.executors.new.cancelAllOppositeSide import CancelAllOppositeSidetExecutor
-
 from OlympusTrader.insight.executors.new.dynamicQuantityToRisk import DynamicQuantityToRiskExecutor
-
 from OlympusTrader.insight.executors.new.marketOrderEntryPrice import MarketOrderEntryPriceExecutor
-
 from OlympusTrader.insight.executors.new.minimumRiskToReward import MinimumRiskToRewardExecutor
-
 from OlympusTrader.insight.executors.new.rejectExpiredInsight import RejectExpiredInsightExecutor
-
 from OlympusTrader.insight.executors.filled.basicStopLoss import BasicStopLossExecutor
-
 from OlympusTrader.insight.executors.filled.basicTakeProfit import BasicTakeProfitExecutor
-
 from OlympusTrader.insight.executors.filled.closeExhaustedInsight import CloseExhaustedInsightExecutor
-
 from OlympusTrader.insight.executors.filled.closeMarketChanged import CloseMarketChangedExecutor
-
 from OlympusTrader.insight.executors.canceled.defaultOnCancelled import DefaultOnCancelledExecutor
-
 from OlympusTrader.insight.executors.rejected.defaultOnReject import DefaultOnRejectExecutor
-
 from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClosedExecutor
 
 # New Executors
 
 strategy.add_executors([
-
 RejectExpiredInsightExecutor(strategy),
-
 MarketOrderEntryPriceExecutor(strategy),
-
 MinimumRiskToRewardExecutor(strategy),
-
 DynamicQuantityToRiskExecutor(strategy),
-
 CancelAllOppositeSidetExecutor(strategy)
-
 ])
 
 # Executed Executors
-
 RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(strategy)
-
 RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
-
 strategy.add_executors([
-
 RejectExpiredExecutedExecutor,
-
 ])
 
 # Cancelled Executors
-
 strategy.add_executors([
-
 DefaultOnCancelledExecutor(strategy),
-
 ])
 
 # Filled Executors
-
 strategy.add_executors([
-
 CloseExhaustedInsightExecutor(strategy),
-
 CloseMarketChangedExecutor(strategy),
-
 BasicStopLossExecutor(strategy),
-
 BasicTakeProfitExecutor(strategy)
-
 ])
 
 # Closed Executors
-
 strategy.add_executors([
-
 DefaultOnClosedExecutor(strategy),
-
 ])
 
 # Rejected Executors
-
 strategy.add_executors([
-
 DefaultOnRejectExecutor(strategy)
-
 ])
 
 ```
 
-You can add multiple executors to your strategy and they will be run after your executeInsight function. We do not execute or submit any insights as that should be done by the users for insights in the NEW state. As you can see you can add executors for different states of the insight such as filled, rejected, cancelled, executed and closed. This can all be done with the same add_executors function but we just added the different states for clarity. In some cases, you may want to override the state of the insight to executed or cancelled so you can add the executor with the \_override_state function. You can read about what each executor does in the OlympusTrader.insight.executors folder.
+You can add multiple executors to your strategy and they will be run after your executeInsight function. We do not execute or submit any insights as that should be done by the users for insights in the NEW state. As you can see you can add executors for different states of the insight such as filled, rejected, cancelled, executed and closed. This can all be done with the same add_executors function but we just added the different states for clarity. In some cases, you may want to override the state of the insight to executed or cancelled so you can add the executor with the _override_state function. You can read about what each executor does in the OlympusTrader.insight.executors folder.
 
 #### Executor Results
 

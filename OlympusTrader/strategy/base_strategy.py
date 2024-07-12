@@ -690,7 +690,7 @@ class BaseStrategy(abc.ABC):
         return self.ORDERS
 
     @property
-    def history(self) -> pd.DataFrame:
+    def history(self) -> dict[str, pd.DataFrame]:
         """ Returns the orders of the strategy."""
         return self.HISTORY
 
