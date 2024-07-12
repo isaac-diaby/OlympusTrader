@@ -211,7 +211,7 @@ class Insight:
                     if self._partial_filled_quantity != None:
                         print("Partial Filled Quantity: ", self._partial_filled_quantity,
                               self.quantity, " - And has been canceled before filled")
-                        if self.close(quantity=self._partial_filled_quantity):
+                        if self.close(quantity=self._partial_filled_quantity, bypassStateCheck=True):
                             return True
                     # Strategy should handle the incoming cancelation of the position
                     # self.updateState(
@@ -232,8 +232,8 @@ class Insight:
         print("Insight is not in a valid state to be canceled", self.INSIGHT_ID)
         return False
 
-    def close(self, quantity: float = None, retry: bool = True):
-        if self.state == InsightState.FILLED and not self._closing:
+    def close(self, quantity: float = None, retry: bool = True, bypassStateCheck: bool = False):
+        if (self.state == InsightState.FILLED or bypassStateCheck) and not self._closing:
             partialClose = False
             try:
                 if quantity != None:
@@ -511,8 +511,13 @@ class Insight:
     def partialFilled(self, qty: float,):
         if self._partial_filled_quantity == None:
             self._partial_filled_quantity = 0
-        self._partial_filled_quantity += qty
-        return self
+        if qty <= self.quantity:
+            self._partial_filled_quantity = qty
+            return self
+        else:
+            print(
+                f"Partial Filled Quantity: {qty} is greater than the insight's position size: {self.quantity}")
+            return
 
     def positionClosed(self, price: float, close_order_id: str, qty: float = None):
         if qty != None:
