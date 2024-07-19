@@ -22,6 +22,10 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
 
     def __init__(self, strategy, atrPeriod=14, emaPeriod=14, baseConfidenceModifierField=None):
         super().__init__(strategy, "EMA_PRICE_CROSSOVER", "0.1", baseConfidenceModifierField)
+        # Check if atrPeriod and emaPeriod are above 0
+        if atrPeriod <= 0 or emaPeriod <= 0:
+            raise ValueError("ATR Period and EMA Period must be positive integers")
+        
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
             {"kind": 'ema', "length": emaPeriod}
@@ -53,40 +57,38 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
             if baseConfidence <= 0:
                 return self.returnResults(message="Base Confidence is 0.")
 
-            # Generate EMA Crossover Long
-            # and marketState > 3):
-            if ((latestBarIEMA < latestBar['close']) and (previousBarIEMA > previousBar['high']) and (np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR) and (np.abs(latestBar['close'] - latestBarIEMA) < latestIATR)):
-                TP = self.STRATEGY.tools.dynamic_round(
-                    latestBar['high']+(latestIATR*3.5), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    max(previousBar['low']-(.5*latestIATR), latestBarIEMA-latestIATR*1.5), symbol)
-                ENTRY = self.STRATEGY.tools.dynamic_round(
-                    latestBarIEMA, symbol)  # pullback
-                # time to live unfilled
-                TTLUF = self.STRATEGY.tools.calculateTimeToLive(
-                    latestBar['close'], ENTRY, latestIATR)
-                # time to live till take profit
-                TTLF = self.STRATEGY.tools.calculateTimeToLive(
-                    TP, ENTRY, latestIATR)
+            if self.is_long_signal(latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA):
+                return self.create_insight(IOrderSide.BUY, symbol, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence)
 
-                return self.returnResults(Insight(IOrderSide.BUY, symbol, self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
+            if self.is_short_signal(latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA, symbol):
+                return self.create_insight(IOrderSide.SELL, symbol, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence)
 
-            # Generate EMA Crossover Short
-            # and marketState < -3):
-            if (self.STRATEGY.assets[symbol]['shortable'] and (latestBarIEMA > latestBar['close']) and (previousBarIEMA < previousBar['low']) and (np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR) and (np.abs(latestBarIEMA - latestBar['close']) < latestIATR)):
-                TP = self.STRATEGY.tools.dynamic_round(
-                    latestBar['low']-(latestIATR*3.5), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    min(previousBar['high']+(.5*latestIATR), latestBarIEMA+latestIATR*1.5), symbol)
-                ENTRY = self.STRATEGY.tools.dynamic_round(
-                    latestBarIEMA, symbol)
-                # time to live unfilled
-                TTLUF = self.STRATEGY.tools.calculateTimeToLive(
-                    latestBar['close'], ENTRY, latestIATR)
-                # time to live till take profit
-                TTLF = self.STRATEGY.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
-
-                return self.returnResults(Insight(IOrderSide.SELL, symbol, self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.HRVCM], TTLUF, TTLF))
             return self.returnResults()
         except Exception as e:
             return self.returnResults(success=False, message=str(e))
+
+    def is_long_signal(self, latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA):
+        return (latestBarIEMA < latestBar['close'] and previousBarIEMA > previousBar['high'] and 
+                np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and 
+                np.abs(latestBar['close'] - latestBarIEMA) < latestIATR)
+
+    def is_short_signal(self, latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA, symbol):
+        return (self.STRATEGY.assets[symbol]['shortable'] and latestBarIEMA > latestBar['close'] and 
+                previousBarIEMA < previousBar['low'] and 
+                np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and 
+                np.abs(latestBarIEMA - latestBar['close']) < latestIATR)
+
+    def create_insight(self, order_side, symbol, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence):
+        if order_side == IOrderSide.BUY:
+            TP = self.STRATEGY.tools.dynamic_round(latestBar['high']+(latestIATR*3.5), symbol)
+            SL = self.STRATEGY.tools.dynamic_round(max(previousBar['low']-(.5*latestIATR), latestBarIEMA-latestIATR*1.5), symbol)
+        else:
+            TP = self.STRATEGY.tools.dynamic_round(latestBar['low']-(latestIATR*3.5), symbol)
+            SL = self.STRATEGY.tools.dynamic_round(min(previousBar['high']+(.5*latestIATR), latestBarIEMA+latestIATR*1.5), symbol)
+
+        ENTRY = self.STRATEGY.tools.dynamic_round(latestBarIEMA, symbol)
+        TTLUF = self.STRATEGY.tools.calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
+        TTLF = self.STRATEGY.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
+
+        return self.returnResults(Insight(order_side, symbol, self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.NONE], TTLUF, TTLF))
+    
