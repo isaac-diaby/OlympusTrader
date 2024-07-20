@@ -209,10 +209,12 @@ class Insight:
                 if order:
                     self._cancelling = True
                     if self._partial_filled_quantity != None:
-                        print("Partial Filled Quantity: ", self._partial_filled_quantity,
-                              self.quantity, " - And has been canceled before filled")
-                        if self.close(quantity=self._partial_filled_quantity, bypassStateCheck=True):
+                        oldQuantity = self.quantity
+                        self.quantity = self._partial_filled_quantity
+                        if self.close(bypassStateCheck=True):
                             return True
+                        else:
+                            print("Partial Filled Quantity Before Canceled: ", self._partial_filled_quantity, " / ", oldQuantity, " - And Failed to close the position")
                     # Strategy should handle the incoming cancelation of the position
                     # self.updateState(
                     #     InsightState.CANCELED, f"Order ID: {order['order_id']}")

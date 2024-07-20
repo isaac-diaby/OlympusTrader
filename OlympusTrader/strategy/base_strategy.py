@@ -465,8 +465,12 @@ class BaseStrategy(abc.ABC):
                                 break
                             case _:
                                 pass
-                case InsightState.FILLED | InsightState.CLOSED:
+                case InsightState.FILLED | InsightState.CLOSED | InsightState.CANCELED:
                     # Check if the position has been closed via SL or TP
+                    if insight.state == InsightState.CANCELED and insight._partial_filled_quantity == None:
+                        # Check if we has a partial fill and need to get the results of the partial fill that was closed
+                        break
+
                     if insight.symbol == orderdata['asset']['symbol']:
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
                         if (event == ITradeUpdateEvent.FILLED) and ((((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
