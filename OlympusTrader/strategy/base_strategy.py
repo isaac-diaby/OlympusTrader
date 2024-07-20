@@ -97,7 +97,7 @@ class BaseStrategy(abc.ABC):
 
         # Set up TA Strategy
         self.TaStrategy = ta.Strategy(
-            name=self.NAME, description="Olympus Trader Framework", ta=[])
+            name=self.NAME, description="Olympus Trader Framework", ta=[{"kind": 'atr', "length": 14}])
 
         self.start()
         # Load the universe
@@ -614,7 +614,7 @@ class BaseStrategy(abc.ABC):
 
                     self.HISTORY[symbol] = pd.concat(
                         [self.HISTORY[symbol], data])
-                    # Remove duplicates keys in the histoiry as sometimes when getting warm up data we get duplicates
+                    # Remove duplicates keys in the history as sometimes when getting warm up data we get duplicates
                     self.HISTORY[symbol] = self.HISTORY[symbol].loc[~self.HISTORY[symbol].index.duplicated(
                         keep='first')]
                     # Needs to be warm up

@@ -144,15 +144,15 @@ class ITimeFrame:
         """
         match self.unit_value:
             case ITimeFrameUnit.Minute:
-                return time + timedelta(minutes=self.amount_value*periods)
+                return time + timedelta(minutes=self.amount_value*periods, seconds=-time.second, microseconds=-time.microsecond)
             case ITimeFrameUnit.Hour:
-                return time + timedelta(hours=self.amount_value*periods)
+                return time + timedelta(hours=self.amount_value*periods, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case ITimeFrameUnit.Day:
-                return time + timedelta(days=self.amount_value*periods)
+                return time + timedelta(days=self.amount_value*periods, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case ITimeFrameUnit.Week:
-                return time + timedelta(weeks=self.amount_value*periods)
+                return time + timedelta(weeks=self.amount_value*periods, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case ITimeFrameUnit.Month:
-                return time + timedelta(months=self.amount_value*periods)
+                return time + timedelta(months=self.amount_value*periods, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
@@ -171,7 +171,7 @@ class ITimeFrame:
             case ITimeFrameUnit.Week:
                 return time - timedelta(weeks=time.week % self.amount_value, days=time.day, hours=time.hour, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
             case ITimeFrameUnit.Month:
-                return time - timedelta(months=time.month % self.amount_value, weeks=time.week, days=time.day, hours=time.hour, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
+                return time - timedelta(months=time.month % self.amount_value, days=time.day, hours=time.hour, minutes=time.minute, seconds=time.second, microseconds=time.microsecond)
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
@@ -189,7 +189,7 @@ class ITimeFrame:
             case ITimeFrameUnit.Week:
                 return time + timedelta(weeks=self.amount_value - time.week % self.amount_value, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case ITimeFrameUnit.Month:
-                return time + timedelta(months=self.amount_value - time.month % self.amount_value, weeks=-time.week, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
+                return time + timedelta(months=self.amount_value - time.month % self.amount_value, days=-time.day, hours=-time.hour, minutes=-time.minute, seconds=-time.second, microseconds=-time.microsecond)
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False

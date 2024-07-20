@@ -41,7 +41,7 @@ class AlpacaBroker(BaseBroker):
         assert os.getenv('ALPACA_API_KEY'), 'ALPACA_API_KEY not found'
         assert os.getenv('ALPACA_SECRET_KEY'), 'ALPACA_SECRET_KEY not found'
 
-        self.DataFeed = DataFeed.IEX if paper else DataFeed.SIP
+        self.DataFeed = DataFeed.IEX if self.PAPER else DataFeed.SIP
 
         self.trading_stream_client = TradingStream(
             os.getenv('ALPACA_API_KEY'),  os.getenv('ALPACA_SECRET_KEY'), paper=paper)

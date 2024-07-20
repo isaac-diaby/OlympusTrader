@@ -278,7 +278,7 @@ class Insight:
             f"Updated Insight State: {self.state:^10} -> {state:^10}: {self.symbol:^8} : {self.strategyType} :", message)
         self.state = state
         self.updatedAt = datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         if self.state == InsightState.FILLED:
             if self._cancelling:
                 self._cancelling = False
@@ -316,7 +316,7 @@ class Insight:
             return False
         self.limit_price = price
         self.updatedAt = datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
 
         if updateToLimit:
             self.type = IOrderType.LIMIT
@@ -338,7 +338,7 @@ class Insight:
     def update_market_changed(self, marketChanged: bool, shouldCloseOrCancel: bool = False):
         self.marketChanged = marketChanged
         self.updatedAt = datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         if shouldCloseOrCancel:
             if self.state == InsightState.FILLED:
                 if self.close():
@@ -452,7 +452,7 @@ class Insight:
         expireAt = self.tf.add_time_increment(
             self.createAt, self.periodUnfilled)
         hasExpired = expireAt < (datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time())
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time)
 
         if (self.state == InsightState.NEW or self.state == InsightState.EXECUTED) and hasExpired and shouldUpdateState:
             if self.state == InsightState.EXECUTED:
@@ -477,7 +477,7 @@ class Insight:
         expireAt = self.tf.add_time_increment(
             self.filledAt, self.periodTillTp)
         hasExpired = expireAt < (datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time())
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time)
         if (self.state == InsightState.FILLED) and hasExpired and shouldUpdateState:
             if self.close():
                 # Close state switch should handled by the strategy
@@ -490,13 +490,13 @@ class Insight:
     def updateOrderID(self, order_id: str):
         self.order_id = order_id
         self.updatedAt = datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
 
     def updateCloseOrderID(self, close_order_id: str):
         self.close_order_id = close_order_id
         self.updatedAt = datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
@@ -562,7 +562,7 @@ class Insight:
         self.ASSET = asset
         if self.MODE == IStrategyMode.BACKTEST:
             # update the created at to the current time in the simulation
-            self.createAt = self.BROKER.get_current_time()
+            self.createAt = self.BROKER.get_current_time
             self.updatedAt = self.createAt
 
         if self.checkValidEntryInsight():

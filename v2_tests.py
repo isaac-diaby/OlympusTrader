@@ -54,7 +54,8 @@ class QbitTB(Strategy):
             asset, self.resolution.add_time_increment(datetime.now(),  self.warm_up*-3), datetime.now(), self.resolution)])
 
     def universe(self):
-        universe = {'btc-usd'}
+        universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
+        # universe = {'btc-usd'}
         # universe = {'btc-usd','eth-usd'}
         return universe
 
@@ -128,34 +129,39 @@ class QbitTB(Strategy):
 if __name__ == "__main__":
 
     # Paper Broker for backtesting
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 6, 27), end_date=datetime(2024, 6, 28)) # 1 day
+    broker = PaperBroker(cash=1_000_000, start_date=datetime(
+        2024, 6, 27), end_date=datetime(2024, 6, 28)) # 1 day
     # broker = PaperBroker(cash=1_000_000, start_date=datetime(
     #     2024, 5, 27, 14), end_date=datetime(2024, 5, 27, 16)) # 2 hours
     # broker = PaperBroker(cash=1_000_000, start_date=datetime(
     #     2024, 5, 1, 14), end_date=datetime(2024, 5, 30, 16))  # all of may
-    broker = PaperBroker(cash=1_000_000, start_date=datetime(
-        2024, 5, 4), end_date=datetime(2024, 5, 30, 16))  # all of may
+    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
+    #     2024, 5, 4, minute=30), end_date=datetime(2024, 5, 30, 16))  # all of may
 
     # Strategy
     # 1 Minute
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
     #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
     # 5 Minute
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+        5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
     # 1 Hour
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
     #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
     # 4 Hours
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    #     4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    
+    # live paper trading on the paper broker 
+    # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
+    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
 
-    strategy.add_alphas([
-        RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        TestEntryAlpha(strategy, atrPeriod=14)
-    ])
+    # strategy.add_alphas([
+    #     RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+    #     EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+    #     TestEntryAlpha(strategy, atrPeriod=14)
+    # ])
     # New Executors
     strategy.add_executors([
         RejectExpiredInsightExecutor(strategy),
