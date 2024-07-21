@@ -147,15 +147,19 @@ class Insight:
 
     def submit(self, rejectInvalid: bool = True, partialCloseInsight=None, closeInsight=False):
 
-        if self.state == InsightState.NEW or self.state == InsightState.FILLED:
+        if self.state == InsightState.NEW or self.state == InsightState.FILLED or self.state == InsightState.EXECUTED:
             try:
                 if partialCloseInsight != None:
+                    # Submit a partial close order
                     order = self.BROKER.execute_insight_order(
                         partialCloseInsight, self.ASSET)
                 elif closeInsight:
+                    # Submit a close order for the insight
                     order = self.BROKER.execute_insight_order(Insight(
                         self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity), self.ASSET)
+
                 else:
+                    # Submit the insight to enter a position
                     order = self.BROKER.execute_insight_order(self, self.ASSET)
                 if order:
                     if self.state == InsightState.NEW:
@@ -208,16 +212,6 @@ class Insight:
                 order = self.BROKER.close_order(self.order_id)
                 if order:
                     self._cancelling = True
-                    if self._partial_filled_quantity != None:
-                        oldQuantity = self.quantity
-                        self.quantity = self._partial_filled_quantity
-                        if self.close(bypassStateCheck=True):
-                            return True
-                        else:
-                            print("Partial Filled Quantity Before Canceled: ", self._partial_filled_quantity, " / ", oldQuantity, " - And Failed to close the position")
-                    # Strategy should handle the incoming cancelation of the position
-                    # self.updateState(
-                    #     InsightState.CANCELED, f"Order ID: {order['order_id']}")
                     return True
 
             except BaseException as e:
@@ -245,6 +239,7 @@ class Insight:
                         # Close 100% of the position if the quantity is greater than the insight's position size
                         quantity = self.quantity
                 if partialClose == False:
+                    # Close 100% of the position for this insight
                     closeOrder = self.submit(closeInsight=True)
                     if closeOrder:
                         self._closing = True
@@ -266,6 +261,9 @@ class Insight:
                         # Retry closing the position once
                         if retry:
                             return self.close(retry=False)
+                        else:
+                            print(f"failed to close position: {
+                                  holding} remaining!")
                     else:
                         # The position has already been closed as the balance is 0
                         self.updateState(

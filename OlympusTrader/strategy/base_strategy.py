@@ -75,6 +75,8 @@ class BaseStrategy(abc.ABC):
     execution_risk: float = 0.01  # 1% of account per trade
     minRewardRiskRatio: float = 2.0  # 2:1 Reward to Risk Ratio minimum
     baseConfidence: float = 0.1  # Base Confidence level for the strategy
+    shouldClosePartialFilledIfCancelled: bool = True
+    """Insights that are partially filled and are cancelled should be closed if the insight is cancelled"""
 
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
@@ -454,9 +456,17 @@ class BaseStrategy(abc.ABC):
                                 break
 
                             case ITradeUpdateEvent.CANCELED:
-                                # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
-                                self.INSIGHTS[i].updateState(
-                                    InsightState.CANCELED, 'Order Canceled')
+                                # check if we have been partially filled and remove the filled quantity from the insight
+                                if self.INSIGHTS[i]._partial_filled_quantity != None and self.shouldClosePartialFilledIfCancelled:
+                                    self.INSIGHTS[i].updateState(InsightState.FILLED, 'Order Canceled, Closing Partial Filled Position')
+                                    oldQuantity = self.INSIGHTS[i].quantity
+                                    self.INSIGHTS[i].quantity = self.INSIGHTS[i]._partial_filled_quantity
+                                    if self.INSIGHTS[i].close():
+                                        break
+                                    else:
+                                        print("Partial Filled Quantity Before Canceled: ", self.INSIGHTS[i]._partial_filled_quantity, " / ", oldQuantity, " - And Failed to close the position")
+                                else: 
+                                    self.INSIGHTS[i].updateState(InsightState.CANCELED, 'Order Canceled')
                                 break
 
                             case  ITradeUpdateEvent.REJECTED:
@@ -465,11 +475,11 @@ class BaseStrategy(abc.ABC):
                                 break
                             case _:
                                 pass
-                case InsightState.FILLED | InsightState.CLOSED | InsightState.CANCELED:
+                case InsightState.FILLED | InsightState.CLOSED:
                     # Check if the position has been closed via SL or TP
-                    if insight.state == InsightState.CANCELED and insight._partial_filled_quantity == None:
-                        # Check if we has a partial fill and need to get the results of the partial fill that was closed
-                        break
+                    # if insight.state == InsightState.CANCELED and insight._partial_filled_quantity == None:
+                    #     # Check if we has a partial fill and need to get the results of the partial fill that was closed
+                    #     break
 
                     if insight.symbol == orderdata['asset']['symbol']:
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
