@@ -1,6 +1,7 @@
 from ..base_executor import BaseExecutor
 from ...insight import InsightState
 from ....broker.interfaces import IOrderSide
+from ....strategy.interfaces import IStrategyMode
 from ....utils.tools import dynamic_round
 
 
@@ -17,9 +18,13 @@ class BasicTakeProfitExecutor(BaseExecutor):
         super().__init__(strategy, InsightState.FILLED, "1.0")
 
     def run(self, insight):
+        # check if the insight already has a take profit order leg
+        if insight.takeProfitOrderLeg and self.STRATEGY.MODE != IStrategyMode.BACKTEST:
+            return self.returnResults(True, True, "Insight already has a take profit order")
+
         # Check if the insight has reached the take profit price
         if insight.TP == None:
-            return self.returnResults(False, False, "Insight does not have take profit level set.")
+            return self.returnResults(True, True, "Insight does not have take profit level set.")
         try:
             # Check if price broke the first Take Profit level
             latestBar = self.get_latest_bar(insight.symbol)
@@ -29,10 +34,10 @@ class BasicTakeProfitExecutor(BaseExecutor):
             currentTP = insight.TP[0]
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.high > currentTP) or (latestQuote["bid_price"] > currentTP):
+                    if (latestBar.high > currentTP) or (latestQuote["bid"] > currentTP):
                         shouldClose = True
                 case IOrderSide.SELL:
-                    if (latestBar.low < currentTP) or (latestQuote["ask_price"] < currentTP):
+                    if (latestBar.low < currentTP) or (latestQuote["ask"] < currentTP):
                         shouldClose = True
             if shouldClose:
                 if len(insight.TP) > 1:

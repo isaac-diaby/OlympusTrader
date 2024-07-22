@@ -35,7 +35,7 @@ class BaseStrategy(abc.ABC):
     BROKER: BaseBroker
     ACCOUNT: IAccount = {}
     POSITIONS: dict[str, IPosition] = {}
-    ORDERS: deque[IOrder] = deque([])
+    ORDERS: dict[str, IOrder] = {}
     HISTORY: dict[str, pd.DataFrame] = {}
     INSIGHTS: dict[str, Insight] = {}
     UNIVERSE: dict[str, IAsset] = {}
@@ -75,6 +75,8 @@ class BaseStrategy(abc.ABC):
     execution_risk: float = 0.01  # 1% of account per trade
     minRewardRiskRatio: float = 2.0  # 2:1 Reward to Risk Ratio minimum
     baseConfidence: float = 0.1  # Base Confidence level for the strategy
+    shouldClosePartialFilledIfCancelled: bool = True
+    """Insights that are partially filled and are cancelled should be closed if the insight is cancelled"""
 
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
@@ -335,7 +337,8 @@ class BaseStrategy(abc.ABC):
             print('UI is not enabled')
             return
         try:
-            assert os.getenv("SSM_PASSWORD"), 'SSM_PASSWORD not found in environment variables'
+            assert os.getenv(
+                "SSM_PASSWORD"), 'SSM_PASSWORD not found in environment variables'
             SharedStrategyManager.register(
                 'get_strategy', callable=lambda: self)
             SharedStrategyManager.register(
@@ -350,7 +353,7 @@ class BaseStrategy(abc.ABC):
                 'get_positions', callable=lambda: self.positions)
             SharedStrategyManager.register(
                 'get_insights', callable=self._safe_insights)
-            
+
             self.SSM = SharedStrategyManager(
                 address=('', 50000), authkey=os.getenv('SSM_PASSWORD').encode())
 
@@ -398,7 +401,9 @@ class BaseStrategy(abc.ABC):
                         continue
 
                     # TODO: also could feed latest price to the insight for better accr - maybe
-                    self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+                    latestInsight = self.INSIGHTS.get(insight.INSIGHT_ID)
+                    if latestInsight is not None:
+                        self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
 
                     # if self.VERBOSE > 0:
                     # print('Time taken executeInsight:', symbol,
@@ -430,14 +435,23 @@ class BaseStrategy(abc.ABC):
             return
         print(
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']} - {orderdata['order_id']}")
-        self.ORDERS.append(orderdata)
+        self.ORDERS[orderdata["order_id"]] = orderdata
         for i, insight in self.INSIGHTS.items():
             match insight.state:
                 case InsightState.EXECUTED:
                     # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
                     if insight.order_id == orderdata['order_id']:
                         match event:
+                            case ITradeUpdateEvent.NEW:
+                                if orderdata['legs'] != None:
+                                    self.INSIGHTS[i].updateLegs(
+                                        legs=orderdata['legs'])
+
+                                break
                             case ITradeUpdateEvent.FILLED:
+                                if orderdata['legs'] != None:
+                                    self.INSIGHTS[i].updateLegs(
+                                        legs=orderdata['legs'])
                                 # Update the insight with the filled price
                                 self.INSIGHTS[i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata["filled_qty"])
@@ -454,9 +468,20 @@ class BaseStrategy(abc.ABC):
                                 break
 
                             case ITradeUpdateEvent.CANCELED:
-                                # TODO: Also check if we have been partially filled and remove the filled quantity from the insight
-                                self.INSIGHTS[i].updateState(
-                                    InsightState.CANCELED, 'Order Canceled')
+                                # check if we have been partially filled and remove the filled quantity from the insight
+                                if self.INSIGHTS[i]._partial_filled_quantity != None and self.shouldClosePartialFilledIfCancelled:
+                                    self.INSIGHTS[i].updateState(
+                                        InsightState.FILLED, 'Order Canceled, Closing Partial Filled Position')
+                                    oldQuantity = self.INSIGHTS[i].quantity
+                                    self.INSIGHTS[i].quantity = self.INSIGHTS[i]._partial_filled_quantity
+                                    if self.INSIGHTS[i].close():
+                                        break
+                                    else:
+                                        print("Partial Filled Quantity Before Canceled: ",
+                                              self.INSIGHTS[i]._partial_filled_quantity, " / ", oldQuantity, " - And Failed to close the position")
+                                else:
+                                    self.INSIGHTS[i].updateState(
+                                        InsightState.CANCELED, 'Order Canceled')
                                 break
 
                             case  ITradeUpdateEvent.REJECTED:
@@ -467,11 +492,19 @@ class BaseStrategy(abc.ABC):
                                 pass
                 case InsightState.FILLED | InsightState.CLOSED:
                     # Check if the position has been closed via SL or TP
+                    # if insight.state == InsightState.CANCELED and insight._partial_filled_quantity == None:
+                    #     # Check if we has a partial fill and need to get the results of the partial fill that was closed
+                    #     break
+
                     if insight.symbol == orderdata['asset']['symbol']:
-                        # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed
+                        # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
                         if (event == ITradeUpdateEvent.FILLED) and ((((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
                                                                     (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
-                                                                    (insight.order_id == orderdata['order_id'])):
+                                                                    (insight.order_id == orderdata['order_id']) or
+                                                                    (insight.legs != None and
+                                                                    ((insight.takeProfitOrderLeg != None and orderdata['order_id'] == insight.takeProfitOrderLeg['order_id']) or
+                                                                     (insight.stopLossOrderLeg != None and orderdata['order_id'] == insight.stopLossOrderLeg['order_id']) or
+                                                                     (insight.trailingStopOrderLeg != None and orderdata['order_id'] == insight.trailingStopOrderLeg['order_id'])))):
                             # Update the insight closed price
                             if self.MODE != IStrategyMode.BACKTEST:
                                 self.INSIGHTS[i].positionClosed(
@@ -593,11 +626,10 @@ class BaseStrategy(abc.ABC):
 
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
-            orders = self.BROKER.get_orders()
-            if orders:
-                self.ORDERS = deque(orders)
-            else:
-                self.ORDERS = deque([])
+            self.ORDERS = self.BROKER.get_orders()
+
+            if self.ORDERS == None:
+                self.ORDERS = {}
 
             if self.POSITIONS == None:
                 self.POSITIONS = {}
@@ -672,7 +704,6 @@ class BaseStrategy(abc.ABC):
     #             return getattr(self, var)
     #     except AttributeError as e:
     #         return None
-    
 
     @property
     def account(self) -> IAccount:
@@ -698,6 +729,7 @@ class BaseStrategy(abc.ABC):
     def insights(self) -> dict[str, Insight]:
         """ Returns the insights of the strategy."""
         return self.INSIGHTS
+
     def _safe_insights(self) -> dict[str, dict[str, Any]]:
         """ Returns the insights of the strategy. for the UI"""
         safe_insights = {}
@@ -727,6 +759,7 @@ class BaseStrategy(abc.ABC):
                 'closed_at': insight.closedAt,
             }
         return safe_insights
+
     @property
     def state(self) -> dict:
         """ Returns the state of the strategy."""

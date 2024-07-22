@@ -11,7 +11,7 @@ from OlympusTrader.utils.tools import dynamic_round
 # Alphas
 from OlympusTrader.alpha.rsi_divergance_alpha import RSIDiverganceAlpha
 from OlympusTrader.alpha.ema_price_crossover import EMAPriceCrossoverAlpha
-# from OlympusTrader.alpha.test_entry import TestEntryAlpha
+from OlympusTrader.alpha.test_entry import TestEntryAlpha
 
 # Executors
 from OlympusTrader.insight.executors.new.cancelAllOppositeSide import CancelAllOppositeSidetExecutor
@@ -57,13 +57,15 @@ class QbitTB(Strategy):
             asset, self.resolution.add_time_increment(datetime.now(),  ((self.warm_up*-4))), datetime.now(), self.resolution)])
 
     def universe(self):
-        universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-                    'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
-
+        # universe = {'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
+        #             'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
         # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
-        #             'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX'}
+        #             'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', }
 
-        # universe = {'btc-usd','eth-usd'}
+        universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
+                    'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', 'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
+                    'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
+        
         return universe
 
     def on_bar(self, symbol, bar):

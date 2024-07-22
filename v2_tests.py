@@ -54,8 +54,8 @@ class QbitTB(Strategy):
             asset, self.resolution.add_time_increment(datetime.now(),  self.warm_up*-3), datetime.now(), self.resolution)])
 
     def universe(self):
-        universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
-        # universe = {'btc-usd'}
+        # universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
+        universe = {'btc-usd'}
         # universe = {'btc-usd','eth-usd'}
         return universe
 
@@ -157,11 +157,11 @@ if __name__ == "__main__":
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
     #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
 
-    # strategy.add_alphas([
-    #     RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-    #     EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-    #     TestEntryAlpha(strategy, atrPeriod=14)
-    # ])
+    strategy.add_alphas([
+        RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+        EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        TestEntryAlpha(strategy, atrPeriod=14)
+    ])
     # New Executors
     strategy.add_executors([
         RejectExpiredInsightExecutor(strategy),

@@ -105,6 +105,13 @@ class IOrderLeg(TypedDict):
     order_id: str
     limit_price: float
     filled_price: Optional[float]
+    type: IOrderType
+    status: ITradeUpdateEvent
+    order_class: IOrderClass
+    created_at: datetime
+    updated_at: datetime
+    submitted_at: datetime
+    filled_at: Optional[datetime]
 
 class IOrderLegs(TypedDict):
     take_profit: Optional[IOrderLeg]

@@ -21,6 +21,8 @@ class BaseBroker(abc.ABC):
     DataFeed: str
     PAPER: bool
 
+    TICKER_INFO: dict[str, IAsset] = {}
+
     @abc.abstractmethod
     def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: str = None) -> None:
         """Abstract class for broker implementations."""
@@ -62,7 +64,7 @@ class BaseBroker(abc.ABC):
 
     @override
     @abc.abstractmethod
-    def get_orders(self) -> List[IOrder]:
+    def get_orders(self) -> dict[str, IOrder] | None:
         """Get all orders"""
         pass
 
@@ -94,9 +96,9 @@ class BaseBroker(abc.ABC):
         """Manage insight order by planing entry and exit orders for a given insight"""
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
-
-        if not insight.validate()[0]:
-            raise ValueError("Invalid Entry Insight")
+        valid, message = insight.validate()
+        if not valid:
+            raise ValueError("Invalid Entry Insight:", message)
         # assert isinstance(asset, Asset), 'asset must be of type Asset object'
 
     @override

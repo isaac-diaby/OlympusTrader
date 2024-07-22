@@ -5,7 +5,7 @@ from uuid import uuid4
 
 
 from ..utils.timeframe import ITimeFrame
-from ..broker.interfaces import IAsset, IOrderSide, IOrderType, IOrderClass
+from ..broker.interfaces import IAsset, IOrderSide, IOrderType, IOrderClass, IOrderLegs, IOrderLeg
 from ..strategy.interfaces import IStrategyMode
 
 
@@ -95,6 +95,7 @@ class Insight:
     closedAt: datetime = None
     close_order_id = None
     partial_closes: list[PartialCloseResult] = []
+    legs: IOrderLegs = IOrderLegs(take_profit=None, stop_loss=None, trailing_stop=None)
     close_price: float = None  # price to close at
 
     marketChanged: bool = False
@@ -130,7 +131,7 @@ class Insight:
         self.createAt = datetime.now()
         self.updatedAt = datetime.now()
 
-        if limit_price == None:
+        if self.limit_price == None:
             self.type = IOrderType.MARKET
         else:
             self.type = IOrderType.LIMIT
@@ -147,15 +148,19 @@ class Insight:
 
     def submit(self, rejectInvalid: bool = True, partialCloseInsight=None, closeInsight=False):
 
-        if self.state == InsightState.NEW or self.state == InsightState.FILLED:
+        if self.state == InsightState.NEW or self.state == InsightState.FILLED or self.state == InsightState.EXECUTED:
             try:
                 if partialCloseInsight != None:
+                    # Submit a partial close order
                     order = self.BROKER.execute_insight_order(
                         partialCloseInsight, self.ASSET)
                 elif closeInsight:
+                    # Submit a close order for the insight
                     order = self.BROKER.execute_insight_order(Insight(
                         self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity), self.ASSET)
+
                 else:
+                    # Submit the insight to enter a position
                     order = self.BROKER.execute_insight_order(self, self.ASSET)
                 if order:
                     if self.state == InsightState.NEW:
@@ -208,14 +213,6 @@ class Insight:
                 order = self.BROKER.close_order(self.order_id)
                 if order:
                     self._cancelling = True
-                    if self._partial_filled_quantity != None:
-                        print("Partial Filled Quantity: ", self._partial_filled_quantity,
-                              self.quantity, " - And has been canceled before filled")
-                        if self.close(quantity=self._partial_filled_quantity, bypassStateCheck=True):
-                            return True
-                    # Strategy should handle the incoming cancelation of the position
-                    # self.updateState(
-                    #     InsightState.CANCELED, f"Order ID: {order['order_id']}")
                     return True
 
             except BaseException as e:
@@ -243,6 +240,7 @@ class Insight:
                         # Close 100% of the position if the quantity is greater than the insight's position size
                         quantity = self.quantity
                 if partialClose == False:
+                    # Close 100% of the position for this insight
                     closeOrder = self.submit(closeInsight=True)
                     if closeOrder:
                         self._closing = True
@@ -264,6 +262,9 @@ class Insight:
                         # Retry closing the position once
                         if retry:
                             return self.close(retry=False)
+                        else:
+                            print(f"failed to close position: {
+                                  holding} remaining!")
                     else:
                         # The position has already been closed as the balance is 0
                         self.updateState(
@@ -498,6 +499,43 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
+
+    def updateLegs(self, legs: IOrderLegs):
+        """Update the order legs for the insight."""
+        self.legs = legs
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        return self
+
+    def updateTakeProfitLegs(self, leg: IOrderLeg):
+        self.legs['take_profit'] = leg
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        return self
+    
+    @property
+    def takeProfitOrderLeg(self):
+        return self.legs.get('take_profit')
+
+    def updateStopLossLegs(self, leg: IOrderLeg):
+        self.legs['stop_loss'] = leg
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        return self
+    
+    @property
+    def stopLossOrderLeg(self):
+        return self.legs.get('stop_loss')
+
+    def updateTrailingStopLegs(self, leg: IOrderLeg):
+        self.legs['trailing_stop'] = leg
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        return self
+    
+    @property
+    def trailingStopOrderLeg(self):
+        return self.legs.get('trailing_stop')
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
         if order_id != None:
