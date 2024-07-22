@@ -17,9 +17,13 @@ class BasicTakeProfitExecutor(BaseExecutor):
         super().__init__(strategy, InsightState.FILLED, "1.0")
 
     def run(self, insight):
+        # check if the insight already has a take profit order leg
+        if insight.takeProfitOrderLeg:
+            return self.returnResults(True, True, "Insight already has a take profit order")
+
         # Check if the insight has reached the take profit price
         if insight.TP == None:
-            return self.returnResults(False, False, "Insight does not have take profit level set.")
+            return self.returnResults(True, True, "Insight does not have take profit level set.")
         try:
             # Check if price broke the first Take Profit level
             latestBar = self.get_latest_bar(insight.symbol)

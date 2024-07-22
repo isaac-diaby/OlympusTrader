@@ -5,7 +5,7 @@ from uuid import uuid4
 
 
 from ..utils.timeframe import ITimeFrame
-from ..broker.interfaces import IAsset, IOrderSide, IOrderType, IOrderClass
+from ..broker.interfaces import IAsset, IOrderSide, IOrderType, IOrderClass, IOrderLegs, IOrderLeg
 from ..strategy.interfaces import IStrategyMode
 
 
@@ -95,6 +95,7 @@ class Insight:
     closedAt: datetime = None
     close_order_id = None
     partial_closes: list[PartialCloseResult] = []
+    legs: IOrderLegs = IOrderLegs(take_profit=None, stop_loss=None, trailing_stop=None)
     close_price: float = None  # price to close at
 
     marketChanged: bool = False
@@ -130,7 +131,7 @@ class Insight:
         self.createAt = datetime.now()
         self.updatedAt = datetime.now()
 
-        if limit_price == None:
+        if self.limit_price == None:
             self.type = IOrderType.MARKET
         else:
             self.type = IOrderType.LIMIT
@@ -498,6 +499,43 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
         return self
+
+    def updateLegs(self, legs: IOrderLegs):
+        """Update the order legs for the insight."""
+        self.legs = legs
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        return self
+
+    def updateTakeProfitLegs(self, leg: IOrderLeg):
+        self.legs['take_profit'] = leg
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        return self
+    
+    @property
+    def takeProfitOrderLeg(self):
+        return self.legs.get('take_profit')
+
+    def updateStopLossLegs(self, leg: IOrderLeg):
+        self.legs['stop_loss'] = leg
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        return self
+    
+    @property
+    def stopLossOrderLeg(self):
+        return self.legs.get('stop_loss')
+
+    def updateTrailingStopLegs(self, leg: IOrderLeg):
+        self.legs['trailing_stop'] = leg
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time()
+        return self
+    
+    @property
+    def trailingStopOrderLeg(self):
+        return self.legs.get('trailing_stop')
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
         if order_id != None:

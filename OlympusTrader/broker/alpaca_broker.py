@@ -22,7 +22,7 @@ from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
-from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote
+from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote, IOrderLegs, IOrderLeg
 from ..utils.timeframe import ITimeFrame as tf
 from ..insight.insight import Insight
 
@@ -91,6 +91,9 @@ class AlpacaBroker(BaseBroker):
 
     def get_ticker_info(self, symbol):
         try:
+            if symbol in self.TICKER_INFO:
+                return self.TICKER_INFO[symbol]
+
             tickerInfo = self.trading_client.get_asset(symbol)
 
             assert tickerInfo, f'Asset {symbol} not found'
@@ -106,9 +109,10 @@ class AlpacaBroker(BaseBroker):
                 marginable=tickerInfo.marginable,
                 shortable=tickerInfo.shortable,
                 fractionable=tickerInfo.fractionable,
-                min_order_size=tickerInfo.min_order_size,
+                min_order_size=tickerInfo.min_order_size if tickerInfo.min_order_size else 0.1,
                 min_price_increment=tickerInfo.price_increment if tickerInfo.price_increment else 0.01,
             )
+            self.TICKER_INFO[symbol] = tickerAsset
             return tickerAsset
         except alpaca.common.exceptions.APIError as e:
             print("Error: No asset for", symbol)
@@ -148,9 +152,11 @@ class AlpacaBroker(BaseBroker):
 
     def get_orders(self):
         res = self.trading_client.get_orders()
-        orders: List[IOrder] = []
+        orders: dict[str, IOrder] = {}
+        if not res:
+            return None
         for order in res:
-            orders.append(self.format_order(order))
+            orders[order.id] = self.format_order(order)
         return orders
 
     def get_order(self, order_id):
@@ -158,16 +164,47 @@ class AlpacaBroker(BaseBroker):
 
     def format_order(self, order: Order) -> IOrder:
         side = None
-        match order.side.value:
-            case "buy":
-                side = "long"
-            case "sell":
-                side = "short"
+        match order.side:
+            case OrderSide.BUY:
+                side = IOrderSide.BUY
+            case OrderSide.SELL:
+                side = IOrderSide.SELL
             case _:
                 side = "unknown"
         #  TODO: add support for order legs
+        legs = IOrderLegs()
+        if order.legs:
+            for leg in order.legs:
+                if leg.order_type == OrderType.LIMIT:
+                    legs['take_profit'] = IOrderLeg(
+                        order_id=leg.id,
+                        limit_price=float(leg.limit_price),
+                        filled_price=float(
+                            leg.filled_avg_price) if leg.filled_avg_price else None,
+                        type=IOrderType.LIMIT,
+                        status=leg.status.value,
+                        order_class=leg.order_class.value,
+                        created_at=leg.created_at,
+                        updated_at=leg.updated_at,
+                        submitted_at=leg.submitted_at,
+                        filled_at=leg.filled_at
+                    )
+                elif leg.order_type == OrderType.STOP:
+                    legs['stop_loss'] = IOrderLeg(
+                        order_id=leg.id,
+                        limit_price=float(leg.stop_price),
+                        filled_price=float(
+                            leg.filled_avg_price) if leg.filled_avg_price else None,
+                        type=IOrderType.STOP,
+                        status=leg.status.value,
+                        order_class=leg.order_class.value,
+                        created_at=leg.created_at,
+                        updated_at=leg.updated_at,
+                        submitted_at=leg.submitted_at,
+                        filled_at=leg.filled_at
+                    )
 
-        return IOrder(
+        order =  IOrder(
             order_id=order.id,
             asset=self.get_ticker_info(order.symbol),
             filled_price=float(
@@ -182,13 +219,15 @@ class AlpacaBroker(BaseBroker):
             order_class=order.order_class.value,
             time_in_force=order.time_in_force.value,
             status=order.status.value,
+
             created_at=order.created_at,
             updated_at=order.updated_at,
             submitted_at=order.submitted_at,
             filled_at=order.filled_at,
-            # legs=order.legs,
+            legs=legs,
 
         )
+        return order
 
     def get_latest_quote(self, asset: IAsset):
         if asset['asset_type'] == 'crypto':
@@ -381,7 +420,7 @@ class AlpacaBroker(BaseBroker):
                 # })
 
                 raise error
-            raise f"ALPACA: Error submitting order {insight}"
+            raise e
 
         return None
 
@@ -489,11 +528,10 @@ class AlpacaBroker(BaseBroker):
                     if not closeCryptoBarStream:
                         closeCryptoBarStream = True
 
-        if closeStockBarStream:    
+        if closeStockBarStream:
             self.stock_stream_client.close()
         if closeCryptoBarStream:
-           self.crypto_stream_client.stop()
-
+            self.crypto_stream_client.stop()
 
     def format_on_trade_update(self, trade: TradeUpdate):
         event: ITradeUpdateEvent = None
@@ -532,12 +570,12 @@ class AlpacaBroker(BaseBroker):
     def format_on_quote(self, quote: Quote):
         quote
         data = IQuote(
-            symbol = quote.symbol,
-            ask_price = quote.ask_price,
-            ask_size = quote.ask_size,
-            bid_price =quote.bid_price,
-            bid_size = quote.bid_size,
-            volume = (quote.bid_size + quote.ask_size),
-            timestamp = quote.timestamp
+            symbol=quote.symbol,
+            ask_price=quote.ask_price,
+            ask_size=quote.ask_size,
+            bid_price=quote.bid_price,
+            bid_size=quote.bid_size,
+            volume=(quote.bid_size + quote.ask_size),
+            timestamp=quote.timestamp
         )
         return data

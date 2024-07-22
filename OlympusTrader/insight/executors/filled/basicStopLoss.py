@@ -21,6 +21,9 @@ class BasicStopLossExecutor(BaseExecutor):
         super().__init__(strategy, InsightState.FILLED, "1.0")
 
     def run(self, insight):
+        #  Check if the insight already has a stop loss order leg
+        if insight.stopLossOrderLeg:
+            return self.returnResults(True, True, "Insight already has a stop loss order")
         # Check if the insight has a stop loss price
         if insight.SL == None:
             return self.returnResults(False, False, "Insight does not have a stop loss price set.")

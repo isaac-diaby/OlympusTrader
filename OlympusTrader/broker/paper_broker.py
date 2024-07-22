@@ -17,7 +17,7 @@ import pandas as pd
 from .base_broker import BaseBroker
 from .interfaces import IQuote, ITimeInForce, ISupportedBrokers, IOrderClass, IOrderRequest, IOrderSide, IOrderType, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
 from ..insight.insight import Insight
-from .interfaces import IAccount, IOrder, IPosition, IAsset, IOrderLegs
+from .interfaces import IAccount, IOrder, IPosition, IAsset, IOrderLegs, IOrderLeg
 from ..strategy.interfaces import IMarketDataStream, IStrategyMode
 from ..utils.timeframe import ITimeFrame
 
@@ -50,8 +50,6 @@ class PaperBroker(BaseBroker):
     CANCELED_ORDERS: deque[IOrder] = deque()
 
     ACCOUNT_HISTORY: dict[datetime.date, IAccount] = {}
-
-    TICKER_INFO: dict[str, IAsset] = {}
 
     def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf'):
 
@@ -100,6 +98,7 @@ class PaperBroker(BaseBroker):
                 np.power(10, tickerInfo["priceHint"]
                          ) if "priceHint" in tickerInfo else 0.01
             )
+            self.TICKER_INFO[symbol] = tickerAsset
             return tickerAsset
         else:
             raise NotImplementedError(
@@ -136,7 +135,15 @@ class PaperBroker(BaseBroker):
         return self.Positions
 
     def get_orders(self):
-        return [order for order in self.Orders.values()]
+        # active orders
+        returned_orders: dict[str, IOrder] = {}
+        active_orders = [order for order in self.Orders.values() if order['status'] == ITradeUpdateEvent.NEW or order['status'] == ITradeUpdateEvent.FILLED]
+        if len(active_orders) == 0:
+            return None
+        for order in active_orders:
+            returned_orders[order['order_id']] = order
+
+        return returned_orders
 
     def get_order(self, order_id):
         return self.Orders.get(order_id)
@@ -549,16 +556,17 @@ class PaperBroker(BaseBroker):
             })
 
         # Set up the order legs
-        legs = {}
+        legs = IOrderLegs()
         if orderRequest.get('take_profit'):
-            legs["take_profit"] = {
-                "order_id": uuid.uuid4(), "limit_price": orderRequest['take_profit'], "filled_price": None}
+            legs["take_profit"] = IOrderLeg(
+                order_id=uuid.uuid4(), limit_price=orderRequest['take_profit'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.CURRENT, updated_at=self.CURRENT, submitted_at=self.CURRENT)
+
         if orderRequest.get('stop_loss'):
-            legs["stop_loss"] = {
-                "order_id": uuid.uuid4(), "limit_price": orderRequest['stop_loss'], "filled_price": None}
+            legs["stop_loss"] = IOrderLeg(
+                order_id=uuid.uuid4(), limit_price=orderRequest['stop_loss'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.CURRENT, updated_at=self.CURRENT, submitted_at=self.CURRENT)
         if orderRequest.get('trail_price'):
-            legs["trailing_stop"] = {
-                "order_id": uuid.uuid4(), "limit_price": orderRequest['trail_price'], "filled_price": None}
+            legs["trailing_stop"] = IOrderLeg(
+                order_id=uuid.uuid4(), limit_price=orderRequest['trail_price'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.CURRENT, updated_at=self.CURRENT, submitted_at=self.CURRENT)
 
         if self.MODE == IStrategyMode.BACKTEST:
             order = IOrder(
@@ -578,8 +586,7 @@ class PaperBroker(BaseBroker):
                 updated_at=self.CURRENT,
                 submitted_at=self.CURRENT,
                 filled_at=None,
-                legs=IOrderLegs(take_profit=legs.get("take_profit"), stop_loss=legs.get(
-                    "stop_loss"), trailing_stop=legs.get("trailing_stop"))
+                legs=legs
 
             )
             self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)

@@ -17,7 +17,7 @@ class ITradingTools():
         if "price_base" not in self.STRATEGY.assets[symbol] or self.STRATEGY.assets[symbol]["price_base"] == None:
             dynamic_precision = np.abs(
                 int(np.log10(self.STRATEGY.assets[symbol]["min_price_increment"])))
-            self.STRATEGY.UNIVERSE[symbol]["price_base"] = dynamic_precision+2
+            self.STRATEGY.UNIVERSE[symbol]["price_base"] = dynamic_precision
 
         return round(v, self.STRATEGY.UNIVERSE[symbol]["price_base"])
     # TODO: movethis into strategy tools
