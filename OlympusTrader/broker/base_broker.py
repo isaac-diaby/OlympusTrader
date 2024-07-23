@@ -144,3 +144,6 @@ class BaseBroker(abc.ABC):
     def format_on_trade_update(self, trade: Any) -> tuple[IOrder, ITradeUpdateEvent]:
         """Format stream Trade Order data and event"""
         pass
+    
+    def get_current_time(self) -> datetime:
+        return datetime.now()

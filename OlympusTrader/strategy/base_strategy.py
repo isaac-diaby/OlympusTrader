@@ -99,7 +99,7 @@ class BaseStrategy(abc.ABC):
 
         # Set up TA Strategy
         self.TaStrategy = ta.Strategy(
-            name=self.NAME, description="Olympus Trader Framework", ta=[])
+            name=self.NAME, description="Olympus Trader Framework", ta=[{"kind": 'atr', "length": 14}])
 
         self.start()
         # Load the universe
@@ -401,7 +401,9 @@ class BaseStrategy(abc.ABC):
                         continue
 
                     # TODO: also could feed latest price to the insight for better accr - maybe
-                    self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+                    latestInsight = self.INSIGHTS.get(insight.INSIGHT_ID)
+                    if latestInsight is not None:
+                        self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
 
                     # if self.VERBOSE > 0:
                     # print('Time taken executeInsight:', symbol,
@@ -614,7 +616,7 @@ class BaseStrategy(abc.ABC):
         try:
             # set_index(['symbol', 'timestamp']
 
-            if self.MODE != IStrategyMode.BACKTEST:
+            if self.MODE != IStrategyMode.BACKTEST and self.BROKER.NAME != ISupportedBrokers.PAPER:
                 data = self.BROKER.format_on_bar(bar)
             else:
                 if bar.empty:
@@ -644,7 +646,7 @@ class BaseStrategy(abc.ABC):
 
                     self.HISTORY[symbol] = pd.concat(
                         [self.HISTORY[symbol], data])
-                    # Remove duplicates keys in the histoiry as sometimes when getting warm up data we get duplicates
+                    # Remove duplicates keys in the history as sometimes when getting warm up data we get duplicates
                     self.HISTORY[symbol] = self.HISTORY[symbol].loc[~self.HISTORY[symbol].index.duplicated(
                         keep='first')]
                     # Needs to be warm up

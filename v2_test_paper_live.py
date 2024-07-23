@@ -128,34 +128,27 @@ class QbitTB(Strategy):
 
 if __name__ == "__main__":
 
-    # Paper Broker for backtesting
-    broker = PaperBroker(cash=1_000_000, start_date=datetime(
-        2024, 6, 27), end_date=datetime(2024, 6, 28)) # 1 day
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 27, 14), end_date=datetime(2024, 5, 27, 16)) # 2 hours
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 1, 14), end_date=datetime(2024, 5, 30, 16))  # all of may
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 4, minute=30), end_date=datetime(2024, 5, 30, 16))  # all of may
+    # Live Paper Broker for backtesting
+    # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
+    broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
 
-    # Strategy
+
+    # Strategy live paper trading on the paper broker 
     # 1 Minute
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     # 5 Minute
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    #     5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     # 1 Hour
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     # 4 Hours
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    #     4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     
-    # live paper trading on the paper broker 
-    # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
+    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+        1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
 
     strategy.add_alphas([
         RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
