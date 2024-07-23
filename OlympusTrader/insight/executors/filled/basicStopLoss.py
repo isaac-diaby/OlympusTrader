@@ -38,10 +38,10 @@ class BasicStopLossExecutor(BaseExecutor):
             shouldClose = False
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.close < insight.SL) or (latestQuote['bid'] < insight.SL):
+                    if (latestBar.low < insight.SL) or (latestQuote['bid'] < insight.SL):
                         shouldClose = True
                 case IOrderSide.SELL:
-                    if (latestBar.close > insight.SL) or (latestQuote['ask'] > insight.SL):
+                    if (latestBar.high > insight.SL) or (latestQuote['ask'] > insight.SL):
                         shouldClose = True
             if shouldClose:
                 if self.STRATEGY.insights[insight.INSIGHT_ID].close():
