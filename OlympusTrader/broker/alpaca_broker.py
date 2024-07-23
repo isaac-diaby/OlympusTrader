@@ -62,32 +62,38 @@ class AlpacaBroker(BaseBroker):
 
         timeframe = TimeFrame(resolution.amount, resolution.unit)
         data = None
-        if (asset['asset_type'] == 'stock'):
-            # assert isinstance(
-            #     feed, DataFeed), 'DataFeed must be of type DataFeed'
-            data = self.stock_client.get_stock_bars(
-                StockBarsRequest(
+        try:
+            if (asset['asset_type'] == 'stock'):
+                # assert isinstance(
+                #     feed, DataFeed), 'DataFeed must be of type DataFeed'
+                data = self.stock_client.get_stock_bars(
+                    StockBarsRequest(
+                        symbol_or_symbols=asset['symbol'],
+                        timeframe=timeframe,
+                        start=start,
+                        end=end,
+                        feed=self.DataFeed
+                    )).df
+            elif (asset['asset_type'] == 'crypto'):
+                # assert isinstance(
+                #     feed, CryptoFeed), 'DataFeed must be of type CryptoFeed'
+                data = self.crypto_client.get_crypto_bars(CryptoBarsRequest(
                     symbol_or_symbols=asset['symbol'],
                     timeframe=timeframe,
                     start=start,
-                    end=end,
-                    feed=self.DataFeed
+                    end=end
                 )).df
-        elif (asset['asset_type'] == 'crypto'):
-            # assert isinstance(
-            #     feed, CryptoFeed), 'DataFeed must be of type CryptoFeed'
-            data = self.crypto_client.get_crypto_bars(CryptoBarsRequest(
-                symbol_or_symbols=asset['symbol'],
-                timeframe=timeframe,
-                start=start,
-                end=end
-            )).df
-        else:
-            assert False, 'Get History: IAsset type must be of type stock or crypto'
-        # format Data Frame open, high, low, close, volume
-        data = data[['open', 'high', 'low', 'close', 'volume']]  # 'timestamp'
-        # print(data)
-        return data
+            else:
+                assert False, 'Get History: IAsset type must be of type stock or crypto'
+
+            if data.empty:
+                return None
+            # format Data Frame open, high, low, close, volume
+            data = data[['open', 'high', 'low', 'close', 'volume']]  # 'timestamp'
+            # print(data)
+            return data
+        except:
+            return None
 
     def get_ticker_info(self, symbol):
         try:
