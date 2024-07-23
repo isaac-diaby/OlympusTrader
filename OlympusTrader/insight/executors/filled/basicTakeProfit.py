@@ -26,6 +26,9 @@ class BasicTakeProfitExecutor(BaseExecutor):
         if insight.TP == None:
             return self.returnResults(True, True, "Insight does not have take profit level set.")
         try:
+            # check if the insight has not already been closed 
+            if insight._closing:
+                return self.returnResults(False, True, "Insight is being closed.")
             # Check if price broke the first Take Profit level
             latestBar = self.get_latest_bar(insight.symbol)
             latestQuote = self.get_latest_quote(insight)

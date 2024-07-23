@@ -29,16 +29,19 @@ class BasicStopLossExecutor(BaseExecutor):
         if insight.SL == None:
             return self.returnResults(True, True, "Insight does not have a stop loss price set.")
         try:
+            # check if the insight has not already been closed 
+            if insight._closing:
+                return self.returnResults(False, True, "Insight is being closed.")
             # Check if price broke the stop loss level
             latestBar = self.get_latest_bar(insight.symbol)
             latestQuote = self.get_latest_quote(insight)
             shouldClose = False
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.low < insight.SL) or (latestQuote['bid'] < insight.SL):
+                    if (latestBar.close < insight.SL) or (latestQuote['bid'] < insight.SL):
                         shouldClose = True
                 case IOrderSide.SELL:
-                    if (latestBar.high > insight.SL) or (latestQuote['ask'] > insight.SL):
+                    if (latestBar.close > insight.SL) or (latestQuote['ask'] > insight.SL):
                         shouldClose = True
             if shouldClose:
                 if self.STRATEGY.insights[insight.INSIGHT_ID].close():

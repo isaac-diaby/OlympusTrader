@@ -156,16 +156,25 @@ class Insight:
                         partialCloseInsight, self.ASSET)
                 elif closeInsight:
                     # Submit a close order for the insight
+
+                    #  check if the insight has a take profit or stop loss order leg that need to be canceled before closing the position
+                    if self.takeProfitOrderLeg:
+                        self.cancelTakeProfitLeg()
+                    if self.stopLossOrderLeg:
+                        self.cancelStopLossLeg()
                     order = self.BROKER.execute_insight_order(Insight(
                         self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity), self.ASSET)
 
                 else:
                     # Submit the insight to enter a position
                     order = self.BROKER.execute_insight_order(self, self.ASSET)
+                    
                 if order:
                     if self.state == InsightState.NEW:
                         self.updateOrderID(
                             order['order_id'])
+                        if order["legs"]:
+                            self.updateLegs(order["legs"])
                         self.updateState(
                             InsightState.EXECUTED, f"Order ID: {order['order_id']}")
 
@@ -202,6 +211,15 @@ class Insight:
                                  'Invalid Entry Insight')
 
         return False
+    def cancel_order_by_id(self, order_id: str):
+        try:
+            order = self.BROKER.close_order(order_id)
+            if order:
+                return order
+            else:
+                return False
+        except BaseException as e:
+            raise e
 
     def cancel(self):
         if self.state == InsightState.EXECUTED:
@@ -210,7 +228,7 @@ class Insight:
                     if self.state == InsightState.FILLED:
                         return False
                     return True
-                order = self.BROKER.close_order(self.order_id)
+                order = self.cancel_order_by_id(self.order_id)
                 if order:
                     self._cancelling = True
                     return True
@@ -255,22 +273,23 @@ class Insight:
             except BaseException as e:
                 if e.args[0]["code"] == "insufficient_balance":
                     # '{"available":"0.119784","balance":"0.119784","code":40310000,"message":"insufficient balance for BTC (requested: 0.12, available: 0.119784)","symbol":"USD"}'
-                    holding = float(e.args[0]["data"]["balance"])
-                    if (holding > 0):
-                        # Close 100% of the position
-                        self.quantity = abs(holding)
-                        # Retry closing the position once
-                        if retry:
-                            return self.close(retry=False)
+                    if e.args[0]["data"].get("balance") != None:
+                        holding = float(e.args[0]["data"]["balance"])
+                        if (holding > 0):
+                            # Close 100% of the position
+                            self.quantity = abs(holding)
+                            # Retry closing the position once
+                            if retry:
+                                return self.close(retry=False)
+                            else:
+                                print(f"failed to close position: {
+                                    holding} remaining!")
                         else:
-                            print(f"failed to close position: {
-                                  holding} remaining!")
-                    else:
-                        # The position has already been closed as the balance is 0
-                        self.updateState(
-                            InsightState.CANCELED, f"No funds to close position")
+                            # The position has already been closed as the balance is 0
+                            self.updateState(
+                                InsightState.CANCELED, f"No funds to close position")
         if not self._closing:
-            print("Insight is not in a valid state to be closed")
+            print("Insight is not in a valid state to be closed", self.state)
 
         return False
 
@@ -516,6 +535,15 @@ class Insight:
     @property
     def takeProfitOrderLeg(self):
         return self.legs.get('take_profit')
+    
+    def cancelTakeProfitLeg(self):
+        if self.takeProfitOrderLeg:
+            if self.cancel_order_by_id(self.takeProfitOrderLeg['order_id']):
+                self.legs['take_profit'] = None
+                self.updatedAt = datetime.now(
+                ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+                return True
+        return False
 
     def updateStopLossLegs(self, leg: IOrderLeg):
         self.legs['stop_loss'] = leg
@@ -526,6 +554,15 @@ class Insight:
     @property
     def stopLossOrderLeg(self):
         return self.legs.get('stop_loss')
+    
+    def cancelStopLossLeg(self):
+        if self.stopLossOrderLeg:
+            if self.cancel_order_by_id(self.stopLossOrderLeg['order_id']):
+                self.legs['stop_loss'] = None
+                self.updatedAt = datetime.now(
+                ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+                return True
+        return False
 
     def updateTrailingStopLegs(self, leg: IOrderLeg):
         self.legs['trailing_stop'] = leg
@@ -542,6 +579,7 @@ class Insight:
             self.updateOrderID(order_id)
         self.limit_price = price
         self.quantity = qty
+        self.partialFilled(qty)
         self.updateState(InsightState.FILLED, f"Trade Filled: {
                          self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
         return self

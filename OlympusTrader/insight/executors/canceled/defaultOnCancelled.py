@@ -17,8 +17,8 @@ class DefaultOnCancelledExecutor(BaseExecutor):
     def run(self, insight):
         # Set the default state of the insight
         try:
-            for order in self.STRATEGY.orders:
-                if order['order_id'] == insight.order_id:
+            for i, order in self.STRATEGY.orders.items():
+                if i == insight.order_id:
                     # Check if the insight is already filled
                     if (self.STRATEGY.insights[insight.INSIGHT_ID].state == InsightState.FILLED):
                         return self.returnResults(True, True, "Insight already filled. Not deleting.")

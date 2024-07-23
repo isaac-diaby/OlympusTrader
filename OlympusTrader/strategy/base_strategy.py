@@ -442,14 +442,15 @@ class BaseStrategy(abc.ABC):
                     # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
                     if insight.order_id == orderdata['order_id']:
                         match event:
-                            case ITradeUpdateEvent.NEW:
-                                if orderdata['legs'] != None:
+                            # case ITradeUpdateEvent.PENDING_NEW:
+                            case ITradeUpdateEvent.NEW | ITradeUpdateEvent.PENDING_NEW:
+                                if orderdata['legs']:
                                     self.INSIGHTS[i].updateLegs(
                                         legs=orderdata['legs'])
-
                                 break
+                            
                             case ITradeUpdateEvent.FILLED:
-                                if orderdata['legs'] != None:
+                                if orderdata['legs']:
                                     self.INSIGHTS[i].updateLegs(
                                         legs=orderdata['legs'])
                                 # Update the insight with the filled price
@@ -749,14 +750,19 @@ class BaseStrategy(abc.ABC):
                 'order_id': insight.order_id,
                 'confidence': insight.confidence,
                 'RRR': insight.getPnLRatio(),
-                "TTL_unfilled": insight.periodUnfilled,
-                "TTL_filled": insight.periodTillTp,
+                'TTL_unfilled': insight.periodUnfilled,
+                'TTL_filled': insight.periodTillTp,
                 'close_order_id': insight.close_order_id,
                 'close_price': insight.close_price,
                 'created_at': insight.createAt,
                 'updated_at': insight.updatedAt,
                 'filled_at': insight.filledAt,
                 'closed_at': insight.closedAt,
+                'legs': insight.legs,
+                'partial_filled_quantity': insight._partial_filled_quantity,
+                'partial_closes': insight.partial_closes,
+                'closing': insight._closing,
+                'cancelling': insight._cancelling,
             }
         return safe_insights
 

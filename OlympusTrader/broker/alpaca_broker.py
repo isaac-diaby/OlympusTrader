@@ -17,7 +17,7 @@ from alpaca.data.enums import DataFeed, CryptoFeed
 from alpaca.common.enums import BaseURL
 from alpaca.trading.models import Position, Order, TradeUpdate
 from alpaca.data.models import Bar, Quote
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
 from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
@@ -209,6 +209,8 @@ class AlpacaBroker(BaseBroker):
                         submitted_at=leg.submitted_at,
                         filled_at=leg.filled_at
                     )
+                else:
+                    continue
 
         order =  IOrder(
             order_id=order.id,
@@ -225,14 +227,13 @@ class AlpacaBroker(BaseBroker):
             order_class=order.order_class.value,
             time_in_force=order.time_in_force.value,
             status=order.status.value,
-
             created_at=order.created_at,
             updated_at=order.updated_at,
             submitted_at=order.submitted_at,
             filled_at=order.filled_at,
-            legs=legs,
-
+            legs=legs
         )
+        
         return order
 
     def get_latest_quote(self, asset: IAsset):
@@ -241,7 +242,7 @@ class AlpacaBroker(BaseBroker):
                 CryptoLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
         elif asset['asset_type'] == 'stock':
             quote = self.stock_client.get_stock_latest_quote(
-                StockLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
+                StockLatestQuoteRequest(symbol_or_symbols=asset['symbol'], feed=self.DataFeed))
         return self.format_on_quote(quote[asset['symbol']])
 
     def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:
@@ -297,6 +298,8 @@ class AlpacaBroker(BaseBroker):
                     req = MarketOrderRequest(**orderRequest)
                 case IOrderType.LIMIT:
                     req = LimitOrderRequest(**orderRequest)
+                case IOrderType.STOP:
+                    req = StopLimitOrderRequest(**orderRequest)
                 case _:
                     print(
                         f"ALPACA: Order Type not supported {insight.type} ")
@@ -550,6 +553,8 @@ class AlpacaBroker(BaseBroker):
                 event = ITradeUpdateEvent.CANCELED
             case "rejected":
                 event = ITradeUpdateEvent.REJECTED
+            case "pending_new":
+                event = ITradeUpdateEvent.PENDING_NEW
             case "new":
                 event = ITradeUpdateEvent.NEW
             case "expired":
@@ -577,9 +582,9 @@ class AlpacaBroker(BaseBroker):
         quote
         data = IQuote(
             symbol=quote.symbol,
-            ask_price=quote.ask_price,
+            ask=quote.ask_price,
             ask_size=quote.ask_size,
-            bid_price=quote.bid_price,
+            bid=quote.bid_price,
             bid_size=quote.bid_size,
             volume=(quote.bid_size + quote.ask_size),
             timestamp=quote.timestamp

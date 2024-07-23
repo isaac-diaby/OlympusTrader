@@ -12,6 +12,7 @@ class ISupportedBrokers(Enum):
 class ITradeUpdateEvent(Enum):
     ACCEPTED = 'accepted'
     NEW = 'new'
+    PENDING_NEW = 'pending_new'
     PARTIAL_FILLED = 'partial_filled'
     FILLED = 'fill'
     CANCELED = 'canceled'

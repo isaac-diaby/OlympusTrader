@@ -11,7 +11,7 @@ from OlympusTrader.utils.timeframe import ITimeFrame, ITimeFrameUnit
 # Alphas
 from OlympusTrader.alpha.rsi_divergance_alpha import RSIDiverganceAlpha
 from OlympusTrader.alpha.ema_price_crossover import EMAPriceCrossoverAlpha
-# from OlympusTrader.alpha.test_entry import TestEntryAlpha
+from OlympusTrader.alpha.test_entry import TestEntryAlpha
 
 # Executors
 from OlympusTrader.insight.executors.new.cancelAllOppositeSide import CancelAllOppositeSidetExecutor
@@ -131,7 +131,7 @@ if __name__ == "__main__":
                            atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
         EMAPriceCrossoverAlpha(
             strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        # TestEntryAlpha(strategy)
+        TestEntryAlpha(strategy)
     ])
     # New Executors
     strategy.add_executors([

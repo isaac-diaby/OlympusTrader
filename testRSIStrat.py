@@ -355,14 +355,15 @@ class QbitTB(Strategy):
                     except BaseException as e:
                         if e.args[0]["code"] == "insufficient_balance":
                             # '{"available":"0.119784","balance":"0.119784","code":40310000,"message":"insufficient balance for BTC (requested: 0.12, available: 0.119784)","symbol":"USD"}'
-                            holding = float(e.args[0]["data"]["balance"])
-                            if (holding > 0):
-                                # Close 100% of the position
-                                self.insights[insight.INSIGHT_ID].quantity = np.abs(
-                                    holding)
-                            else:
-                                self.insights[insight.INSIGHT_ID].updateState(
-                                    InsightState.CANCELED, f"No funds to close position")
+                            if e.args[0]["data"].get("balance") != None:
+                                holding = float(e.args[0]["data"]["balance"])
+                                if (holding > 0):
+                                    # Close 100% of the position
+                                    self.insights[insight.INSIGHT_ID].quantity = np.abs(
+                                        holding)
+                                else:
+                                    self.insights[insight.INSIGHT_ID].updateState(
+                                        InsightState.CANCELED, f"No funds to close position")
 
                     if (closeOrder):
                         self.insights[insight.INSIGHT_ID].close_order_id = closeOrder['order_id']
