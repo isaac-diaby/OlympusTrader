@@ -20,7 +20,7 @@ from .interfaces import IQuote, ITimeInForce, ISupportedBrokers, IOrderClass, IO
 from ..insight.insight import Insight
 from .interfaces import IAccount, IOrder, IPosition, IAsset, IOrderLegs, IOrderLeg
 from ..strategy.interfaces import IMarketDataStream, IStrategyMode
-from ..utils.timeframe import ITimeFrame
+from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
 
 
 import yfinance as yf
@@ -382,7 +382,8 @@ class PaperBroker(BaseBroker):
         #     raise NotImplementedError(f'Mode {self.MODE} not supported')
 
     def _update_position(self, symbol: str, close_price: float = None):
-        currentBar = self._get_current_bar(symbol).iloc[0]
+        currentBar = self._get_current_bar(symbol)
+        currentBar = currentBar.iloc[0]
         oldPosition = self.Positions[symbol].copy()
         self.Positions[symbol]['current_price'] = currentBar.close if not close_price else close_price
 
@@ -553,7 +554,8 @@ class PaperBroker(BaseBroker):
 
         if orderRequest['type'] == IOrderType.MARKET:
             currentBar = self._get_current_bar(
-                orderRequest['symbol']).iloc[0]
+                orderRequest['symbol'])
+            currentBar = currentBar.iloc[0]
             orderRequest['limit_price'] = currentBar.close
 
         marginRequired = orderRequest['qty'] * orderRequest['limit_price']
@@ -943,14 +945,18 @@ class PaperBroker(BaseBroker):
         self.PreviousTime = self.CurrentTime
         self.CurrentTime = time
 
-    def _get_current_bar(self, symbol: str, timeFrame: ITimeFrame = None):
+    def _get_current_bar(self, symbol: str, timeFrame: ITimeFrame = ITimeFrame(unit=ITimeFrameUnit.Minute, amount=1)):
         currentBar = None
 
         def find_next_bar(start: datetime.datetime, end: datetime.datetime):
             idx = pd.IndexSlice
             nonlocal currentBar
+            nonlocal symbol
             try:
+                if self.HISTORICAL_DATA[symbol]['bar'].empty:
+                    return None
                 currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol, end:end], :]
+                # print("Current Bar: ", currentBar)
                 if currentBar.empty:
                     currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol, start:end], :]
                     if currentBar.empty:
@@ -1010,6 +1016,8 @@ class PaperBroker(BaseBroker):
 
                     found = find_next_bar(previous_time, current_time)
                     if found == None:
+                        # Default to the last bar
+                        currentBar = self.HISTORICAL_DATA[symbol]['bar'].iloc[-1,:]
                         return None
                 except KeyError:
                     return None

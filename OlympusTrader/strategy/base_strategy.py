@@ -616,7 +616,7 @@ class BaseStrategy(abc.ABC):
         try:
             # set_index(['symbol', 'timestamp']
 
-            if self.MODE != IStrategyMode.BACKTEST:
+            if self.MODE != IStrategyMode.BACKTEST and self.BROKER.NAME != ISupportedBrokers.PAPER:
                 data = self.BROKER.format_on_bar(bar)
             else:
                 if bar.empty:
