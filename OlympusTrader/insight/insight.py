@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Literal, TYPE_CHECKING
-from uuid import uuid4
+from types import NoneType
+from typing import List, Literal, TYPE_CHECKING, Optional, Union
+from uuid import uuid4, UUID
 
 
 from ..utils.timeframe import ITimeFrame
@@ -67,49 +68,49 @@ class PartialCloseResult:
 
 
 class Insight:
-    INSIGHT_ID = uuid4()
+    INSIGHT_ID: UUID = uuid4()
     order_id: str = None
     side: IOrderSide = None  # buy or sell
     opposite_side: IOrderSide = None
     symbol: str = None  # symbol to trade
-    quantity: float = None  # quantity to trade
+    quantity: Optional[float] = None  # quantity to trade
     type: IOrderType = None  # market, limit, stop, stop_limit, trailing_stop
     classType: IOrderClass = None  # simple, bracket, oco, oto
-    limit_price: List[float] = None
+    limit_price: Optional[float] = None
     """Entry Price"""
-    TP: List[float] = None
+    TP: Optional[List[float]] = None
     """Take profit levels - The last index is the final take profit level"""
-    SL: float = None
+    SL: Optional[float] = None
     """Stop loss level"""
-    strategyType: StrategyTypes = None  # strategy type
+    strategyType: Optional[Union[StrategyTypes, str]] = None  # strategy type
     confidence: float = None  # confidence in insight
     tf: ITimeFrame = None  # timeframe
-    periodUnfilled: int = None  # time to live when unfilled
-    periodTillTp: int = None  # predicted time to live when opened to reach take profit
+    periodUnfilled: Optional[int] = None  # time to live when unfilled
+    periodTillTp: Optional[int] = None  # predicted time to live when opened to reach take profit
     executionDepends: List[StrategyDependantConfirmation] = [
         StrategyDependantConfirmation.NONE]  # execution depends on
-    state: InsightState = None
-    createAt: datetime = None
-    updatedAt: datetime = None
-    filledAt: datetime = None
-    closedAt: datetime = None
+    state: InsightState = InsightState.NEW
+    createAt: datetime = datetime.now()
+    updatedAt: datetime = datetime.now()
+    filledAt: Optional[datetime] = None
+    closedAt: Optional[datetime] = None
     close_order_id = None
     partial_closes: list[PartialCloseResult] = []
     legs: IOrderLegs = IOrderLegs(take_profit=None, stop_loss=None, trailing_stop=None)
-    close_price: float = None  # price to close at
+    close_price: Optional[float] = None  # price to close at
 
     marketChanged: bool = False
     _cancelling: bool = False
     """Flag to check if the insight is being canceled"""
     _closing: bool = False
     """Flag to check if the insight is being closed"""
-    _partial_filled_quantity: float = None
+    _partial_filled_quantity: Optional[float] = None
 
     MODE: IStrategyMode = IStrategyMode.LIVE
     BROKER: get_BaseBroker = None
     ASSET: IAsset = None
 
-    def __init__(self, side: IOrderSide, symbol: str,  strategyType: StrategyTypes, tf: ITimeFrame, quantity: float = 1, limit_price: float = None, TP: List[float] = None, SL: float = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
+    def __init__(self, side: IOrderSide, symbol: str,  strategyType: Union[StrategyTypes, str], tf: ITimeFrame, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
         assert side in IOrderSide, 'Invalid Order Side'
         self.side = side  # buy or sell
         self.opposite_side = IOrderSide.BUY if (
@@ -127,9 +128,9 @@ class Insight:
         # predicted time to live when opened to reach take profit
         self.periodTillTp = periodTillTp
         self.executionDepends = executionDepends  # execution depends on
-        self.state = InsightState.NEW
-        self.createAt = datetime.now()
-        self.updatedAt = datetime.now()
+        # self.state = InsightState.NEW
+        # self.createAt = datetime.now()
+        # self.updatedAt = datetime.now()
 
         if self.limit_price == None:
             self.type = IOrderType.MARKET
@@ -168,7 +169,7 @@ class Insight:
                 else:
                     # Submit the insight to enter a position
                     order = self.BROKER.execute_insight_order(self, self.ASSET)
-                    
+
                 if order:
                     if self.state == InsightState.NEW:
                         self.updateOrderID(
@@ -370,12 +371,12 @@ class Insight:
             return False
         return True
 
-    def validate(self) -> tuple[bool, str]:
+    def validate(self) -> tuple[bool, Optional[str]]:
         """Validate the insight before submitting it to the broker."""
         cause = None
         # Skip the validation for manual and test insights
         if (self.strategyType == StrategyTypes.TEST or self.strategyType == StrategyTypes.MANUAL):
-            return (True, cause)
+            return (True, None)
 
         if not self.checkValidEntryInsight():
             cause = 'Invalid Entry Insight'
@@ -531,11 +532,11 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
-    
+
     @property
     def takeProfitOrderLeg(self):
         return self.legs.get('take_profit')
-    
+
     def cancelTakeProfitLeg(self):
         if self.takeProfitOrderLeg:
             if self.cancel_order_by_id(self.takeProfitOrderLeg['order_id']):
@@ -550,11 +551,11 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
-    
+
     @property
     def stopLossOrderLeg(self):
         return self.legs.get('stop_loss')
-    
+
     def cancelStopLossLeg(self):
         if self.stopLossOrderLeg:
             if self.cancel_order_by_id(self.stopLossOrderLeg['order_id']):
@@ -569,7 +570,7 @@ class Insight:
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
-    
+
     @property
     def trailingStopOrderLeg(self):
         return self.legs.get('trailing_stop')

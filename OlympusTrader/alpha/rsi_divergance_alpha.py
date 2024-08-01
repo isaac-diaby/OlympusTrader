@@ -1,4 +1,5 @@
 
+from typing import Optional
 import numpy as np
 
 from ..broker.interfaces import IOrderSide
@@ -26,7 +27,7 @@ class RSIDiverganceAlpha(BaseAlpha):
     atrColumn: str
     rsiColumn: str
 
-    def __init__(self, strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField=None):
+    def __init__(self, strategy, local_window=1, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField = None):
         super().__init__(strategy, "RSI_DIVERGANCE", "0.1", baseConfidenceModifierField)
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
@@ -48,7 +49,7 @@ class RSIDiverganceAlpha(BaseAlpha):
 
     def generateInsights(self, symbol):
         try:
-                
+
             # Compute Local Points of Control
             self.computeLocalPointsOfControl(symbol)
             # Compute RSI Divergance
@@ -102,7 +103,7 @@ class RSIDiverganceAlpha(BaseAlpha):
 
                 return self.returnResults(Insight(IOrderSide.SELL, symbol,
                                                 self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.LRVCM], TTLUF, TTLF))
-            
+
             return self.returnResults()
         except Exception as e:
             return self.returnResults(success=False, message=str(e))

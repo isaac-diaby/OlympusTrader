@@ -3,7 +3,7 @@ import asyncio
 import os
 from threading import BrokenBarrierError, Thread
 from typing import Any, List, override, Union, Literal
-from uuid import uuid4
+from uuid import uuid4, UUID
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import datetime
@@ -37,7 +37,7 @@ class BaseStrategy(abc.ABC):
     POSITIONS: dict[str, IPosition] = {}
     ORDERS: dict[str, IOrder] = {}
     HISTORY: dict[str, pd.DataFrame] = {}
-    INSIGHTS: dict[str, Insight] = {}
+    INSIGHTS: dict[UUID, Insight] = {}
     UNIVERSE: dict[str, IAsset] = {}
     RESOLUTION = ITimeFrame(5, ITimeFrameUnit.Minute)
     STREAMS: List[IMarketDataStream] = []
@@ -151,7 +151,7 @@ class BaseStrategy(abc.ABC):
     @override
     @abc.abstractmethod
     def executeInsight(self, insight: Insight):
-        """ Called for each active insight in the strategy. 
+        """ Called for each active insight in the strategy.
         it allows you to conrol the execution of the insight and manage the order.
         """
         print('IS THIS WORKING, Add executeInsight Function? ->  async def executeInsight(self, symbol: str):')
@@ -448,7 +448,7 @@ class BaseStrategy(abc.ABC):
                                     self.INSIGHTS[i].updateLegs(
                                         legs=orderdata['legs'])
                                 break
-                            
+
                             case ITradeUpdateEvent.FILLED:
                                 if orderdata['legs']:
                                     self.INSIGHTS[i].updateLegs(

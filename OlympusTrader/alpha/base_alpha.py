@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING, List, override
+from typing import TYPE_CHECKING, List, Optional, override
 
 from pandas import DataFrame
 import pandas_ta as ta
@@ -61,13 +61,14 @@ class BaseAlpha(abc.ABC):
     baseConfidenceModifierField: str
     """Field to modify base confidence."""
     @abc.abstractmethod
-    def __init__(self, strategy: get_BaseStrategy, name: str, version: float = "1.0", baseConfidenceModifierField: str = None) -> None:
+    def __init__(self, strategy: get_BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None) -> None:
         self.NAME = name
         self.VERSION = version
 
         # Reference to the strategy instance
         self.STRATEGY = strategy
-        self.baseConfidenceModifierField = baseConfidenceModifierField
+        if baseConfidenceModifierField
+            self.baseConfidenceModifierField = baseConfidenceModifierField
 
 
     @override
@@ -92,7 +93,7 @@ class BaseAlpha(abc.ABC):
         self.STRATEGY.ALPHA_MODELS.append(self)
         # Set the technical analysis needed for the alpha
         self._loadTa()
-    
+
     def returnResults(self, insight: Insight = None, success: bool = True, message: str = None) -> AlphaResults:
         return AlphaResults(insight, success, message, self.NAME)
 
@@ -110,7 +111,7 @@ class BaseAlpha(abc.ABC):
             baseConfidenceModifier = self.STRATEGY.state[self.baseConfidenceModifierField][symbol]
             if baseConfidenceModifier:
                 return baseConfidenceModifier
-             
+
         return 1
     def _loadTa(self):
         if self.TA:

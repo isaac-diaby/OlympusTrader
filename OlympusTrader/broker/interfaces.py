@@ -4,12 +4,14 @@ from typing import List, Literal, Optional, TypedDict
 
 
 class ISupportedBrokers(Enum):
+    """Supported Brokers."""
     ALPACA = 'AlpacaBroker'
     PAPER = 'PapeVrokerr'
     BASE = 'BaseBroker'
 
 
 class ITradeUpdateEvent(Enum):
+    """Trade Update Event."""
     ACCEPTED = 'accepted'
     NEW = 'new'
     PENDING_NEW = 'pending_new'
@@ -43,6 +45,7 @@ class IOrderClass(Enum):
 
 
 class IOrderType(Enum):
+    """Order Type."""
     MARKET = 'Market'
     LIMIT = 'Limit'
     STOP = 'Stop'
@@ -51,6 +54,7 @@ class IOrderType(Enum):
 
 
 class IOrderSide(Enum):
+    """Order Side."""
     BUY = 'Long'
     SELL = 'Short'
 
@@ -81,7 +85,7 @@ class IAsset(TypedDict):
     fractionable: bool
     min_order_size: float
     min_price_increment: float
-    price_base: int = None
+    price_base: Optional[int]
 
 class IAccount(TypedDict):
     account_id: str
