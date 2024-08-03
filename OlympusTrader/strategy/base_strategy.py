@@ -2,7 +2,7 @@ import abc
 import asyncio
 import os
 from threading import BrokenBarrierError, Thread
-from typing import Any, List, override, Union, Literal
+from typing import Any, List, Optional, override, Union, Literal
 from uuid import uuid4, UUID
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -33,9 +33,9 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 class BaseStrategy(abc.ABC):
     NAME: str = "BaseStrategy"
     BROKER: BaseBroker
-    ACCOUNT: IAccount = {}
+    ACCOUNT: Optional[IAccount] = None
     POSITIONS: dict[str, IPosition] = {}
-    ORDERS: dict[str, IOrder] = {}
+    ORDERS: Optional[dict[str, IOrder]] = {}
     HISTORY: dict[str, pd.DataFrame] = {}
     INSIGHTS: dict[UUID, Insight] = {}
     UNIVERSE: dict[str, IAsset] = {}
@@ -44,19 +44,20 @@ class BaseStrategy(abc.ABC):
     VARIABLES: AttributeDict
     MODE: IStrategyMode
     WITHUI: bool = True
-    SSM: SharedStrategyManager = None
+    SSM: Optional[SharedStrategyManager] = None
     # DASHBOARD: Dashboard = None
 
-    TOOLS: ITradingTools = None
+    TOOLS: Optional[ITradingTools] = None
 
     # DEBUG
     VERBOSE: int = 0
 
     _Running = False
-    STARTING_CASH: float = None
+    STARTING_CASH: Optional[float] = None
 
     # ALPHA MODELS
     ALPHA_MODELS: List[BaseAlpha] = []
+    """Alpha models to be used in the strategy"""
 
     # Insight Executors Models
     INSIGHT_EXECUTORS: dict[InsightState, deque[BaseExecutor]] = {
@@ -117,38 +118,38 @@ class BaseStrategy(abc.ABC):
         self.POSITIONS = self.BROKER.get_positions()
         self.STARTING_CASH = self.ACCOUNT['equity']
 
-    @override
+
     @abc.abstractmethod
     def start(self):
         """ Start the strategy. This method is called once at the start of the strategy."""
         pass
 
-    @override
+
     @abc.abstractmethod
     def init(self, asset: IAsset):
         """ Initialize the strategy. This method is called once before the start of the strategy on every asset in the universe."""
 
-    @override
+
     @abc.abstractmethod
     def universe(self) -> set[str]:
         """ Used to generate the stock in play. """
         pass
 
-    @override
+
     @abc.abstractmethod
     def on_bar(self, symbol: str, bar: dict):
         """ Called once per bar. open, high, low, close, volume """
         print('IS THIS WORKING, Add on_bar Function? ->  async def on_bar(self, bar):')
         pass
 
-    @override
+
     @abc.abstractmethod
     def generateInsights(self, symbol: str):
         """Called once per bar to generate insights. """
         print('IS THIS WORKING, Add generateInsights Function? -> def generateInsights(self, symbol: str):')
         pass
 
-    @override
+
     @abc.abstractmethod
     def executeInsight(self, insight: Insight):
         """ Called for each active insight in the strategy.
@@ -173,7 +174,6 @@ class BaseStrategy(abc.ABC):
                     'Implement the insight state in the executeInsight function:', insight.state)
                 pass
 
-    @override
     @abc.abstractmethod
     def teardown(self):
         """ Called once at the end of the strategy. """
@@ -707,8 +707,9 @@ class BaseStrategy(abc.ABC):
     #         return None
 
     @property
-    def account(self) -> IAccount:
+    def account(self) -> Optional[IAccount]:
         """ Returns the account of the strategy."""
+
         return self.ACCOUNT
 
     @property
@@ -717,7 +718,7 @@ class BaseStrategy(abc.ABC):
         return self.POSITIONS
 
     @property
-    def orders(self) -> deque[IOrder]:
+    def orders(self) -> Optional[dict[str, IOrder]]:
         """ Returns the orders of the strategy."""
         return self.ORDERS
 
@@ -727,7 +728,7 @@ class BaseStrategy(abc.ABC):
         return self.HISTORY
 
     @property
-    def insights(self) -> dict[str, Insight]:
+    def insights(self) -> dict[UUID, Insight]:
         """ Returns the insights of the strategy."""
         return self.INSIGHTS
 
@@ -772,7 +773,7 @@ class BaseStrategy(abc.ABC):
         return self.VARIABLES
 
     @state.setter
-    def state(self, state: dict):
+    def state(self, state: AttributeDict):
         """ Sets the state of the strategy."""
         self.VARIABLES = state
 
@@ -797,7 +798,7 @@ class BaseStrategy(abc.ABC):
         return self.TOOLS
 
     @property
-    def streams(self) -> dict:
+    def streams(self) -> List[IMarketDataStream]:
         """ Returns the streams of the strategy."""
         return self.STREAMS
 
