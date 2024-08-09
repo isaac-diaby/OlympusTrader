@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "olympustrader"
+version = "0.2.0"
+description = "trading bot framework"
+authors = ["Moustapha Diaby <me@isaacdiaby.tech>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+alpaca-py = "^0.28.1"
+yfinance = "^0.2.41"
+ta-lib = "^0.4.32"
+pandas-ta = "^0.3.14b0"
+scipy = "^1.14.0"
+streamlit = "^1.37.0"
+numpy = "1.26.4"
+pandas = "^2.2.2"
+python-dotenv = "^1.0.1"
+nest-asyncio = "^1.6.0"
+tables = "^3.9.2"
+setuptools = "^72.1.0"
+vectorbt = "^0.26.2"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+nbformat = "^5.10.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
