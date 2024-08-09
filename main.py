@@ -62,14 +62,15 @@ class QbitTB(Strategy):
         # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
         #             'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', }
 
-        universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
+        universe: set[str]  = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
                     'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', 'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
                     'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
-        
+
         return universe
 
     def on_bar(self, symbol, bar):
         self.computeMarketState(symbol)
+        return
 
     def generateInsights(self, symbol: str):
         pass
@@ -127,7 +128,7 @@ if __name__ == "__main__":
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     strategy.add_alphas([
-        RSIDiverganceAlpha(strategy, local_window=1, divergance_window=50,
+        RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50,
                            atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
         EMAPriceCrossoverAlpha(
             strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),

@@ -13,4 +13,5 @@ v0.1/**/*
 **/stack.env
 **/.env
 **/.DS_Store
-```
+.zed/**/*
+backtests/*

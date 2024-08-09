@@ -30,7 +30,7 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
         assert self.maximum_costbasis > self.minimum_costbasis, "Maximum cost basis must be greater than or equal to the minimum cost basis."
 
     def run(self, insight):
-        if insight.limit_price is None or insight.SL is None:
+        if insight.limit_price is None or not insight.SL or np.isnan(insight.SL):
             return self.returnResults(False, False, "Insight does not have limit price or stop loss levels set.")
 
         # Calculate the quantity to trade

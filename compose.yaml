@@ -24,7 +24,7 @@ services:
       interval: "5s"
       retries: 300
 
-# TODO: Add a UI service here. 
+  # Add a UI service here.
   ui:
     restart: always
     build:
@@ -42,8 +42,7 @@ services:
     depends_on:
       trader:
         condition: service_healthy
-
-# TODO: Add MongoDB database service here.
+# TODO: Add Timescale Postgres or MongoDB database service here.
 
 # The commented out section below is an example of how to define a PostgreSQL
 # database that your application can use. `depends_on` tells Docker Compose to
@@ -77,4 +76,3 @@ services:
 # secrets:
 #   db-password:
 #     file: db/password.txt
-
