@@ -31,7 +31,7 @@ class AlphaResults():
     message: str
     """Message indicating the result of the alpha."""
 
-    def __init__(self, insight: Insight = None, success: bool = True, message: str = None, alpha: str = None):
+    def __init__(self, insight: Optional[Insight] = None, success: bool = True, message: str = None, alpha: str = None):
         self.insight = insight
         if insight:
             # If the executor passed, then it was successfully ran
@@ -67,23 +67,20 @@ class BaseAlpha(abc.ABC):
 
         # Reference to the strategy instance
         self.STRATEGY = strategy
-        if baseConfidenceModifierField
+        if baseConfidenceModifierField:
             self.baseConfidenceModifierField = baseConfidenceModifierField
 
 
-    @override
     @abc.abstractmethod
     def start(self):
         """Initialize the alpha model once at the start. data, etc. in the state of the Strategy."""
         pass
 
-    @override
     @abc.abstractmethod
     def init(self,  asset: IAsset):
         """Initialize the alpha model for each assets. variables, data, etc. in the state of the Strategy."""
         pass
 
-    @override
     @abc.abstractmethod
     def generateInsights(self, symbol: str) -> AlphaResults:
         """Generate insights based on the alpha model."""
@@ -94,7 +91,7 @@ class BaseAlpha(abc.ABC):
         # Set the technical analysis needed for the alpha
         self._loadTa()
 
-    def returnResults(self, insight: Insight = None, success: bool = True, message: str = None) -> AlphaResults:
+    def returnResults(self, insight: Optional[Insight] = None, success: bool = True, message: str = None) -> AlphaResults:
         return AlphaResults(insight, success, message, self.NAME)
 
     def get_history(self, symbol: str) -> DataFrame:

@@ -2,7 +2,7 @@ import abc
 import asyncio
 import os
 from threading import BrokenBarrierError, Thread
-from typing import Any, List, override, Union, Literal
+from typing import Any, List, Optional, override, Union, Literal
 from uuid import uuid4, UUID
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -12,12 +12,13 @@ import timeit
 from collections import deque
 
 import pandas_ta as ta
+from vectorbt.portfolio import Portfolio
 
 from ..broker.base_broker import BaseBroker
 from ..broker.interfaces import ISupportedBrokers, ITradeUpdateEvent, IAsset, IAccount, IPosition, IOrder
 
 from .sharedmemory import SharedStrategyManager
-from .interfaces import IMarketDataStream, IStrategyMode
+from .interfaces import IBacktestingConfig, IMarketDataStream, IStrategyMode
 from ..insight.insight import Insight, InsightState
 from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
 from ..utils.types import AttributeDict
@@ -31,11 +32,12 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
 class BaseStrategy(abc.ABC):
+    STRATEGY_ID: UUID = uuid4()
     NAME: str = "BaseStrategy"
     BROKER: BaseBroker
-    ACCOUNT: IAccount = {}
+    ACCOUNT: Optional[IAccount] = None
     POSITIONS: dict[str, IPosition] = {}
-    ORDERS: dict[str, IOrder] = {}
+    ORDERS: Optional[dict[str, IOrder]] = {}
     HISTORY: dict[str, pd.DataFrame] = {}
     INSIGHTS: dict[UUID, Insight] = {}
     UNIVERSE: dict[str, IAsset] = {}
@@ -44,19 +46,20 @@ class BaseStrategy(abc.ABC):
     VARIABLES: AttributeDict
     MODE: IStrategyMode
     WITHUI: bool = True
-    SSM: SharedStrategyManager = None
+    SSM: Optional[SharedStrategyManager] = None
     # DASHBOARD: Dashboard = None
 
-    TOOLS: ITradingTools = None
+    TOOLS: Optional[ITradingTools] = None
 
     # DEBUG
     VERBOSE: int = 0
 
     _Running = False
-    STARTING_CASH: float = None
+    STARTING_CASH: Optional[float] = None
 
     # ALPHA MODELS
     ALPHA_MODELS: List[BaseAlpha] = []
+    """Alpha models to be used in the strategy"""
 
     # Insight Executors Models
     INSIGHT_EXECUTORS: dict[InsightState, deque[BaseExecutor]] = {
@@ -77,6 +80,11 @@ class BaseStrategy(abc.ABC):
     baseConfidence: float = 0.1  # Base Confidence level for the strategy
     shouldClosePartialFilledIfCancelled: bool = True
     """Insights that are partially filled and are cancelled should be closed if the insight is cancelled"""
+
+    BACKTESTING_CONFIG: IBacktestingConfig = IBacktestingConfig(
+        preemptiveTA=False)
+    """Backtesting configuration"""
+    BACKTESTING_RESULTS: dict[str, Portfolio] = {}
 
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
@@ -117,38 +125,32 @@ class BaseStrategy(abc.ABC):
         self.POSITIONS = self.BROKER.get_positions()
         self.STARTING_CASH = self.ACCOUNT['equity']
 
-    @override
     @abc.abstractmethod
     def start(self):
         """ Start the strategy. This method is called once at the start of the strategy."""
         pass
 
-    @override
     @abc.abstractmethod
     def init(self, asset: IAsset):
         """ Initialize the strategy. This method is called once before the start of the strategy on every asset in the universe."""
 
-    @override
     @abc.abstractmethod
     def universe(self) -> set[str]:
         """ Used to generate the stock in play. """
         pass
 
-    @override
     @abc.abstractmethod
     def on_bar(self, symbol: str, bar: dict):
         """ Called once per bar. open, high, low, close, volume """
         print('IS THIS WORKING, Add on_bar Function? ->  async def on_bar(self, bar):')
         pass
 
-    @override
     @abc.abstractmethod
     def generateInsights(self, symbol: str):
         """Called once per bar to generate insights. """
         print('IS THIS WORKING, Add generateInsights Function? -> def generateInsights(self, symbol: str):')
         pass
 
-    @override
     @abc.abstractmethod
     def executeInsight(self, insight: Insight):
         """ Called for each active insight in the strategy.
@@ -173,7 +175,6 @@ class BaseStrategy(abc.ABC):
                     'Implement the insight state in the executeInsight function:', insight.state)
                 pass
 
-    @override
     @abc.abstractmethod
     def teardown(self):
         """ Called once at the end of the strategy. """
@@ -259,6 +260,7 @@ class BaseStrategy(abc.ABC):
             finally:
                 self.teardown()
                 # asyncio.run(self.BROKER.closeTradeStream())
+                loop.stop()
                 pool.shutdown(wait=False)
                 asyncio.run(self.BROKER.closeStream(self.STREAMS))
                 self._Running = False
@@ -301,12 +303,20 @@ class BaseStrategy(abc.ABC):
                     while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
                         # print("***-- Running Backtest --***")
                         if not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
+                            tradeStream.cancel(
+                                "From Main: Trade Stream Closed")
+                            marketDataStream.cancel(
+                                "From Main: Market Stream Closed")
+                            insighStream.cancel(
+                                "From Main: Insight Stream Closed")
+                            loop.stop()
+                            # self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.abort()
                             break
                         # TODO: Teardown on last candle
                         # self.teardown()
 
                     self.teardown()
-                    pool.shutdown(wait=False)
+                    pool.shutdown(wait=False, cancel_futures=True)
 
                 except Exception as e:
                     print(f'Exception from Threads: {e}')
@@ -319,7 +329,6 @@ class BaseStrategy(abc.ABC):
                 # self.BROKER.closeStream(self.STREAMS)
                 # insighStream.cancel()
             finally:
-                self.teardown()
                 asyncio.run(self.BROKER.closeTradeStream())
                 asyncio.run(self.BROKER.closeStream(self.STREAMS))
                 self._Running = False
@@ -329,7 +338,8 @@ class BaseStrategy(abc.ABC):
                       timeit.default_timer() - start_time)
 
             print(self.BROKER.get_results())
-            exit(0)
+            self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
+            
 
     def _startUISharedMemory(self):
         """ Starts the UI shared memory."""
@@ -366,7 +376,6 @@ class BaseStrategy(abc.ABC):
         assert callable(
             self.executeInsight), 'executeInsight must be a callable function'
         print('Running Insight Listener')
-        loop = asyncio.get_running_loop()
         while self._Running:
             # TODO: could use a thread pool executor to run the executeInsight() functions
             for i in list(self.INSIGHTS):
@@ -554,13 +563,22 @@ class BaseStrategy(abc.ABC):
         else:
             print(f'Failed to load {symbol} into universe')
 
-    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar', **kwargs):
+    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar', applyTA: bool = False, **kwargs):
         """ Adds bar streams to the strategy."""
         match eventType:
             case 'bar' | 'trade' | 'quote' | 'news':
+                if self.MODE == IStrategyMode.BACKTEST:
+                    # Check if we should apply TA to the stream at the start of the backtest
+                    if applyTA:
+                        self.BACKTESTING_CONFIG['preemptiveTA'] = True
+                else:
+                    if applyTA:
+                        applyTA = False # TA will be applied in the on_bar function
+                        self.BACKTESTING_CONFIG['preemptiveTA'] = False
+
                 for assetInfo in self.UNIVERSE.values():
                     self.STREAMS.append(IMarketDataStream(symbol=assetInfo.get('symbol'), exchange=assetInfo.get(
-                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType, **kwargs))
+                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType, applyTA=applyTA, TA=self.TaStrategy if applyTA else None, **kwargs))
             case _:
                 print(f"{eventType} Event not supported")
 
@@ -656,8 +674,9 @@ class BaseStrategy(abc.ABC):
                               symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}")
                         return
 
-                    # Run the pandas TA
-                    self.HISTORY[symbol].ta.strategy(self.TaStrategy)
+                    if (not self.BACKTESTING_CONFIG.get('preemptiveTA') and self.MODE == IStrategyMode.BACKTEST) or (self.MODE != IStrategyMode.BACKTEST):
+                        # Run the pandas TA
+                        self.HISTORY[symbol].ta.strategy(self.TaStrategy)
 
                     # Call the on_bar function and process the bar
                     try:
@@ -707,8 +726,9 @@ class BaseStrategy(abc.ABC):
     #         return None
 
     @property
-    def account(self) -> IAccount:
+    def account(self) -> Optional[IAccount]:
         """ Returns the account of the strategy."""
+
         return self.ACCOUNT
 
     @property
@@ -717,7 +737,7 @@ class BaseStrategy(abc.ABC):
         return self.POSITIONS
 
     @property
-    def orders(self) -> deque[IOrder]:
+    def orders(self) -> Optional[dict[str, IOrder]]:
         """ Returns the orders of the strategy."""
         return self.ORDERS
 
@@ -727,7 +747,7 @@ class BaseStrategy(abc.ABC):
         return self.HISTORY
 
     @property
-    def insights(self) -> dict[str, Insight]:
+    def insights(self) -> dict[UUID, Insight]:
         """ Returns the insights of the strategy."""
         return self.INSIGHTS
 
@@ -772,7 +792,7 @@ class BaseStrategy(abc.ABC):
         return self.VARIABLES
 
     @state.setter
-    def state(self, state: dict):
+    def state(self, state: AttributeDict):
         """ Sets the state of the strategy."""
         self.VARIABLES = state
 
@@ -797,7 +817,7 @@ class BaseStrategy(abc.ABC):
         return self.TOOLS
 
     @property
-    def streams(self) -> dict:
+    def streams(self) -> List[IMarketDataStream]:
         """ Returns the streams of the strategy."""
         return self.STREAMS
 

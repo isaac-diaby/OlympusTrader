@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional, TypedDict, Required, List
 from enum import Enum
+import pandas_ta as ta
 
 
 
@@ -18,7 +19,11 @@ class IMarketDataStream(TypedDict):
     stored_path: Optional[str] = None
     start: Optional[datetime] = None
     end: Optional[datetime] = None
+    applyTA: Optional[bool] = False
+    TA: Optional[ta.Strategy] = None
 
+class IBacktestingConfig(TypedDict):
+    preemptiveTA: Optional[bool] = False
 
 class IStrategyMode(Enum):
     BACKTEST = 'Backtest'

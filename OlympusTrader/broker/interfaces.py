@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Literal, Optional, TypedDict
+from typing import List, Literal, NotRequired, Optional, TypedDict, Union
+from uuid import UUID
 
 
 class ISupportedBrokers(Enum):
@@ -73,7 +74,7 @@ class IOrderRequest(TypedDict):
 
 
 class IAsset(TypedDict):
-    _id: str
+    id: str
     name: str
     asset_type: Literal['stock', 'crypto']
     exchange: str
@@ -85,7 +86,7 @@ class IAsset(TypedDict):
     fractionable: bool
     min_order_size: float
     min_price_increment: float
-    price_base: Optional[int]
+    price_base: NotRequired[int]
 
 class IAccount(TypedDict):
     account_id: str
@@ -124,7 +125,7 @@ class IOrderLegs(TypedDict):
     trailing_stop: Optional[IOrderLeg]
 
 class IOrder(TypedDict):
-    order_id: str
+    order_id: Union[str, UUID]
     asset: IAsset
     limit_price: float
     filled_price: Optional[float]
@@ -163,4 +164,4 @@ class ITradeUpdate():
         self.order = order
 
     def __str__(self):
-        return f'{self.event} - {self.order["symbol"]} - {self.order["qty"]} - {self.order["side"]} - {self.order["updated_at"]}'
+        return f'{self.event} - {self.order["asset"]["symbol"]} - {self.order["qty"]} - {self.order["side"]} - {self.order["updated_at"]}'

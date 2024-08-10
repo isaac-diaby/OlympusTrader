@@ -248,11 +248,11 @@ class Insight:
         print("Insight is not in a valid state to be canceled", self.INSIGHT_ID)
         return False
 
-    def close(self, quantity: float = None, retry: bool = True, bypassStateCheck: bool = False):
+    def close(self, quantity: Optional[float] = None, retry: bool = True, bypassStateCheck: bool = False):
         if (self.state == InsightState.FILLED or bypassStateCheck) and not self._closing:
             partialClose = False
             try:
-                if quantity != None:
+                if quantity != None and self.quantity:
                     if quantity < self.quantity:
                         partialClose = True
                     else:
@@ -268,7 +268,8 @@ class Insight:
                     closePartialOrder = self.submit(partialCloseInsight=Insight(
                         self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, quantity))
                     if closePartialOrder:
-                        self.TP.pop(0)  # Remove the first TP level
+                        if self.TP:
+                            self.TP.pop(0)  # Remove the first TP level
                         return True
 
             except BaseException as e:

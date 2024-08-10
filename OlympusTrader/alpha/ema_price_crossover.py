@@ -69,13 +69,13 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
 
     def is_long_signal(self, latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA):
         return (latestBarIEMA < latestBar['close'] and previousBarIEMA > previousBar['high'] and
-                np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and
+                # np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and
                 np.abs(latestBar['close'] - latestBarIEMA) < latestIATR)
 
     def is_short_signal(self, latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA, symbol):
         return (self.STRATEGY.assets[symbol]['shortable'] and latestBarIEMA > latestBar['close'] and
                 previousBarIEMA < previousBar['low'] and
-                np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and
+                # np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and
                 np.abs(latestBarIEMA - latestBar['close']) < latestIATR)
 
     def create_insight(self, order_side: IOrderSide, symbol: str, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence: float):
