@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
     strategy.add_alphas([
         RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        # EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
         # TestEntryAlpha(strategy, atrPeriod=14)
     ])
     # New Executors
