@@ -44,6 +44,50 @@ class QbitTB(Strategy):
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.1
 
+        # Alphas
+        self.add_alphas([
+            RSIDiverganceAlpha(self, local_window=36, divergance_window=50,
+                               atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+            EMAPriceCrossoverAlpha(
+                self, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+            # TestEntryAlpha(self)
+        ])
+        # New Executors
+        self.add_executors([
+            RejectExpiredInsightExecutor(self),
+            MarketOrderEntryPriceExecutor(self),
+            MinimumRiskToRewardExecutor(self),
+            DynamicQuantityToRiskExecutor(self),
+            CancelAllOppositeSidetExecutor(self)
+        ])
+        # Executed Executors
+        RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(self)
+        RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
+        self.add_executors([
+            RejectExpiredExecutedExecutor,
+        ])
+        # Cancelled Executors
+        self.add_executors([
+            DefaultOnCancelledExecutor(self),
+        ])
+        # Filled Executors
+        self.add_executors([
+            CloseExhaustedInsightExecutor(self),
+            CloseMarketChangedExecutor(self),
+            BasicStopLossExecutor(self),
+            BasicTakeProfitExecutor(self)
+        ])
+        # Closed Executors
+        self.add_executors([
+            DefaultOnClosedExecutor(self),
+        ])
+        # Rejected Executors
+        self.add_executors([
+            DefaultOnRejectExecutor(self)
+        ])
+
+        self.add_events('bar')
+
     def init(self, asset):
         state = self.state
         # inital market state
@@ -62,9 +106,9 @@ class QbitTB(Strategy):
         # universe = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
         #             'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', }
 
-        universe: set[str]  = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
-                    'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', 'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-                    'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
+        universe: set[str] = {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
+                              'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', 'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
+                              'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
 
         return universe
 
@@ -126,48 +170,5 @@ if __name__ == "__main__":
     # Every Minute Strategy
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
-
-    strategy.add_alphas([
-        RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50,
-                           atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        EMAPriceCrossoverAlpha(
-            strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        # TestEntryAlpha(strategy)
-    ])
-    # New Executors
-    strategy.add_executors([
-        RejectExpiredInsightExecutor(strategy),
-        MarketOrderEntryPriceExecutor(strategy),
-        MinimumRiskToRewardExecutor(strategy),
-        DynamicQuantityToRiskExecutor(strategy),
-        CancelAllOppositeSidetExecutor(strategy)
-    ])
-    # Executed Executors
-    RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(strategy)
-    RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
-    strategy.add_executors([
-        RejectExpiredExecutedExecutor,
-    ])
-    # Cancelled Executors
-    strategy.add_executors([
-        DefaultOnCancelledExecutor(strategy),
-    ])
-    # Filled Executors
-    strategy.add_executors([
-        CloseExhaustedInsightExecutor(strategy),
-        CloseMarketChangedExecutor(strategy),
-        BasicStopLossExecutor(strategy),
-        BasicTakeProfitExecutor(strategy)
-    ])
-    # Closed Executors
-    strategy.add_executors([
-        DefaultOnClosedExecutor(strategy),
-    ])
-    # Rejected Executors
-    strategy.add_executors([
-        DefaultOnRejectExecutor(strategy)
-    ])
-
-    strategy.add_events('bar')
 
     strategy.run()

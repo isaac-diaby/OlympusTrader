@@ -15,3 +15,5 @@ v0.1/**/*
 **/.DS_Store
 .zed/**/*
 backtests/*
+strategy/*
+```
