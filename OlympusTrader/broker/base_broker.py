@@ -79,7 +79,7 @@ class BaseBroker(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def close_order(self, order_id: str) -> Optional[str]:
+    def cancel_order(self, order_id: str) -> Optional[str]:
         pass
 
 

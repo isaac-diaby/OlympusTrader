@@ -214,7 +214,7 @@ class Insight:
         return False
     def cancel_order_by_id(self, order_id: str):
         try:
-            order = self.BROKER.close_order(order_id)
+            order = self.BROKER.cancel_order(order_id)
             if order:
                 return order
             else:

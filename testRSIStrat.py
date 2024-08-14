@@ -363,7 +363,7 @@ class QbitTB(Strategy):
             case InsightState.CANCELED:
                 # Remove from insights if the insight is canceled
                 try:
-                    cancelOrder = self.broker.close_order(
+                    cancelOrder = self.broker.cancel_order(
                         order_id=insight.order_id)  # Cancel Order
                     if cancelOrder:
                         del self.insights[insight.INSIGHT_ID]

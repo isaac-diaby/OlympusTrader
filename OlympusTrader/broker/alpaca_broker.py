@@ -450,7 +450,7 @@ class AlpacaBroker(BaseBroker):
             print("Error closing position", e)
             raise e
 
-    def close_order(self, order_id):
+    def cancel_order(self, order_id):
         try:
             self.trading_client.cancel_order_by_id(order_id)
             return order_id
