@@ -1,6 +1,7 @@
 import abc
 import asyncio
 import os
+from pathlib import Path
 from threading import BrokenBarrierError, Thread
 from typing import Any, List, Optional, override, Union, Literal
 from uuid import uuid4, UUID
@@ -12,6 +13,7 @@ import timeit
 from collections import deque
 
 import pandas_ta as ta
+from tqdm import tqdm
 from vectorbt.portfolio import Portfolio
 
 from ..broker.base_broker import BaseBroker
@@ -337,9 +339,21 @@ class BaseStrategy(abc.ABC):
                 print('Backtest Completed:',
                       timeit.default_timer() - start_time)
 
-            print(self.BROKER.get_results())
-            self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
-            
+            self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(
+                self.resolution)
+
+            # Save the backtest results
+            print("Saving Backtest Results")
+            for symbol in tqdm(self.BACKTESTING_RESULTS.keys()):
+                save_path = Path(f"backtests/{self.STRATEGY_ID}")
+                save_path.mkdir(parents=True, exist_ok=True)
+
+                if (self.BACKTESTING_RESULTS.get(symbol)):
+                    self.BACKTESTING_RESULTS[symbol].save(
+                        f"backtests/{self.STRATEGY_ID}/{symbol}-{self.resolution}-backtest")
+                    self.BACKTESTING_RESULTS[symbol].plot().show()
+                else:
+                    print("No backtesting results found for", symbol)
 
     def _startUISharedMemory(self):
         """ Starts the UI shared memory."""
@@ -508,13 +522,16 @@ class BaseStrategy(abc.ABC):
 
                     if insight.symbol == orderdata['asset']['symbol']:
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
-                        if (event == ITradeUpdateEvent.FILLED) and ((((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or
-                                                                    (insight.close_order_id != None and insight.close_order_id == orderdata['order_id']) or
-                                                                    (insight.order_id == orderdata['order_id']) or
-                                                                    (insight.legs != None and
-                                                                    ((insight.takeProfitOrderLeg != None and orderdata['order_id'] == insight.takeProfitOrderLeg['order_id']) or
-                                                                     (insight.stopLossOrderLeg != None and orderdata['order_id'] == insight.stopLossOrderLeg['order_id']) or
-                                                                     (insight.trailingStopOrderLeg != None and orderdata['order_id'] == insight.trailingStopOrderLeg['order_id'])))):
+                        if (((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or \
+                            ((insight.close_order_id != None) and (insight.close_order_id == orderdata['order_id'])) or \
+                            (insight.order_id == orderdata['order_id']) or \
+                            (insight.legs != None and
+                                ((insight.takeProfitOrderLeg != None and orderdata['order_id'] == insight.takeProfitOrderLeg['order_id']) or
+                                 (insight.stopLossOrderLeg != None and orderdata['order_id'] == insight.stopLossOrderLeg['order_id']) or
+                                 (insight.trailingStopOrderLeg !=
+                                  None and orderdata['order_id'] == insight.trailingStopOrderLeg['order_id'])
+                                 )
+                             ):
                             # Update the insight closed price
                             if self.MODE != IStrategyMode.BACKTEST:
                                 self.INSIGHTS[i].positionClosed(
@@ -563,22 +580,31 @@ class BaseStrategy(abc.ABC):
         else:
             print(f'Failed to load {symbol} into universe')
 
-    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar', applyTA: bool = False, **kwargs):
+    def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar', **kwargs):
         """ Adds bar streams to the strategy."""
         match eventType:
             case 'bar' | 'trade' | 'quote' | 'news':
+                options = {
+                }
+
                 if self.MODE == IStrategyMode.BACKTEST:
                     # Check if we should apply TA to the stream at the start of the backtest
-                    if applyTA:
+                    if kwargs.get('applyTA', True):
+                        options['applyTA'] = True
+                        options['TA'] = self.TaStrategy
                         self.BACKTESTING_CONFIG['preemptiveTA'] = True
-                else:
-                    if applyTA:
-                        applyTA = False # TA will be applied in the on_bar function
+                    else:
+                        options['applyTA'] = False
                         self.BACKTESTING_CONFIG['preemptiveTA'] = False
+
+                    options['start'] = self.BROKER.START_DATE
+                    options['end'] = self.BROKER.END_DATE
+                    options['stored'] = kwargs.get('stored', False)
+                    options['stored_path'] = kwargs.get('stored_path', "data")
 
                 for assetInfo in self.UNIVERSE.values():
                     self.STREAMS.append(IMarketDataStream(symbol=assetInfo.get('symbol'), exchange=assetInfo.get(
-                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType, applyTA=applyTA, TA=self.TaStrategy if applyTA else None, **kwargs))
+                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType, **options))
             case _:
                 print(f"{eventType} Event not supported")
 
