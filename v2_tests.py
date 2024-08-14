@@ -41,6 +41,47 @@ class QbitTB(Strategy):
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.1
 
+        # Alphas
+        self.add_alphas([
+        # RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+        # EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        TestEntryAlpha(self, atrPeriod=14)
+    ])
+        # New Executors
+        self.add_executors([
+            RejectExpiredInsightExecutor(self),
+            MarketOrderEntryPriceExecutor(self),
+            MinimumRiskToRewardExecutor(self),
+            DynamicQuantityToRiskExecutor(self),
+            CancelAllOppositeSidetExecutor(self)
+        ])
+        # Executed Executors
+        RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(self)
+        RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
+        self.add_executors([
+            RejectExpiredExecutedExecutor,
+        ])
+        # Cancelled Executors
+        self.add_executors([
+            DefaultOnCancelledExecutor(self),
+        ])
+        # Filled Executors
+        self.add_executors([
+            CloseExhaustedInsightExecutor(self),
+            CloseMarketChangedExecutor(self),
+            BasicStopLossExecutor(self),
+            BasicTakeProfitExecutor(self)
+        ])
+        # Closed Executors
+        self.add_executors([
+            DefaultOnClosedExecutor(self),
+        ])
+        # Rejected Executors
+        self.add_executors([
+            DefaultOnRejectExecutor(self)
+        ])
+
+
     def init(self, asset):
         state = self.state
 
@@ -130,18 +171,9 @@ class QbitTB(Strategy):
 if __name__ == "__main__":
 
     # Paper Broker for backtesting
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 7, 27), end_date=datetime(2024, 7, 28)) # 1 day
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 27, 14), end_date=datetime(2024, 5, 27, 16)) # 2 hours
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 1, 14), end_date=datetime(2024, 5, 30, 16))  # all of may
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #     2024, 5, 4, minute=30), end_date=datetime(2024, 5, 30, 16))  # all of may
-    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
-    #         2024, 8, 2), end_date=datetime(2024, 8, 5))
     broker = PaperBroker(cash=1_000_000, start_date=datetime(
             2024, 7, 1), end_date=datetime(2024, 8, 6))
+    
     # Strategy
     # 1 Minute
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
@@ -152,71 +184,14 @@ if __name__ == "__main__":
     # 1 Hour
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
-    # 4 Hours
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+
     
     # live paper trading on the paper broker 
     # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
     #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
 
-    strategy.add_alphas([
-        RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        # TestEntryAlpha(strategy, atrPeriod=14)
-    ])
-    # New Executors
-    strategy.add_executors([
-        RejectExpiredInsightExecutor(strategy),
-        MarketOrderEntryPriceExecutor(strategy),
-        MinimumRiskToRewardExecutor(strategy),
-        DynamicQuantityToRiskExecutor(strategy),
-        CancelAllOppositeSidetExecutor(strategy)
-    ])
-    # Executed Executors
-    RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(strategy)
-    RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
-    strategy.add_executors([
-        RejectExpiredExecutedExecutor,
-    ])
-    # Cancelled Executors
-    strategy.add_executors([
-        DefaultOnCancelledExecutor(strategy),
-    ])
-    # Filled Executors
-    strategy.add_executors([
-        CloseExhaustedInsightExecutor(strategy),
-        CloseMarketChangedExecutor(strategy),
-        BasicStopLossExecutor(strategy),
-        BasicTakeProfitExecutor(strategy)
-    ])
-    # Closed Executors
-    strategy.add_executors([
-        DefaultOnClosedExecutor(strategy),
-    ])
-    # Rejected Executors
-    strategy.add_executors([
-        DefaultOnRejectExecutor(strategy)
-    ])
-
     # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
-    strategy.add_events('bar', stored=True, stored_path='data', applyTA=True,
-                        start=broker.START_DATE, end=broker.END_DATE)
+    strategy.add_events('bar', stored=True, stored_path='data', applyTA=True)
 
     strategy.run()
-    if (strategy.MODE == IStrategyMode.BACKTEST):
-        print(strategy.BACKTESTING_RESULTS)
-        # get the first asset in the strategy and plot the backtesting results
-        symbol = list(strategy.assets.keys())[0]
-        print(f"Symbol: {symbol}")
-
-        save_path = Path(f"backtests/{strategy.STRATEGY_ID}")
-        save_path.mkdir(parents=True, exist_ok=True)
-        
-        if (strategy.BACKTESTING_RESULTS.get(symbol)):
-            strategy.BACKTESTING_RESULTS[symbol].save(f"backtests/{strategy.STRATEGY_ID}/{symbol}-{strategy.resolution}-backtest")
-            strategy.BACKTESTING_RESULTS[symbol].plot().show()
-        else:
-            save_path.rmdir()
-            print("No backtesting results found")
