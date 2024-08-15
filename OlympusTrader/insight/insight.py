@@ -237,8 +237,8 @@ class Insight:
             except BaseException as e:
                 if e.args[0]["code"] == "already_filled":
                     self._cancelling = False
-                    self.updateState(InsightState.FILLED,
-                                     'Already filled Trade')
+                    # self.updateState(InsightState.FILLED,
+                    #                  'Already filled Trade')
                     # return True
                     return False
         if self.state == InsightState.NEW:

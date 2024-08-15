@@ -423,10 +423,11 @@ class BaseStrategy(abc.ABC):
                     if not passed:
                         continue
 
-                    # TODO: also could feed latest price to the insight for better accr - maybe
-                    latestInsight = self.INSIGHTS.get(insight.INSIGHT_ID)
-                    if latestInsight is not None:
-                        self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+                    # latestInsight = self.INSIGHTS.get(insight.INSIGHT_ID)
+                    # if latestInsight is not None:
+                    #     self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+
+                    self.executeInsight(insight)
 
                     # if self.VERBOSE > 0:
                     # print('Time taken executeInsight:', symbol,
@@ -460,9 +461,13 @@ class BaseStrategy(abc.ABC):
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] != None else orderdata['filled_price']} - {orderdata['order_id']}")
         self.ORDERS[orderdata["order_id"]] = orderdata
         for i, insight in self.INSIGHTS.items():
+            # Check if the insight is managing the order by checking the symbol
+            if insight.symbol != orderdata['asset']['symbol']:
+                continue
+
             match insight.state:
                 case InsightState.EXECUTED:
-                    # We aleady know that the order has been executed becsue it will never be in the insights list as executed if it was not accepted by the broker
+                    # We aleady know that the order has been executed because it will never be in the insights list as executed if it was not accepted by the broker
                     if insight.order_id == orderdata['order_id']:
                         match event:
                             # case ITradeUpdateEvent.PENDING_NEW:
@@ -470,7 +475,7 @@ class BaseStrategy(abc.ABC):
                                 if orderdata['legs']:
                                     self.INSIGHTS[i].updateLegs(
                                         legs=orderdata['legs'])
-                                break
+                                return
 
                             case ITradeUpdateEvent.FILLED:
                                 if orderdata['legs']:
@@ -479,17 +484,13 @@ class BaseStrategy(abc.ABC):
                                 # Update the insight with the filled price
                                 self.INSIGHTS[i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata["filled_qty"])
-                                break
-
-                            # case ITradeUpdateEvent.CLOSED:
-                            #     self.INSIGHTS[i].positionFilled(
-                            #         orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['limit_price'], orderdata['qty'])
+                                return
 
                             case ITradeUpdateEvent.PARTIAL_FILLED:
                                 # keep track of partial fills as some positions may be partially filled and not fully filled. in these cases we need to update the insight with the filled quantity and price
                                 self.INSIGHTS[i].partialFilled(
                                     orderdata['filled_qty'])
-                                break
+                                return
 
                             case ITradeUpdateEvent.CANCELED:
                                 # check if we have been partially filled and remove the filled quantity from the insight
@@ -499,14 +500,14 @@ class BaseStrategy(abc.ABC):
                                     oldQuantity = self.INSIGHTS[i].quantity
                                     self.INSIGHTS[i].quantity = self.INSIGHTS[i]._partial_filled_quantity
                                     if self.INSIGHTS[i].close():
-                                        break
+                                        pass
                                     else:
                                         print("Partial Filled Quantity Before Canceled: ",
                                               self.INSIGHTS[i]._partial_filled_quantity, " / ", oldQuantity, " - And Failed to close the position")
                                 else:
                                     self.INSIGHTS[i].updateState(
                                         InsightState.CANCELED, 'Order Canceled')
-                                break
+                                return
 
                             case  ITradeUpdateEvent.REJECTED:
                                 self.INSIGHTS[i].updateState(
@@ -520,39 +521,39 @@ class BaseStrategy(abc.ABC):
                     #     # Check if we has a partial fill and need to get the results of the partial fill that was closed
                     #     break
 
-                    if insight.symbol == orderdata['asset']['symbol']:
-                        # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
-                        if (((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or \
-                            ((insight.close_order_id != None) and (insight.close_order_id == orderdata['order_id'])) or \
-                            (insight.order_id == orderdata['order_id']) or \
-                            (insight.legs != None and
-                                ((insight.takeProfitOrderLeg != None and orderdata['order_id'] == insight.takeProfitOrderLeg['order_id']) or
-                                 (insight.stopLossOrderLeg != None and orderdata['order_id'] == insight.stopLossOrderLeg['order_id']) or
-                                 (insight.trailingStopOrderLeg !=
-                                  None and orderdata['order_id'] == insight.trailingStopOrderLeg['order_id'])
-                                 )
-                             ):
-                            # Update the insight closed price
-                            if self.MODE != IStrategyMode.BACKTEST:
-                                self.INSIGHTS[i].positionClosed(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['filled_qty'])
-                            else:
-                                self.INSIGHTS[i].positionClosed(
-                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['filled_qty'])
-                            break  # No need to continue
+                    # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
+                    if ((event == ITradeUpdateEvent.FILLED) or (event == ITradeUpdateEvent.CLOSED)) and (((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or \
+                        ((insight.close_order_id != None) and (insight.close_order_id == orderdata['order_id'])) or \
+                        (insight.order_id == orderdata['order_id']) or \
+                        (insight.legs != None and
+                            ((insight.takeProfitOrderLeg != None and orderdata['order_id'] == insight.takeProfitOrderLeg['order_id']) or
+                                (insight.stopLossOrderLeg != None and orderdata['order_id'] == insight.stopLossOrderLeg['order_id']) or
+                                (insight.trailingStopOrderLeg !=
+                                 None and orderdata['order_id'] == insight.trailingStopOrderLeg['order_id'])
+                             )
+                         ):
+                        # Update the insight closed price
+                        if self.MODE != IStrategyMode.BACKTEST:
+                            self.INSIGHTS[i].positionClosed(
+                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['filled_qty'])
+                        else:
+                            self.INSIGHTS[i].positionClosed(
+                                orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['filled_qty'])
+                        break  # No need to continue
 
-                        if len(insight.partial_closes) > 0:
-                            for i, partialClose in enumerate(insight.partial_closes):
-                                if partialClose['order_id'] == orderdata['order_id']:
-                                    if (event == ITradeUpdateEvent.FILLED):
-                                        # Update the insight closed price
-                                        if self.MODE != IStrategyMode.BACKTEST:
-                                            self.INSIGHTS[i].partial_closes[i].set_filled_price(
-                                                orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'])
-                                        else:
-                                            self.INSIGHTS[i].partial_closes[i].set_filled_price(
-                                                orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'])
-                                        break
+                    if len(insight.partial_closes) > 0:
+                        for i, partialClose in enumerate(insight.partial_closes):
+                            if partialClose['order_id'] == orderdata['order_id']:
+                                if (event == ITradeUpdateEvent.FILLED):
+                                    # Update the insight closed price
+                                    if self.MODE != IStrategyMode.BACKTEST:
+                                        self.INSIGHTS[i].partial_closes[i].set_filled_price(
+                                            orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'])
+                                    else:
+                                        self.INSIGHTS[i].partial_closes[i].set_filled_price(
+                                            orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'])
+                                    break
+                    return
 
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 

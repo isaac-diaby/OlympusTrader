@@ -56,7 +56,7 @@ class QbitTB(Strategy):
         self.add_executors([
             RejectExpiredInsightExecutor(self),
             MarketOrderEntryPriceExecutor(self),
-            MinimumRiskToRewardExecutor(self),
+            MinimumRiskToRewardExecutor(self, self.minRewardRiskRatio),
             DynamicQuantityToRiskExecutor(self),
             CancelAllOppositeSidetExecutor(self)
         ])

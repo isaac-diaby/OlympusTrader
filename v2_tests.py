@@ -39,19 +39,19 @@ class QbitTB(Strategy):
         self.warm_up = 36
         self.execution_risk = 0.04  # 4% of account per trade
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
-        self.baseConfidence = 0.1
+        self.baseConfidence = 0.3
 
         # Alphas
         self.add_alphas([
-        # RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        # EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        TestEntryAlpha(self, atrPeriod=14)
+        RSIDiverganceAlpha(self, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+        EMAPriceCrossoverAlpha(self, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        # TestEntryAlpha(self, atrPeriod=14)
     ])
         # New Executors
         self.add_executors([
             RejectExpiredInsightExecutor(self),
             MarketOrderEntryPriceExecutor(self),
-            MinimumRiskToRewardExecutor(self),
+            # MinimumRiskToRewardExecutor(self, self.minRewardRiskRatio),
             DynamicQuantityToRiskExecutor(self),
             CancelAllOppositeSidetExecutor(self)
         ])
@@ -195,3 +195,4 @@ if __name__ == "__main__":
     strategy.add_events('bar', stored=True, stored_path='data', applyTA=True)
 
     strategy.run()
+    print("Simulation Account", broker.Account)
