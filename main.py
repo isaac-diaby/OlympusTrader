@@ -29,6 +29,8 @@ from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClos
 
 
 import warnings
+
+from v2_childInsight import v2_childInsight
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
@@ -168,7 +170,9 @@ if __name__ == "__main__":
     broker = AlpacaBroker(paper=True)
 
     # Every Minute Strategy
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    #     1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
+    strategy = v2_childInsight(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     strategy.run()

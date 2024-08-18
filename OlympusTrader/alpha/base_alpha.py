@@ -58,7 +58,7 @@ class BaseAlpha(abc.ABC):
     TA: List[dict] = []
     """List of technical analysis needed for the alpha model."""
 
-    baseConfidenceModifierField: str
+    baseConfidenceModifierField: Optional[str] = None
     """Field to modify base confidence."""
     @abc.abstractmethod
     def __init__(self, strategy: get_BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None) -> None:
