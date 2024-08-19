@@ -30,7 +30,7 @@ from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClos
 
 import warnings
 
-from v2_childInsight import v2_childInsight
+from v2_childInsight import v2_childInsight, stackDCA
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
@@ -52,6 +52,7 @@ class QbitTB(Strategy):
                                atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
             EMAPriceCrossoverAlpha(
                 self, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+            stackDCA(self, atrPeriod=5, stPeriod=14, stMPeriod=3.0)
             # TestEntryAlpha(self)
         ])
         # New Executors
@@ -170,9 +171,9 @@ if __name__ == "__main__":
     broker = AlpacaBroker(paper=True)
 
     # Every Minute Strategy
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
-    strategy = v2_childInsight(broker, variables={}, resolution=ITimeFrame(
+    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
+    # strategy = v2_childInsight(broker, variables={}, resolution=ITimeFrame(
+    #     1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     strategy.run()

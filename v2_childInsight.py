@@ -81,11 +81,10 @@ class stackDCA(OlympusTrader.BaseAlpha):
 
             # if latestBar['close'] > latestBar[self.vwapColumn] and previousBar['close'] < previousBar[self.vwapColumn]:
             if latestBar[self.superTrenddirColumn] == 1 and previousBar[self.superTrenddirColumn] == -1:
-                # Buy Signal - VWAP Crossover
-                print(f"Latest Bar: {latestBar}")
-
+                # Buy Signal - Super trend Crossover
                 desiredQuantity = 8
-                TP = [self.STRATEGY.tools.dynamic_round(latestBar['close'] + latestIATR*3, symbol), self.STRATEGY.tools.dynamic_round(latestBar['close'] + latestIATR*4, symbol)]
+                TP = [self.STRATEGY.tools.dynamic_round(latestBar['close'] + latestIATR*4, symbol)]
+                # TP = [self.STRATEGY.tools.dynamic_round(latestBar['close'] + latestIATR*3, symbol), self.STRATEGY.tools.dynamic_round(latestBar['close'] + latestIATR*4, symbol)]
                 SL = self.STRATEGY.tools.dynamic_round(latestBar['close'] * (1- (0.01*(desiredQuantity+2))) - latestIATR*3, symbol)
 
                 insight = OlympusTrader.Insight(
@@ -116,7 +115,7 @@ class stackDCA(OlympusTrader.BaseAlpha):
                 )
 
                 for i in range(1, desiredQuantity):
-                    # Every 1% below the VWAP
+                    # Every 1% below the Super trend
                     entry = self.STRATEGY.tools.dynamic_round(latestBar[self.superTrendColumn] * (1 - (0.01*i)), symbol)
                     childInsight = insight.addChildInsight(
                         side=OlympusTrader.IOrderSide.BUY,
@@ -177,10 +176,10 @@ class v2_childInsight(OlympusTrader.Strategy):
             asset, self.resolution.add_time_increment(datetime.now(),  self.warm_up*-3), datetime.now(), self.resolution)])
 
     def universe(self):
-        return {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
-                              'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', 'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
-                              'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
-        # return {'btc-usd'}
+        # return {'TSLA', 'AAPL', 'JPM', 'MSFT', 'SPY', 'NDAQ',
+        #                       'IHG', 'NVDA', 'TRIP', 'AMZN', 'GOOGL', 'NFLX', 'AAVE/USD', 'BAT/USD', 'BCH/USD', 'BTC/USD', 'ETH/USD', 'GRT/USD', 'LINK/USD', 'LTC/USD',
+        #                       'MKR/USD', 'UNI/USD', 'CRV/USD', 'AVAX/USD'}
+        return {'btc-usd'}
 
     def on_bar(self, symbol, bar):
         pass
