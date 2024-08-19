@@ -794,6 +794,8 @@ class BaseStrategy(abc.ABC):
             insight = self.INSIGHTS[insightID]
             safe_insights[str(insightID)] = {
                 'symbol': insight.symbol,
+                "insight_id": str(insight.INSIGHT_ID),
+                "parent": str(insight.PARANT),
                 'state': str(insight.state.value),
                 'side': str(insight.side.value),
                 'limit_price': insight.limit_price,
