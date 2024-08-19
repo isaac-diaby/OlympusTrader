@@ -11,7 +11,9 @@ streamlit
 
 numpy==1.26.4
 pandas
+quantstats
 
 python-dotenv
 nest_asyncio
+tqdm
 tables
