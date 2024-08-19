@@ -316,7 +316,17 @@ class PaperBroker(BaseBroker):
                 continue
 
             elif order['type'] == IOrderType.LIMIT:
-                if order['limit_price'] >= currentBar.low and order['limit_price'] <= currentBar.high:
+                """
+                sometime the currentbar high and low can be the same as the close price when using minute data with yfinance API
+                """
+                autopass = False
+                if currentBar.high == currentBar.low:
+                    pricePadding = 0.001 # 0.1%
+                    if ((currentBar.high*(1+pricePadding)) >= order['limit_price'] >= (currentBar.low*(1-pricePadding))):
+                        autopass = True
+
+                # we need to check if the limit price is within the high and low of the current bar 
+                if (order['limit_price'] >= currentBar.low and order['limit_price'] <= currentBar.high) or autopass:
                     order['filled_price'] = order['limit_price']
                     order['filled_qty'] = order['qty']
                     order['status'] = ITradeUpdateEvent.FILLED
@@ -354,6 +364,7 @@ class PaperBroker(BaseBroker):
                         order['updated_at'] = self.get_current_time
                         order['status'] = take_profit['status']
                         order['legs']['take_profit'] = take_profit
+                        order['side'] = IOrderSide.SELL if order['side'] == IOrderSide.BUY else IOrderSide.BUY
 
                         self._update_order(order)
                         loop.run_until_complete(callback(ITradeUpdate(
@@ -371,6 +382,7 @@ class PaperBroker(BaseBroker):
                         order['updated_at'] = self.get_current_time
                         order['status'] = stop_loss['status']
                         order['legs']['stop_loss'] = stop_loss
+                        order['side'] = IOrderSide.SELL if order['side'] == IOrderSide.BUY else IOrderSide.BUY
 
                         self._update_order(order)
                         loop.run_until_complete(callback(ITradeUpdate(
@@ -540,10 +552,10 @@ class PaperBroker(BaseBroker):
         # Set the Size
         if order['side'] == IOrderSide.BUY:
             self.HISTORICAL_DATA[symbol
-                                 ]['signals'].loc[currentBarIndex, 'qty'] = order['qty']
+                                 ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
         else:
             self.HISTORICAL_DATA[symbol
-                                 ]['signals'].loc[currentBarIndex, 'qty'] = -order['qty']
+                                 ]['signals'].loc[currentBarIndex, 'qty'] -= order['qty']
 
     def _update_order(self, order: IOrder):
         if self.Orders.get(order['order_id']):
@@ -986,7 +998,7 @@ class PaperBroker(BaseBroker):
             # Load Market data from yfinance for all assets
             self.HISTORICAL_DATA = {}
 
-            for asset in tqdm(assetStreams):
+            for asset in tqdm(assetStreams, desc="Loading Historical Data"):
                 self.HISTORICAL_DATA[asset['symbol']] = {}
                 if asset['type'] == 'bar':
                     # populate HISTORICAL_DATA
@@ -1276,9 +1288,37 @@ class PaperBroker(BaseBroker):
 
     def get_VBT_results(self, timeFrame: ITimeFrame) -> dict[str, vbt.Portfolio]:
         """returns the backtest results from Vector BT - profit and loss,  profit and loss percentage, number of orders executed and filled, cag sharp rattio, percent win. etc."""
-        results = {}
+        results: dict[str, vbt.Portfolio] = {}
+
+        def calc_expectancy_ratio(trades: vbt.EntryTrades):
+            if len(trades) == 0:
+                return np.nan
+            
+            returns = trades.returns.values
+            winners = returns[returns > 0]
+            losers = returns[returns <= 0]
+            
+            pct_winners = len(winners) / len(returns)
+            pct_losers = len(losers) / len(returns)
+            
+            avg_win = np.mean(winners) if len(winners) > 0 else 0
+            avg_loss = abs(np.mean(losers)) if len(losers) > 0 else 1
+            R = avg_win / avg_loss
+            
+            E = pct_winners * R - pct_losers
+            return E
+
+        expectancy_ratio = (
+            "Expectancy Ratio",
+            dict(
+                title="Expectancy Ratio",
+                calc_func=calc_expectancy_ratio,
+                resolve_trades=True
+            )
+        )
+
         if self.MODE == IStrategyMode.BACKTEST:
-            for asset in tqdm(self.HISTORICAL_DATA.keys()):
+            for asset in tqdm(self.HISTORICAL_DATA.keys(), desc="Running VBT Backtest"):
                 try:
                     vbtParams = {
                         "init_cash": self.STARTING_CASH,
@@ -1295,9 +1335,9 @@ class PaperBroker(BaseBroker):
                     }
 
                     # run the backtest
-                    print("Running backtest for ", asset)
+                    print("Running backtest for with Vector BT for:", asset)
                     results[asset] = vbt.Portfolio.from_signals(**vbtParams)
-                    print(results[asset].stats())
+                    print(results[asset].stats(metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
                 except Exception as e:
                     print("Failed to run backtest for ", asset, e)
                     continue
