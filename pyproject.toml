@@ -3,8 +3,10 @@ name = "olympustrader"
 version = "0.2.0"
 description = "trading bot framework"
 authors = ["Moustapha Diaby <me@isaacdiaby.tech>"]
-license = "MIT"
+license = "Apache 2.0"
 readme = "README.md"
+
+packages = [{include="OlympusTrader"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
