@@ -29,8 +29,6 @@ from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClos
 
 
 import warnings
-
-from v2_childInsight import v2_childInsight, stackDCA
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
@@ -52,7 +50,6 @@ class QbitTB(Strategy):
                                atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
             EMAPriceCrossoverAlpha(
                 self, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-            stackDCA(self, atrPeriod=5, stPeriod=14, stMPeriod=3.0)
             # TestEntryAlpha(self)
         ])
         # New Executors
