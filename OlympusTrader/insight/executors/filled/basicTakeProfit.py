@@ -19,7 +19,7 @@ class BasicTakeProfitExecutor(BaseExecutor):
 
     def run(self, insight):
         # check if the insight already has a take profit order leg
-        if insight.takeProfitOrderLeg and self.STRATEGY.MODE != IStrategyMode.BACKTEST:
+        if insight.takeProfitOrderLeg: #  and self.STRATEGY.MODE != IStrategyMode.BACKTEST:
             return self.returnResults(True, True, "Insight already has a take profit order")
 
         # Check if the insight has reached the take profit price

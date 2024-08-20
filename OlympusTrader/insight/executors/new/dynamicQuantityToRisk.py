@@ -32,6 +32,10 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
     def run(self, insight):
         if insight.limit_price is None or not insight.SL or np.isnan(insight.SL):
             return self.returnResults(False, False, "Insight does not have limit price or stop loss levels set.")
+        
+        # if the user has set the quantity, then we don't need to calculate it
+        if insight.quantity is not None:
+            return self.returnResults(True, True, "Quantity already set")
 
         # Calculate the quantity to trade
         try:
@@ -72,7 +76,7 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
                 if self.STRATEGY.assets[insight.symbol]['fractionable']:
                     # Although the quantity is less than 1, we can still buy a fraction of a share
                     # Round the quantity to the nearest 2 decimal places
-                    # FIXME: This should round down but right now it can round up. another function should be created to only round down dynamically
+                    # FIXME: This should always round down but right now it can round up. another function should be created to only round down dynamically to the closest minimum order size precision
                     size_should_buy = dynamic_round(size_should_buy)
                 else:
                     response = self.returnResults(False, True, f"Asset is not fractionable: Suggested: {size_should_buy}")

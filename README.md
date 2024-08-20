@@ -304,3 +304,7 @@ The teardown function is called when you interrupt the program and can be used t
 ## Collaborations
 
 If you're interested in helping out just make a PR and ill happy to merge! I just to build a framework that is easy enough for people to build a live trading bot but flexible for users to to build complex strategies. Thanks
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=isaac-diaby/OlympusTrader&type=Timeline)](https://star-history.com/#isaac-diaby/OlympusTrader&Timeline)
