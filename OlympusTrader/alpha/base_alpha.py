@@ -5,7 +5,7 @@ from pandas import DataFrame
 import pandas_ta as ta
 import numpy as np
 
-from OlympusTrader.broker.interfaces import IAsset
+from OlympusTrader.broker.interfaces import IAsset, IQuote
 from OlympusTrader.insight.insight import Insight
 
 
@@ -102,6 +102,9 @@ class BaseAlpha(abc.ABC):
 
     def get_previos_bar(self, symbol: str) -> DataFrame:
         return self.get_history(symbol).iloc[-2]
+    
+    def get_latest_quote(self, insight: Insight) -> IQuote:
+        return self.STRATEGY.broker.get_latest_quote(insight.ASSET)
 
     def get_baseConfidenceModifier(self, symbol: str):
         if self.baseConfidenceModifierField:
