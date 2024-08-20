@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from types import NoneType
-from typing import List, Literal, TYPE_CHECKING, Optional, Union
+from typing import List, Literal, TYPE_CHECKING, Optional, Self, Type, Union
 from uuid import uuid4, UUID
 
 
@@ -29,6 +29,12 @@ class StrategyDependantConfirmation(Enum):
     HRVCM = 'High Relative Volume Confirmation Model'
     LRVCM = 'Low Relative Volume Confirmation Model'
     HTFCM = 'High Time Frame Confirmation Model'
+    LTFCM = 'Low Time Frame Confirmation Model'
+    HCCM = 'High Confidence Confirmation Model'
+    LCCM = 'Low Confidence Confirmation Model'
+    UPSTATE = 'Up State Confirmation Model'
+    DOWNSTATE = 'Down State Confirmation Model'
+    FLATSTATE = 'Flat State Confirmation Model'
 
 
 class InsightState(Enum):
@@ -66,10 +72,15 @@ class PartialCloseResult:
         else:
             return round((self.entry_price - self.filled_price) * self.quantity, 2)
 
-
 class Insight:
-    INSIGHT_ID: UUID = uuid4()
+    INSIGHT_ID: UUID
+    """Unique Insight ID"""
+    PARANT: Optional[UUID] = None
+    """Parent Insight ID"""
+    CHILDREN: dict[UUID, Self]
+    
     order_id: str = None
+    """Main Order ID for the Insight that entered the position"""
     side: IOrderSide = None  # buy or sell
     opposite_side: IOrderSide = None
     symbol: str = None  # symbol to trade
@@ -86,17 +97,21 @@ class Insight:
     confidence: float = None  # confidence in insight
     tf: ITimeFrame = None  # timeframe
     periodUnfilled: Optional[int] = None  # time to live when unfilled
-    periodTillTp: Optional[int] = None  # predicted time to live when opened to reach take profit
+    # predicted time to live when opened to reach take profit
+    periodTillTp: Optional[int] = None
     executionDepends: List[StrategyDependantConfirmation] = [
         StrategyDependantConfirmation.NONE]  # execution depends on
     state: InsightState = InsightState.NEW
+    """State of the Insight"""
     createAt: datetime = datetime.now()
     updatedAt: datetime = datetime.now()
     filledAt: Optional[datetime] = None
     closedAt: Optional[datetime] = None
     close_order_id = None
+    """Close Order ID for the Insight that closed the position"""
     partial_closes: list[PartialCloseResult] = []
-    legs: IOrderLegs = IOrderLegs(take_profit=None, stop_loss=None, trailing_stop=None)
+    legs: IOrderLegs = IOrderLegs(
+        take_profit=None, stop_loss=None, trailing_stop=None)
     close_price: Optional[float] = None  # price to close at
 
     marketChanged: bool = False
@@ -110,8 +125,16 @@ class Insight:
     BROKER: get_BaseBroker = None
     ASSET: IAsset = None
 
-    def __init__(self, side: IOrderSide, symbol: str,  strategyType: Union[StrategyTypes, str], tf: ITimeFrame, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10):
+
+
+    def __init__(self, side: IOrderSide, symbol: str,  strategyType: Union[StrategyTypes, str], tf: ITimeFrame, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10,  parent: Optional[UUID] = None):
         assert side in IOrderSide, 'Invalid Order Side'
+        self.INSIGHT_ID = uuid4()
+        if parent:
+            self.PARANT = parent  # Parent Insight ID
+        self.CHILDREN = {}
+
+
         self.side = side  # buy or sell
         self.opposite_side = IOrderSide.BUY if (
             self.side == IOrderSide.SELL) else IOrderSide.SELL
@@ -212,6 +235,7 @@ class Insight:
                                  'Invalid Entry Insight')
 
         return False
+
     def cancel_order_by_id(self, order_id: str):
         try:
             order = self.BROKER.cancel_order(order_id)
@@ -295,6 +319,26 @@ class Insight:
 
         return False
 
+    def addChildInsight(self, side: IOrderSide, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = None, periodTillTp: int = None) -> Self:
+        """Add a child insight to the parent insight. The child insight will be executed after the parent insight is filled."""
+        childInsight =  Insight(
+            parent=self.INSIGHT_ID, 
+                       symbol=self.symbol,
+                       strategyType=self.strategyType+'-CHILD',
+                       tf=self.tf,
+                       side=side,
+                       quantity=quantity,
+                       limit_price=limit_price,
+                       TP=TP,
+                       SL=SL,
+                       confidence=self.confidence,
+                       executionDepends=executionDepends,
+                       periodUnfilled=periodUnfilled,
+                       periodTillTp=periodTillTp,
+                       )
+        self.CHILDREN[childInsight.INSIGHT_ID] = childInsight
+        return childInsight
+
     def updateState(self, state: InsightState, message: str = None):
         print(
             f"Updated Insight State: {self.state:^10} -> {state:^10}: {self.symbol:^8} : {self.strategyType} :", message)
@@ -336,7 +380,9 @@ class Insight:
         # check if the price is within the take profit and stop loss
         if not self.checkValidEntryInsight(price):
             return False
+        
         self.limit_price = price
+
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
 
@@ -346,8 +392,9 @@ class Insight:
         # check if the insight is already executed
         if self.state == InsightState.EXECUTED:
 
-            # TODO: Need to check if the order is already placed and update it
-            # self.updateState(InsightState.FILLED, 'Trade Filled')
+            # TODO: update the broker order if the insight is already placed
+            # TODO: Need to check if the order is already placed
+            #  self.BROKER ....
             pass
         return True
 
@@ -434,8 +481,8 @@ class Insight:
         limit_price = limit_price if limit_price != None else self.limit_price
         # FIXME: use the broker to get the latest price and to check if the market order would be within range of the bracket order
         if limit_price == None:
-            print("WARNING: invalid entry insight: limit price is not set")
-            return False
+            print("WARNING: invalid entry insight: limit price is not set, Using Market Order")
+            return True
 
         if self.SL:
             if (limit_price < self.SL and self.side == IOrderSide.BUY) or (limit_price > self.SL and self.side == IOrderSide.SELL):
@@ -608,6 +655,18 @@ class Insight:
             self.close_price = price
         self.updateCloseOrderID(close_order_id)
         self.updateState(InsightState.CLOSED)
+
+        # Close all of the child insights
+        if self.PARANT == None and len(self.CHILDREN) > 0:
+            for child in self.CHILDREN:
+                childInsight = self.CHILDREN[child]
+                if childInsight.state == InsightState.FILLED:
+                    childInsight.close()
+                elif childInsight.state == InsightState.EXECUTED:
+                    childInsight.cancel()
+                else: # childInsight.state == InsightState.NEW, InsightState.REJECTED, InsightState.CANCELED
+                    childInsight.updateState(
+                        InsightState.CANCELED, 'Parent Insight Closed')
         return self
 
     def getPL(self):

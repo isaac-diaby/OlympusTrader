@@ -109,7 +109,7 @@ class BaseStrategy(abc.ABC):
 
         # Set up TA Strategy
         self.TaStrategy = ta.Strategy(
-            name=self.NAME, description="Olympus Trader Framework", ta=[{"kind": 'atr', "length": 14}])
+            name=self.NAME, description="Olympus Trader Framework", ta=[])
 
         self.start()
         # Load the universe
@@ -343,15 +343,14 @@ class BaseStrategy(abc.ABC):
                 self.resolution)
 
             # Save the backtest results
-            print("Saving Backtest Results")
-            for symbol in tqdm(self.BACKTESTING_RESULTS.keys()):
+            for symbol in tqdm(self.BACKTESTING_RESULTS.keys(), desc="Saving Backtest Results"):
                 save_path = Path(f"backtests/{self.STRATEGY_ID}")
                 save_path.mkdir(parents=True, exist_ok=True)
-
+                path = f"backtests/{self.STRATEGY_ID}/{symbol}-{self.resolution}-backtest"
                 if (self.BACKTESTING_RESULTS.get(symbol)):
-                    self.BACKTESTING_RESULTS[symbol].save(
-                        f"backtests/{self.STRATEGY_ID}/{symbol}-{self.resolution}-backtest")
+                    self.BACKTESTING_RESULTS[symbol].save(path)
                     self.BACKTESTING_RESULTS[symbol].plot().show()
+                    print("Backtesting results saved for", symbol, "at", path)
                 else:
                     print("No backtesting results found for", symbol)
 
@@ -484,6 +483,12 @@ class BaseStrategy(abc.ABC):
                                 # Update the insight with the filled price
                                 self.INSIGHTS[i].positionFilled(
                                     orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata["filled_qty"])
+                                
+                                if insight.PARANT == None and len(self.INSIGHTS[i].CHILDREN) > 0:
+                                    # set the childe insight to be active
+                                    for uid, childInsight in insight.CHILDREN.items():
+                                        self.add_insight(childInsight)
+                                    pass
                                 return
 
                             case ITradeUpdateEvent.PARTIAL_FILLED:
@@ -512,7 +517,7 @@ class BaseStrategy(abc.ABC):
                             case  ITradeUpdateEvent.REJECTED:
                                 self.INSIGHTS[i].updateState(
                                     InsightState.REJECTED, 'Order Rejected')
-                                break
+                                return
                             case _:
                                 pass
                 case InsightState.FILLED | InsightState.CLOSED:
@@ -521,6 +526,22 @@ class BaseStrategy(abc.ABC):
                     #     # Check if we has a partial fill and need to get the results of the partial fill that was closed
                     #     break
 
+                    if insight.state == InsightState.CLOSED:
+                        # Insight has already been closed 
+                        continue
+                    # check partials closes before closing the position
+                    if len(insight.partial_closes) > 0:
+                        for i, partialClose in enumerate(insight.partial_closes):
+                            if partialClose['order_id'] == orderdata['order_id']:
+                                if (event == ITradeUpdateEvent.FILLED) or (event == ITradeUpdateEvent.CLOSED):
+                                    # Update the insight closed price
+                                    if self.MODE != IStrategyMode.BACKTEST:
+                                        self.INSIGHTS[i].partial_closes[i].set_filled_price(
+                                            orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'])
+                                    else:
+                                        self.INSIGHTS[i].partial_closes[i].set_filled_price(
+                                            orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'])
+                                    return
                     # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
                     if ((event == ITradeUpdateEvent.FILLED) or (event == ITradeUpdateEvent.CLOSED)) and (((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or \
                         ((insight.close_order_id != None) and (insight.close_order_id == orderdata['order_id'])) or \
@@ -539,21 +560,9 @@ class BaseStrategy(abc.ABC):
                         else:
                             self.INSIGHTS[i].positionClosed(
                                 orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['filled_qty'])
-                        break  # No need to continue
+                        return  # No need to continue
 
-                    if len(insight.partial_closes) > 0:
-                        for i, partialClose in enumerate(insight.partial_closes):
-                            if partialClose['order_id'] == orderdata['order_id']:
-                                if (event == ITradeUpdateEvent.FILLED):
-                                    # Update the insight closed price
-                                    if self.MODE != IStrategyMode.BACKTEST:
-                                        self.INSIGHTS[i].partial_closes[i].set_filled_price(
-                                            orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'])
-                                    else:
-                                        self.INSIGHTS[i].partial_closes[i].set_filled_price(
-                                            orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'])
-                                    break
-                    return
+                    continue
 
         # TODOL Check if the order is part of the resolution of the strategy and has a insight that is managing it.
 
@@ -785,6 +794,8 @@ class BaseStrategy(abc.ABC):
             insight = self.INSIGHTS[insightID]
             safe_insights[str(insightID)] = {
                 'symbol': insight.symbol,
+                "insight_id": str(insight.INSIGHT_ID),
+                "parent": str(insight.PARANT),
                 'state': str(insight.state.value),
                 'side': str(insight.side.value),
                 'limit_price': insight.limit_price,

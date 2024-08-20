@@ -170,5 +170,7 @@ if __name__ == "__main__":
     # Every Minute Strategy
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
+    # strategy = v2_childInsight(broker, variables={}, resolution=ITimeFrame(
+    #     1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
     strategy.run()

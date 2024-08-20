@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from OlympusTrader.broker.interfaces import IOrderSide, ITradeUpdateEvent
 from OlympusTrader.broker.paper_broker import PaperBroker
-from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClosedExecutor
 from OlympusTrader.strategy.strategy import Strategy
 from OlympusTrader.insight.insight import Insight, InsightState, StrategyTypes
 from OlympusTrader.strategy.interfaces import IStrategyMode
@@ -27,6 +26,7 @@ from OlympusTrader.insight.executors.new.minimumRiskToReward import MinimumRiskT
 from OlympusTrader.insight.executors.new.rejectExpiredInsight import RejectExpiredInsightExecutor
 from OlympusTrader.insight.executors.canceled.defaultOnCancelled import DefaultOnCancelledExecutor
 from OlympusTrader.insight.executors.rejected.defaultOnReject import DefaultOnRejectExecutor
+from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClosedExecutor
 
 
 class QbitTB(Strategy):
