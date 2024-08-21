@@ -1077,7 +1077,7 @@ class PaperBroker(BaseBroker):
                                     else:
                                         for index in barDatas.index:
                                             loop.run_until_complete(
-                                                callback(barDatas.loc[[index]], timeframe=asset['time_frame'], isFeature=True))
+                                                callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
                                 else:
                                     # Get the current bar data with the index
                                     barData = self._get_current_bar(symbol)
@@ -1087,7 +1087,7 @@ class PaperBroker(BaseBroker):
                                         continue
                                     else:
                                         loop.run_until_complete(
-                                            callback(barData, timeframe=asset['time_frame'], isFeature=False))
+                                            callback(barData, timeframe=asset['time_frame']))
 
                             except BaseException as e:
                                 print("Error: ", e)
