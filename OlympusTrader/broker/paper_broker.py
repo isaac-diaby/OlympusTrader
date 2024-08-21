@@ -1382,30 +1382,32 @@ class PaperBroker(BaseBroker):
 
         if self.MODE == IStrategyMode.BACKTEST:
             for asset in tqdm(self.HISTORICAL_DATA.keys(), desc="Running VBT Backtest"):
-                if self.HISTORICAL_DATA[asset].get('signals') == None:
-                    continue
-                try:
-                    vbtParams = {
-                        "init_cash": self.STARTING_CASH,
-                        "open": self.HISTORICAL_DATA[asset]['bar']['open'].reset_index(level='symbol', drop=True),
-                        "high": self.HISTORICAL_DATA[asset]['bar']['high'].reset_index(level='symbol', drop=True),
-                        "low": self.HISTORICAL_DATA[asset]['bar']['low'].reset_index(level='symbol', drop=True),
-                        "close": self.HISTORICAL_DATA[asset]['bar']['close'].reset_index(level='symbol', drop=True),
-                        "entries": self.HISTORICAL_DATA[asset]['signals']['entries'].reset_index(level='symbol', drop=True),
-                        "short_entries": self.HISTORICAL_DATA[asset]['signals']['short_entries'].reset_index(level='symbol', drop=True),
-                        "exits": self.HISTORICAL_DATA[asset]['signals']['exits'].reset_index(level='symbol', drop=True),
-                        "short_exits": self.HISTORICAL_DATA[asset]['signals']['short_exits'].reset_index(level='symbol', drop=True),
-                        "size":  self.HISTORICAL_DATA[asset]['signals']['qty'].abs().reset_index(level='symbol', drop=True),
-                        "freq": timeFrame.unit.value[0].lower()
-                    }
+                if isinstance(self.HISTORICAL_DATA[asset].get('signals'), pd.DataFrame):
+                    try:
+                        vbtParams = {
+                            "init_cash": self.STARTING_CASH,
+                            "open": self.HISTORICAL_DATA[asset]['bar']['open'].reset_index(level='symbol', drop=True),
+                            "high": self.HISTORICAL_DATA[asset]['bar']['high'].reset_index(level='symbol', drop=True),
+                            "low": self.HISTORICAL_DATA[asset]['bar']['low'].reset_index(level='symbol', drop=True),
+                            "close": self.HISTORICAL_DATA[asset]['bar']['close'].reset_index(level='symbol', drop=True),
+                            "entries": self.HISTORICAL_DATA[asset]['signals']['entries'].reset_index(level='symbol', drop=True),
+                            "short_entries": self.HISTORICAL_DATA[asset]['signals']['short_entries'].reset_index(level='symbol', drop=True),
+                            "exits": self.HISTORICAL_DATA[asset]['signals']['exits'].reset_index(level='symbol', drop=True),
+                            "short_exits": self.HISTORICAL_DATA[asset]['signals']['short_exits'].reset_index(level='symbol', drop=True),
+                            "size":  self.HISTORICAL_DATA[asset]['signals']['qty'].abs().reset_index(level='symbol', drop=True),
+                            "freq": timeFrame.unit.value[0].lower()
+                        }
 
-                    # run the backtest
-                    print("Running backtest for with Vector BT for:", asset)
-                    results[asset] = vbt.Portfolio.from_signals(**vbtParams)
-                    print(results[asset].stats(
-                        metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
-                except Exception as e:
-                    print("Failed to run backtest for ", asset, e)
+                        # run the backtest
+                        print("Running backtest for with Vector BT for:", asset)
+                        results[asset] = vbt.Portfolio.from_signals(**vbtParams)
+                        print(results[asset].stats(
+                            metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
+                    except Exception as e:
+                        print("Failed to run backtest for ", asset, e)
+                        continue
+                else:
+                    print("No signals for feature ", asset)
                     continue
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
