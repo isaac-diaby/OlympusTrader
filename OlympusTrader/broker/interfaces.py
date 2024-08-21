@@ -1,7 +1,30 @@
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import List, Literal, NotRequired, Optional, TypedDict, Union
 from uuid import UUID
+
+@dataclass
+class ISupportedBrokerFeatures:
+    """Supported Broker Features."""
+    barDataStreaming: bool = True
+    tradeEventStreaming: bool = True
+    featuredBarDataStreaming: bool = True
+    submitOrder: bool = True
+    maxOrderValue: float = None
+    cancelOrder: bool = True
+    closePosition: bool = True
+    getAccount: bool = True
+    getPosition: bool = True
+    getPositions: bool = True
+    getHistory: bool = True
+    getQuote: bool = True
+    getTickerInfo: bool = True
+    leverage: bool = True
+    shorting: bool = True
+    margin: bool = True
+    bracketOrders: bool = True
+    trailingStop: bool = True
 
 
 class ISupportedBrokers(Enum):

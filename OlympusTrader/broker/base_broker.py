@@ -8,7 +8,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-from .interfaces import IQuote, ISupportedBrokers
+from .interfaces import IQuote, ISupportedBrokerFeatures, ISupportedBrokers
 
 from .interfaces import IAsset, IAccount, IOrder, IPosition, ITradeUpdateEvent
 from ..insight.insight import Insight
@@ -20,6 +20,8 @@ class BaseBroker(abc.ABC):
     NAME: ISupportedBrokers = ISupportedBrokers.BASE
     DataFeed: Optional[str]
     PAPER: bool
+
+    supportedFeatures: ISupportedBrokerFeatures
 
     TICKER_INFO: dict[str, IAsset] = {}
 
@@ -117,6 +119,10 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def streamMarketData(self, callback: Awaitable, assetStreams: List[IMarketDataStream]):
         """Listen to market data and call the callback function with the data"""
+        for assetStream in assetStreams:
+            assert assetStream['symbol'], 'assetStream must have a symbol'
+            assert assetStream['time_frame'], 'assetStream must have a time_frame'
+            assert assetStream['type'], 'assetStream must have a type'
         print("Stream Market Data -", self.NAME)
         pass
 
