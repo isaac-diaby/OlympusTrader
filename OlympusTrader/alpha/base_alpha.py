@@ -1,11 +1,11 @@
 import abc
-from typing import TYPE_CHECKING, List, override
+from typing import TYPE_CHECKING, List, Optional, override
 
 from pandas import DataFrame
 import pandas_ta as ta
 import numpy as np
 
-from OlympusTrader.broker.interfaces import IAsset
+from OlympusTrader.broker.interfaces import IAsset, IQuote
 from OlympusTrader.insight.insight import Insight
 
 
@@ -31,7 +31,7 @@ class AlphaResults():
     message: str
     """Message indicating the result of the alpha."""
 
-    def __init__(self, insight: Insight = None, success: bool = True, message: str = None, alpha: str = None):
+    def __init__(self, insight: Optional[Insight] = None, success: bool = True, message: str = None, alpha: str = None):
         self.insight = insight
         if insight:
             # If the executor passed, then it was successfully ran
@@ -58,31 +58,29 @@ class BaseAlpha(abc.ABC):
     TA: List[dict] = []
     """List of technical analysis needed for the alpha model."""
 
-    baseConfidenceModifierField: str
+    baseConfidenceModifierField: Optional[str] = None
     """Field to modify base confidence."""
     @abc.abstractmethod
-    def __init__(self, strategy: get_BaseStrategy, name: str, version: float = "1.0", baseConfidenceModifierField: str = None) -> None:
+    def __init__(self, strategy: get_BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None) -> None:
         self.NAME = name
         self.VERSION = version
 
         # Reference to the strategy instance
         self.STRATEGY = strategy
-        self.baseConfidenceModifierField = baseConfidenceModifierField
+        if baseConfidenceModifierField:
+            self.baseConfidenceModifierField = baseConfidenceModifierField
 
 
-    @override
     @abc.abstractmethod
     def start(self):
         """Initialize the alpha model once at the start. data, etc. in the state of the Strategy."""
         pass
 
-    @override
     @abc.abstractmethod
     def init(self,  asset: IAsset):
         """Initialize the alpha model for each assets. variables, data, etc. in the state of the Strategy."""
         pass
 
-    @override
     @abc.abstractmethod
     def generateInsights(self, symbol: str) -> AlphaResults:
         """Generate insights based on the alpha model."""
@@ -92,8 +90,8 @@ class BaseAlpha(abc.ABC):
         self.STRATEGY.ALPHA_MODELS.append(self)
         # Set the technical analysis needed for the alpha
         self._loadTa()
-    
-    def returnResults(self, insight: Insight = None, success: bool = True, message: str = None) -> AlphaResults:
+
+    def returnResults(self, insight: Optional[Insight] = None, success: bool = True, message: str = None) -> AlphaResults:
         return AlphaResults(insight, success, message, self.NAME)
 
     def get_history(self, symbol: str) -> DataFrame:
@@ -104,13 +102,16 @@ class BaseAlpha(abc.ABC):
 
     def get_previos_bar(self, symbol: str) -> DataFrame:
         return self.get_history(symbol).iloc[-2]
+    
+    def get_latest_quote(self, insight: Insight) -> IQuote:
+        return self.STRATEGY.broker.get_latest_quote(insight.ASSET)
 
     def get_baseConfidenceModifier(self, symbol: str):
         if self.baseConfidenceModifierField:
             baseConfidenceModifier = self.STRATEGY.state[self.baseConfidenceModifierField][symbol]
             if baseConfidenceModifier:
                 return baseConfidenceModifier
-             
+
         return 1
     def _loadTa(self):
         if self.TA:

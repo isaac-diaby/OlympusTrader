@@ -16,8 +16,12 @@ class CloseMarketChangedExecutor(BaseExecutor):
         super().__init__(strategy, InsightState.FILLED, "1.0")
 
     def run(self, insight):
-        # Close the imarket channel
+        # Close the market channel
         try:
+            # check if the insight has not already been closed 
+            if insight._closing:
+                return self.returnResults(False, True, "Insight is being closed.")
+            
             if self.STRATEGY.insights[insight.INSIGHT_ID].marketChanged == True:
                 self.STRATEGY.insights[insight.INSIGHT_ID].close()
                 return self.returnResults(False, True, "Insight closed due to market change.")

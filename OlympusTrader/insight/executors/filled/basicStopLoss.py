@@ -1,6 +1,7 @@
 from ..base_executor import BaseExecutor
 from ...insight import InsightState
 from ....broker.interfaces import IOrderSide
+from ....strategy.interfaces import IStrategyMode
 
 
 class BasicStopLossExecutor(BaseExecutor):
@@ -21,20 +22,26 @@ class BasicStopLossExecutor(BaseExecutor):
         super().__init__(strategy, InsightState.FILLED, "1.0")
 
     def run(self, insight):
+        #  Check if the insight already has a stop loss order leg
+        if insight.stopLossOrderLeg:
+            return self.returnResults(True, True, "Insight already has a stop loss order")
         # Check if the insight has a stop loss price
         if insight.SL == None:
-            return self.returnResults(False, False, "Insight does not have a stop loss price set.")
+            return self.returnResults(True, True, "Insight does not have a stop loss price set.")
         try:
+            # check if the insight has not already been closed 
+            if insight._closing:
+                return self.returnResults(False, True, "Insight is being closed.")
             # Check if price broke the stop loss level
             latestBar = self.get_latest_bar(insight.symbol)
             latestQuote = self.get_latest_quote(insight)
             shouldClose = False
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.low < insight.SL) or (latestQuote['bid_price'] < insight.SL):
+                    if (latestBar.low < insight.SL) or (latestQuote['bid'] < insight.SL):
                         shouldClose = True
                 case IOrderSide.SELL:
-                    if (latestBar.high > insight.SL) or (latestQuote['ask_price'] > insight.SL):
+                    if (latestBar.high > insight.SL) or (latestQuote['ask'] > insight.SL):
                         shouldClose = True
             if shouldClose:
                 if self.STRATEGY.insights[insight.INSIGHT_ID].close():

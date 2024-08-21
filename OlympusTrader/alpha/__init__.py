@@ -1,1 +1,1 @@
-# from  OlympusTrader.alpha import BaseAlpha
+from .base_alpha import BaseAlpha

@@ -17,12 +17,12 @@ from alpaca.data.enums import DataFeed, CryptoFeed
 from alpaca.common.enums import BaseURL
 from alpaca.trading.models import Position, Order, TradeUpdate
 from alpaca.data.models import Bar, Quote
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
 from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
-from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote
+from .interfaces import ISupportedBrokerFeatures, ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote, IOrderLegs, IOrderLeg
 from ..utils.timeframe import ITimeFrame as tf
 from ..insight.insight import Insight
 
@@ -41,7 +41,7 @@ class AlpacaBroker(BaseBroker):
         assert os.getenv('ALPACA_API_KEY'), 'ALPACA_API_KEY not found'
         assert os.getenv('ALPACA_SECRET_KEY'), 'ALPACA_SECRET_KEY not found'
 
-        self.DataFeed = DataFeed.IEX if paper else DataFeed.SIP
+        self.DataFeed = DataFeed.IEX if self.PAPER else DataFeed.SIP
 
         self.trading_stream_client = TradingStream(
             os.getenv('ALPACA_API_KEY'),  os.getenv('ALPACA_SECRET_KEY'), paper=paper)
@@ -56,41 +56,54 @@ class AlpacaBroker(BaseBroker):
         self.crypto_stream_client = CryptoDataStream(
             os.getenv('ALPACA_API_KEY'),  os.getenv('ALPACA_SECRET_KEY'), feed=CryptoFeed.US, url_override=BaseURL.MARKET_DATA_STREAM + "/v1beta3/crypto/" + CryptoFeed.US)
 
+        self.supportedFeatures = ISupportedBrokerFeatures(
+            barDataStreaming=True, trailingStop=False, maxOrderValue=200_000.00)
+
     def get_history(self, asset: IAsset, start: datetime, end: datetime, resolution: tf):
         # Convert to TimeFrame from OlympusTrader from alpaca
         super().get_history(asset, start, end, resolution)
 
         timeframe = TimeFrame(resolution.amount, resolution.unit)
         data = None
-        if (asset['asset_type'] == 'stock'):
-            # assert isinstance(
-            #     feed, DataFeed), 'DataFeed must be of type DataFeed'
-            data = self.stock_client.get_stock_bars(
-                StockBarsRequest(
+        try:
+            if (asset['asset_type'] == 'stock'):
+                # assert isinstance(
+                #     feed, DataFeed), 'DataFeed must be of type DataFeed'
+                data = self.stock_client.get_stock_bars(
+                    StockBarsRequest(
+                        symbol_or_symbols=asset['symbol'],
+                        timeframe=timeframe,
+                        start=start,
+                        end=end,
+                        feed=self.DataFeed
+                    )).df
+            elif (asset['asset_type'] == 'crypto'):
+                # assert isinstance(
+                #     feed, CryptoFeed), 'DataFeed must be of type CryptoFeed'
+                data = self.crypto_client.get_crypto_bars(CryptoBarsRequest(
                     symbol_or_symbols=asset['symbol'],
                     timeframe=timeframe,
                     start=start,
-                    end=end,
-                    feed=self.DataFeed
+                    end=end
                 )).df
-        elif (asset['asset_type'] == 'crypto'):
-            # assert isinstance(
-            #     feed, CryptoFeed), 'DataFeed must be of type CryptoFeed'
-            data = self.crypto_client.get_crypto_bars(CryptoBarsRequest(
-                symbol_or_symbols=asset['symbol'],
-                timeframe=timeframe,
-                start=start,
-                end=end
-            )).df
-        else:
-            assert False, 'Get History: IAsset type must be of type stock or crypto'
-        # format Data Frame open, high, low, close, volume
-        data = data[['open', 'high', 'low', 'close', 'volume']]  # 'timestamp'
-        # print(data)
-        return data
+            else:
+                assert False, 'Get History: IAsset type must be of type stock or crypto'
+
+            if data.empty:
+                return None
+            # format Data Frame open, high, low, close, volume
+            # 'timestamp'
+            data = data[['open', 'high', 'low', 'close', 'volume']]
+            # print(data)
+            return data
+        except:
+            return None
 
     def get_ticker_info(self, symbol):
         try:
+            if symbol in self.TICKER_INFO:
+                return self.TICKER_INFO[symbol]
+
             tickerInfo = self.trading_client.get_asset(symbol)
 
             assert tickerInfo, f'Asset {symbol} not found'
@@ -106,9 +119,10 @@ class AlpacaBroker(BaseBroker):
                 marginable=tickerInfo.marginable,
                 shortable=tickerInfo.shortable,
                 fractionable=tickerInfo.fractionable,
-                min_order_size=tickerInfo.min_order_size,
+                min_order_size=tickerInfo.min_order_size if tickerInfo.min_order_size else 0.1,
                 min_price_increment=tickerInfo.price_increment if tickerInfo.price_increment else 0.01,
             )
+            self.TICKER_INFO[symbol] = tickerAsset
             return tickerAsset
         except alpaca.common.exceptions.APIError as e:
             print("Error: No asset for", symbol)
@@ -148,9 +162,11 @@ class AlpacaBroker(BaseBroker):
 
     def get_orders(self):
         res = self.trading_client.get_orders()
-        orders: List[IOrder] = []
+        orders: dict[str, IOrder] = {}
+        if not res:
+            return None
         for order in res:
-            orders.append(self.format_order(order))
+            orders[order.id] = self.format_order(order)
         return orders
 
     def get_order(self, order_id):
@@ -158,16 +174,49 @@ class AlpacaBroker(BaseBroker):
 
     def format_order(self, order: Order) -> IOrder:
         side = None
-        match order.side.value:
-            case "buy":
-                side = "long"
-            case "sell":
-                side = "short"
+        match order.side:
+            case OrderSide.BUY:
+                side = IOrderSide.BUY
+            case OrderSide.SELL:
+                side = IOrderSide.SELL
             case _:
                 side = "unknown"
         #  TODO: add support for order legs
+        legs = IOrderLegs()
+        if order.legs:
+            for leg in order.legs:
+                if leg.order_type == OrderType.LIMIT:
+                    legs['take_profit'] = IOrderLeg(
+                        order_id=leg.id,
+                        limit_price=float(leg.limit_price),
+                        filled_price=float(
+                            leg.filled_avg_price) if leg.filled_avg_price else None,
+                        type=IOrderType.LIMIT,
+                        status=leg.status.value,
+                        order_class=leg.order_class.value,
+                        created_at=leg.created_at,
+                        updated_at=leg.updated_at,
+                        submitted_at=leg.submitted_at,
+                        filled_at=leg.filled_at
+                    )
+                elif leg.order_type == OrderType.STOP:
+                    legs['stop_loss'] = IOrderLeg(
+                        order_id=leg.id,
+                        limit_price=float(leg.stop_price),
+                        filled_price=float(
+                            leg.filled_avg_price) if leg.filled_avg_price else None,
+                        type=IOrderType.STOP,
+                        status=leg.status.value,
+                        order_class=leg.order_class.value,
+                        created_at=leg.created_at,
+                        updated_at=leg.updated_at,
+                        submitted_at=leg.submitted_at,
+                        filled_at=leg.filled_at
+                    )
+                else:
+                    continue
 
-        return IOrder(
+        order = IOrder(
             order_id=order.id,
             asset=self.get_ticker_info(order.symbol),
             filled_price=float(
@@ -186,9 +235,10 @@ class AlpacaBroker(BaseBroker):
             updated_at=order.updated_at,
             submitted_at=order.submitted_at,
             filled_at=order.filled_at,
-            # legs=order.legs,
-
+            legs=legs
         )
+
+        return order
 
     def get_latest_quote(self, asset: IAsset):
         if asset['asset_type'] == 'crypto':
@@ -196,7 +246,7 @@ class AlpacaBroker(BaseBroker):
                 CryptoLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
         elif asset['asset_type'] == 'stock':
             quote = self.stock_client.get_stock_latest_quote(
-                StockLatestQuoteRequest(symbol_or_symbols=asset['symbol']))
+                StockLatestQuoteRequest(symbol_or_symbols=asset['symbol'], feed=self.DataFeed))
         return self.format_on_quote(quote[asset['symbol']])
 
     def execute_insight_order(self, insight: Insight, asset: IAsset) -> IOrder | None:
@@ -252,6 +302,8 @@ class AlpacaBroker(BaseBroker):
                     req = MarketOrderRequest(**orderRequest)
                 case IOrderType.LIMIT:
                     req = LimitOrderRequest(**orderRequest)
+                case IOrderType.STOP:
+                    req = StopLimitOrderRequest(**orderRequest)
                 case _:
                     print(
                         f"ALPACA: Order Type not supported {insight.type} ")
@@ -381,7 +433,7 @@ class AlpacaBroker(BaseBroker):
                 # })
 
                 raise error
-            raise f"ALPACA: Error submitting order {insight}"
+            raise e
 
         return None
 
@@ -402,7 +454,7 @@ class AlpacaBroker(BaseBroker):
             print("Error closing position", e)
             raise e
 
-    def close_order(self, order_id):
+    def cancel_order(self, order_id):
         try:
             self.trading_client.cancel_order_by_id(order_id)
             return order_id
@@ -436,15 +488,30 @@ class AlpacaBroker(BaseBroker):
         loop = asyncio.new_event_loop()
 
         for assetStream in assetStreams:
+
             if assetStream['type'] == 'bar':
+                async def alpaca_stream_callback(data):
+                    """ Alpaca only generates one bar at a time no matter the timeframe so we need to send the to each feature
+                        base_strategy should handle the rest
+                    """
+                    bardata = self.format_on_bar(data)
+                    timestamp = bardata.index[0][1]
+                    for asset in assetStreams:
+                        if asset['symbol'] == assetStream['symbol'] and asset['time_frame'].is_time_increment(timestamp):
+                            await callback(bardata, timeframe=asset['time_frame'])
+
+                if assetStream.get('feature') != None:
+                    # We dont want to add multiple streams for the same asset
+                    
+                    continue
                 if assetStream['asset_type'] == 'stock':
                     StockStreamCount += 1
                     self.stock_stream_client.subscribe_bars(
-                        callback, assetStream.get('symbol'))
+                        alpaca_stream_callback, assetStream.get('symbol'))
                 elif assetStream['asset_type'] == 'crypto':
                     CryptoStreamCount += 1
                     self.crypto_stream_client.subscribe_bars(
-                        callback, assetStream.get('symbol'))
+                        alpaca_stream_callback, assetStream.get('symbol'))
             else:
                 raise NotImplementedError(
                     f"Stream type {assetStream['type']} not supported")
@@ -489,11 +556,10 @@ class AlpacaBroker(BaseBroker):
                     if not closeCryptoBarStream:
                         closeCryptoBarStream = True
 
-        if closeStockBarStream:    
+        if closeStockBarStream:
             self.stock_stream_client.close()
         if closeCryptoBarStream:
-           self.crypto_stream_client.stop()
-
+            self.crypto_stream_client.stop()
 
     def format_on_trade_update(self, trade: TradeUpdate):
         event: ITradeUpdateEvent = None
@@ -506,6 +572,8 @@ class AlpacaBroker(BaseBroker):
                 event = ITradeUpdateEvent.CANCELED
             case "rejected":
                 event = ITradeUpdateEvent.REJECTED
+            case "pending_new":
+                event = ITradeUpdateEvent.PENDING_NEW
             case "new":
                 event = ITradeUpdateEvent.NEW
             case "expired":
@@ -532,12 +600,12 @@ class AlpacaBroker(BaseBroker):
     def format_on_quote(self, quote: Quote):
         quote
         data = IQuote(
-            symbol = quote.symbol,
-            ask_price = quote.ask_price,
-            ask_size = quote.ask_size,
-            bid_price =quote.bid_price,
-            bid_size = quote.bid_size,
-            volume = (quote.bid_size + quote.ask_size),
-            timestamp = quote.timestamp
+            symbol=quote.symbol,
+            ask=quote.ask_price,
+            ask_size=quote.ask_size,
+            bid=quote.bid_price,
+            bid_size=quote.bid_size,
+            volume=(quote.bid_size + quote.ask_size),
+            timestamp=quote.timestamp
         )
         return data

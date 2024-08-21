@@ -12,20 +12,21 @@ class Strategy(BaseStrategy):
         super().__init__(broker, **kwargs)
 
     @override
-    def start():
+    def start(self):
         super().start()
-    
+
     @override
     def init(self, asset):
-        super().init()
+        super().init(asset)
 
     @override
-    def universe(self):
+    def universe(self) -> set[str]:
         super().universe()
+        return {"AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"}
 
     @override
-    async def on_bar(self, bar):
-        super().on_bar(bar)
+    def on_bar(self, symbol, bar):
+        super().on_bar(symbol, bar)
 
     @override
     def teardown(self):

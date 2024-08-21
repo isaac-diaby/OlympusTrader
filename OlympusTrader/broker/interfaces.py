@@ -1,17 +1,44 @@
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import List, Literal, Optional, TypedDict
+from typing import List, Literal, NotRequired, Optional, TypedDict, Union
+from uuid import UUID
+
+@dataclass
+class ISupportedBrokerFeatures:
+    """Supported Broker Features."""
+    barDataStreaming: bool = True
+    tradeEventStreaming: bool = True
+    featuredBarDataStreaming: bool = True
+    submitOrder: bool = True
+    maxOrderValue: float = None
+    cancelOrder: bool = True
+    closePosition: bool = True
+    getAccount: bool = True
+    getPosition: bool = True
+    getPositions: bool = True
+    getHistory: bool = True
+    getQuote: bool = True
+    getTickerInfo: bool = True
+    leverage: bool = True
+    shorting: bool = True
+    margin: bool = True
+    bracketOrders: bool = True
+    trailingStop: bool = True
 
 
 class ISupportedBrokers(Enum):
+    """Supported Brokers."""
     ALPACA = 'AlpacaBroker'
     PAPER = 'PapeVrokerr'
     BASE = 'BaseBroker'
 
 
 class ITradeUpdateEvent(Enum):
+    """Trade Update Event."""
     ACCEPTED = 'accepted'
     NEW = 'new'
+    PENDING_NEW = 'pending_new'
     PARTIAL_FILLED = 'partial_filled'
     FILLED = 'fill'
     CANCELED = 'canceled'
@@ -42,6 +69,7 @@ class IOrderClass(Enum):
 
 
 class IOrderType(Enum):
+    """Order Type."""
     MARKET = 'Market'
     LIMIT = 'Limit'
     STOP = 'Stop'
@@ -50,6 +78,7 @@ class IOrderType(Enum):
 
 
 class IOrderSide(Enum):
+    """Order Side."""
     BUY = 'Long'
     SELL = 'Short'
 
@@ -68,7 +97,7 @@ class IOrderRequest(TypedDict):
 
 
 class IAsset(TypedDict):
-    _id: str
+    id: str
     name: str
     asset_type: Literal['stock', 'crypto']
     exchange: str
@@ -80,7 +109,7 @@ class IAsset(TypedDict):
     fractionable: bool
     min_order_size: float
     min_price_increment: float
-    price_base: int = None
+    price_base: NotRequired[int]
 
 class IAccount(TypedDict):
     account_id: str
@@ -105,6 +134,13 @@ class IOrderLeg(TypedDict):
     order_id: str
     limit_price: float
     filled_price: Optional[float]
+    type: IOrderType
+    status: ITradeUpdateEvent
+    order_class: IOrderClass
+    created_at: datetime
+    updated_at: datetime
+    submitted_at: datetime
+    filled_at: Optional[datetime]
 
 class IOrderLegs(TypedDict):
     take_profit: Optional[IOrderLeg]
@@ -112,7 +148,7 @@ class IOrderLegs(TypedDict):
     trailing_stop: Optional[IOrderLeg]
 
 class IOrder(TypedDict):
-    order_id: str
+    order_id: Union[str, UUID]
     asset: IAsset
     limit_price: float
     filled_price: Optional[float]
@@ -151,4 +187,4 @@ class ITradeUpdate():
         self.order = order
 
     def __str__(self):
-        return f'{self.event} - {self.order["symbol"]} - {self.order["qty"]} - {self.order["side"]} - {self.order["updated_at"]}'
+        return f'{self.event} - {self.order["asset"]["symbol"]} - {self.order["qty"]} - {self.order["side"]} - {self.order["updated_at"]}'

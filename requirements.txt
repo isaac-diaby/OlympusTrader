@@ -1,4 +1,4 @@
-# dependencies
+
 alpaca-py
 yfinance
 
@@ -9,10 +9,11 @@ scipy
 
 streamlit
 
-numpy==1.26.4 # Required for pandas_ta
+numpy==1.26.4
 pandas
+quantstats
 
-# Dev-dependencies
 python-dotenv
 nest_asyncio
+tqdm
 tables

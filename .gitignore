@@ -1,7 +1,9 @@
 bin/
+dist/
 include/**/*
 lib/**/*
 share/**/*
+**/__pycache__/**/*
 
 research/**/*
 tests/**/*
@@ -12,4 +14,7 @@ v0.1/**/*
 **/stack.env
 **/.env
 **/.DS_Store
+.zed/**/*
+backtests/*
+strategy/*
 ```

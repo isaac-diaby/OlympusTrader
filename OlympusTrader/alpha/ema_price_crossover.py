@@ -20,12 +20,12 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
     atrColumn: str
     emaColumn: str
 
-    def __init__(self, strategy, atrPeriod=14, emaPeriod=14, baseConfidenceModifierField=None):
+    def __init__(self, strategy, atrPeriod: int = 14, emaPeriod: int = 14, baseConfidenceModifierField = None):
         super().__init__(strategy, "EMA_PRICE_CROSSOVER", "0.1", baseConfidenceModifierField)
         # Check if atrPeriod and emaPeriod are above 0
         if atrPeriod <= 0 or emaPeriod <= 0:
             raise ValueError("ATR Period and EMA Period must be positive integers")
-        
+
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
             {"kind": 'ema', "length": emaPeriod}
@@ -68,17 +68,17 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
             return self.returnResults(success=False, message=str(e))
 
     def is_long_signal(self, latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA):
-        return (latestBarIEMA < latestBar['close'] and previousBarIEMA > previousBar['high'] and 
-                np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and 
+        return (latestBarIEMA < latestBar['close'] and previousBarIEMA > previousBar['high'] and
+                # np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and
                 np.abs(latestBar['close'] - latestBarIEMA) < latestIATR)
 
     def is_short_signal(self, latestBar, previousBar, latestIATR, latestBarIEMA, previousBarIATR, previousBarIEMA, symbol):
-        return (self.STRATEGY.assets[symbol]['shortable'] and latestBarIEMA > latestBar['close'] and 
-                previousBarIEMA < previousBar['low'] and 
-                np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and 
+        return (self.STRATEGY.assets[symbol]['shortable'] and latestBarIEMA > latestBar['close'] and
+                previousBarIEMA < previousBar['low'] and
+                # np.abs(previousBar['open'] - previousBar['close']) > previousBarIATR and
                 np.abs(latestBarIEMA - latestBar['close']) < latestIATR)
 
-    def create_insight(self, order_side, symbol, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence):
+    def create_insight(self, order_side: IOrderSide, symbol: str, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence: float):
         if order_side == IOrderSide.BUY:
             TP = self.STRATEGY.tools.dynamic_round(latestBar['high']+(latestIATR*3.5), symbol)
             SL = self.STRATEGY.tools.dynamic_round(max(previousBar['low']-(.5*latestIATR), latestBarIEMA-latestIATR*1.5), symbol)
@@ -91,4 +91,3 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
         TTLF = self.STRATEGY.tools.calculateTimeToLive(TP, ENTRY, latestIATR)
 
         return self.returnResults(Insight(order_side, symbol, self.NAME, self.STRATEGY.resolution, None, ENTRY, [TP], SL, baseConfidence, [StrategyDependantConfirmation.NONE], TTLUF, TTLF))
-    
