@@ -23,8 +23,11 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
     maximum_costbasis: float
     minimum_costbasis: float
     def __init__(self, strategy, maximum_costbasis: float = 200_000.0, minimum_costbasis: float = 1_000.0):
-        super().__init__(strategy, InsightState.NEW, "1.0")
-        self.maximum_costbasis = maximum_costbasis
+        super().__init__(strategy, InsightState.NEW, "1.1")
+        if self.STRATEGY.broker.supportedFeatures.maxOrderValue is not None:
+            self.maximum_costbasis = min(self.STRATEGY.broker.supportedFeatures.maxOrderValue, maximum_costbasis)
+        else:
+            self.maximum_costbasis = maximum_costbasis
         self.minimum_costbasis = minimum_costbasis
 
         assert self.maximum_costbasis > self.minimum_costbasis, "Maximum cost basis must be greater than or equal to the minimum cost basis."
