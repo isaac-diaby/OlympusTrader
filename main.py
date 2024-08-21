@@ -172,5 +172,10 @@ if __name__ == "__main__":
         1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
     # strategy = v2_childInsight(broker, variables={}, resolution=ITimeFrame(
     #     1, ITimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.LIVE)
+    strategy.add_events('bar')
+    # strategy.add_events('bar', time_frame=ITimeFrame(1, ITimeFrameUnit.Minute))
+    # strategy.add_events('bar', time_frame=ITimeFrame(2, ITimeFrameUnit.Minute))
+    # strategy.add_events('bar', time_frame=ITimeFrame(15, ITimeFrameUnit.Minute))
+
 
     strategy.run()

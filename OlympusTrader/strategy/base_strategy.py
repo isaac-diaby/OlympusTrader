@@ -50,6 +50,8 @@ class BaseStrategy(abc.ABC):
     WITHUI: bool = True
     SSM: Optional[SharedStrategyManager] = None
     # DASHBOARD: Dashboard = None
+    tradeOnFeatureEvents: bool = False
+
 
     TOOLS: Optional[ITradingTools] = None
 
@@ -90,7 +92,7 @@ class BaseStrategy(abc.ABC):
 
     @abc.abstractmethod
     def __init__(self, broker: BaseBroker, variables: AttributeDict = AttributeDict({}), resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute), verbose: int = 0, ui: bool = True, mode:
-                 IStrategyMode = IStrategyMode.LIVE) -> None:
+                 IStrategyMode = IStrategyMode.LIVE, tradeOnFeatureEvents: bool = False) -> None:
         """Abstract class for strategy implementations."""
         self.NAME = self.__class__.__name__
         self.MODE = mode
@@ -102,7 +104,7 @@ class BaseStrategy(abc.ABC):
         assert ITimeFrame.validate_timeframe(
             resolution.amount, resolution.unit), 'Resolution must be a valid timeframe'
         self.RESOLUTION = resolution
-
+        self.tradeOnFeatureEvents = tradeOnFeatureEvents
         # set the UI shared memory sever
         if self.WITHUI:
             self._startUISharedMemory()
@@ -593,8 +595,8 @@ class BaseStrategy(abc.ABC):
     def add_events(self, eventType: Literal['trade', 'quote', 'bar', 'news'] = 'bar', **kwargs):
         """ Adds bar streams to the strategy."""
         match eventType:
-            case 'bar' | 'trade' | 'quote' | 'news':
-                options = {
+            case 'bar':
+                options: IMarketDataStream = {
                 }
 
                 if self.MODE == IStrategyMode.BACKTEST:
@@ -612,9 +614,26 @@ class BaseStrategy(abc.ABC):
                     options['stored'] = kwargs.get('stored', False)
                     options['stored_path'] = kwargs.get('stored_path', "data")
 
+                if kwargs.get('time_frame'):
+                    options['time_frame'] = kwargs.get('time_frame')
+                    if options['time_frame'] != self.RESOLUTION and not self.broker.supportedFeatures.featuredBarDataStreaming:
+                        print("Feature Bar Data Streaming is not supported by the broker")
+                        return
+                else:
+                    options['time_frame'] = self.RESOLUTION
+                    options['feature'] = None
+                
+
                 for assetInfo in self.UNIVERSE.values():
-                    self.STREAMS.append(IMarketDataStream(symbol=assetInfo.get('symbol'), exchange=assetInfo.get(
-                        'exchange'), time_frame=self.RESOLUTION, asset_type=assetInfo.get('asset_type'), type=eventType, **options))
+                    assetDataStreamInfo = options.copy()
+                    assetDataStreamInfo['symbol'] = assetInfo.get('symbol')
+                    assetDataStreamInfo['exchange'] = assetInfo.get('exchange')
+                    assetDataStreamInfo['asset_type'] = assetInfo.get('asset_type')
+                    if options['time_frame'] != self.RESOLUTION:
+                        assetDataStreamInfo['feature'] = f"{assetDataStreamInfo['symbol']}.{assetDataStreamInfo['time_frame']}"
+                        self.HISTORY[assetDataStreamInfo['feature']] = pd.DataFrame()
+                    assetDataStreamInfo['type'] = eventType
+                    self.STREAMS.append(IMarketDataStream(**assetDataStreamInfo))
             case _:
                 print(f"{eventType} Event not supported")
 
@@ -666,18 +685,20 @@ class BaseStrategy(abc.ABC):
 
         self.INSIGHTS[insight.INSIGHT_ID] = insight
 
-    async def _on_bar(self, bar: Any):
+    async def _on_bar(self, bar: Any, timeframe: ITimeFrame):
         """ format the bar stream to the strategy. """
         try:
             # set_index(['symbol', 'timestamp']
-
-            if self.MODE != IStrategyMode.BACKTEST and self.BROKER.NAME != ISupportedBrokers.PAPER:
+            data: pd.DataFrame = None
+            if (self.MODE != IStrategyMode.BACKTEST and self.BROKER.NAME != ISupportedBrokers.PAPER) and not isinstance(bar, pd.DataFrame):
                 data = self.BROKER.format_on_bar(bar)
             else:
-                if bar.empty:
-                    print('Bar is None')
-                    return
                 data = bar
+            
+            if data.empty:
+                print('Bar is None')
+                return
+            data = bar
 
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
@@ -692,12 +713,29 @@ class BaseStrategy(abc.ABC):
             if not data.empty:
                 symbol = data.index[0][0]
                 timestamp = data.index[0][1]
-                # Check if the bar is part of the resolution of the strategy
-                if self.resolution.is_time_increment(timestamp):
+                if symbol == None:
+                    if self.VERBOSE > 0:
+                        print('Symbol is None - ignoring BaseStrategy_on_bar')
+                    return
+                # Check if the bar is part of the resolution of the strategy or if it is a feature event
+                isFeature = False
+                for stream in self.STREAMS:
+                    if stream["type"] == "bar" and stream['symbol'] == symbol and stream['time_frame'].value != self.resolution.value:
+                        if  stream["time_frame"].value == timeframe.value and stream["time_frame"].is_time_increment(timestamp):
+                            isFeature = True
+                            # Update the feature symbol name
+                            symbol = stream['feature']
+                            if self.VERBOSE > 0:
+                                print(f'Feature Bar is part of the resolution of the strategy: {symbol} - {timestamp} - {datetime.datetime.now()}')
+                            break
+                
+                if (self.resolution.value == timeframe.value and self.resolution.is_time_increment(timestamp) ) or isFeature:
                     if self.VERBOSE > 0:
                         print(f'New Bar is part of the resolution of the strategy: {
                               symbol} - {timestamp} - {datetime.datetime.now()}')
                         start_time = timeit.default_timer()
+
+                    # TODO: check if the broker sends out multiple bar data when streaming bars with the same symbol
 
                     self.HISTORY[symbol] = pd.concat(
                         [self.HISTORY[symbol], data])
@@ -716,8 +754,9 @@ class BaseStrategy(abc.ABC):
 
                     # Call the on_bar function and process the bar
                     try:
-                        self.on_bar(symbol, data)
-                        self._generateInsights(symbol)
+                        if (isFeature == False) or (isFeature == True and self.tradeOnFeatureEvents):
+                            self.on_bar(symbol, data)
+                            self._generateInsights(symbol)
                     except Exception as e:
                         print('Error in on_bar:', e)
 
@@ -725,7 +764,7 @@ class BaseStrategy(abc.ABC):
                         print('Time taken on_bar:', symbol,
                               timeit.default_timer() - start_time)
                 else:
-                    # print('Bar is not part of the resolution of the strategy', data)
+                    """ Bar is not part of the resolution of the strategy  nor is it a feature event"""
                     pass
                     # Will need to take the the 1 min bar and convert it to the resolution of the strategy
             else:

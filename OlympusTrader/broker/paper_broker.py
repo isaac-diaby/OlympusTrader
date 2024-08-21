@@ -18,7 +18,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from .base_broker import BaseBroker
-from .interfaces import IQuote, ITimeInForce, ISupportedBrokers, IOrderClass, IOrderRequest, IOrderSide, IOrderType, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
+from .interfaces import IQuote, ISupportedBrokerFeatures, ITimeInForce, ISupportedBrokers, IOrderClass, IOrderRequest, IOrderSide, IOrderType, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
 from ..insight.insight import Insight
 from .interfaces import IAccount, IOrder, IPosition, IAsset, IOrderLegs, IOrderLeg
 from ..strategy.interfaces import IMarketDataStream, IStrategyMode
@@ -84,6 +84,9 @@ class PaperBroker(BaseBroker):
             self.CurrentTime = datetime.datetime.now(
             ) - datetime.timedelta(minutes=self.FeedDelay)
 
+        self.supportedFeatures = ISupportedBrokerFeatures(
+            barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
+
     def get_ticker_info(self, symbol: str):
         if symbol in self.TICKER_INFO:
             return self.TICKER_INFO[symbol]
@@ -125,7 +128,8 @@ class PaperBroker(BaseBroker):
 
         if self.DataFeed == 'yf':
             symbol = asset['symbol'].replace('/', '-')
-            formatTF = f'1{resolution.unit.value[0].lower()}'
+            formatTF = f'{resolution.amount_value}{
+                resolution.unit_value[0].lower()}'
             if self.MODE == IStrategyMode.BACKTEST:
                 delta: datetime.timedelta = start - \
                     self.get_current_time if shouldDelta else datetime.timedelta()
@@ -321,11 +325,11 @@ class PaperBroker(BaseBroker):
                 """
                 autopass = False
                 if currentBar.high == currentBar.low:
-                    pricePadding = 0.001 # 0.1%
+                    pricePadding = 0.001  #  0.1%
                     if ((currentBar.high*(1+pricePadding)) >= order['limit_price'] >= (currentBar.low*(1-pricePadding))):
                         autopass = True
 
-                # we need to check if the limit price is within the high and low of the current bar 
+                # we need to check if the limit price is within the high and low of the current bar
                 if (order['limit_price'] >= currentBar.low and order['limit_price'] <= currentBar.high) or autopass:
                     order['filled_price'] = order['limit_price']
                     order['filled_qty'] = order['qty']
@@ -341,7 +345,6 @@ class PaperBroker(BaseBroker):
         for i, order in enumerate(list(self.ACTIVE_ORDERS)):
             # update the position information as the position is filled and keep track of all  positions PNL
             self._update_position(order)
-
 
             # check if the order has take profit or stop loss
             if order['legs']:
@@ -908,35 +911,39 @@ class PaperBroker(BaseBroker):
         return trade.order, trade.event
 
     def _applyTA(self, asset: IMarketDataStream):
+        symbol = asset['symbol'] if asset.get(
+            'feature') == None else asset['feature']
         if not asset.get('applyTA') or not asset.get('TA'):
             return
-        print("Applying TA for: ", asset['symbol'])
-        self.HISTORICAL_DATA[asset['symbol']]['bar'].ta.strategy(asset['TA'])
+        print("Applying TA for: ", symbol)
+        self.HISTORICAL_DATA[symbol]['bar'].ta.strategy(asset['TA'])
 
     def _load_historical_bar_data(self, asset: IMarketDataStream):
         try:
             bar_data_path = None
+            symbol = asset['symbol'] if asset.get(
+                'feature') == None else asset['feature']
             if asset.get('stored') and asset.get('stored_path'):
                 bar_data_path = asset['stored_path'] + \
-                    f'/bar/{asset["symbol"]
-                            }_{asset["time_frame"].unit.value}_{self.START_DATE}-{self.END_DATE}.h5'
+                    f'/bar/{asset['symbol']}_{asset["time_frame"]
+                                              }_{self.START_DATE}-{self.END_DATE}.h5'
 
             if asset.get('stored'):
                 if asset['stored_path']:
                     if os.path.exists(bar_data_path):
                         print("Loading data from ", bar_data_path)
-                        self.HISTORICAL_DATA[asset['symbol']
-                                             ]['bar'] = pd.read_hdf(bar_data_path)
+                        self.HISTORICAL_DATA[symbol]['bar'] = pd.read_hdf(
+                            bar_data_path)
                         # check if the data is empty
-                        if self.HISTORICAL_DATA[asset['symbol']]['bar'].empty:
+                        if self.HISTORICAL_DATA[symbol]['bar'].empty:
                             raise Exception({
                                 "code": "no_data",
-                                "data": {"symbol": asset['symbol']}
+                                "data": {"symbol": symbol}
                             })
                         # apply the TA strategy
                         self._applyTA(asset)
                         print(
-                            self.HISTORICAL_DATA[asset['symbol']]['bar'].describe())
+                            self.HISTORICAL_DATA[symbol]['bar'].describe())
                         return True
                     else:
                         raise BaseException({
@@ -955,31 +962,31 @@ class PaperBroker(BaseBroker):
 
         if self.DataFeed == 'yf':
             # Populate the HISTORICAL_DATA with the bar data
-            self.HISTORICAL_DATA[asset['symbol']]['bar'] = self.get_history(
+            self.HISTORICAL_DATA[symbol]['bar'] = self.get_history(
                 asset, self.START_DATE, self.END_DATE, asset['time_frame'], False)
 
             # check if the data is empty
-            if self.HISTORICAL_DATA[asset['symbol']]['bar'].empty:
+            if self.HISTORICAL_DATA[symbol]['bar'].empty:
                 raise Exception({
                     "code": "no_data",
-                    "data": {"symbol": asset['symbol']}
+                    "data": {"symbol": symbol}
                 })
             # apply the TA strategy
             self._applyTA(asset)
 
-            print("Loaded data for ", asset['symbol'])
-            print(self.HISTORICAL_DATA[asset['symbol']]['bar'].describe())
+            print("Loaded data for ", symbol)
+            print(self.HISTORICAL_DATA[symbol]['bar'].describe())
             # if a stored path is provided save the data to the path
             if asset.get('stored_path'):
                 # Create the directory if it does not exist
                 Path(asset['stored_path']+'/bar').mkdir(
                     parents=True, exist_ok=True)
                 # Save the data to the path
-                print(self.HISTORICAL_DATA[asset['symbol']]['bar'].head(10))
+                print(self.HISTORICAL_DATA[symbol]['bar'].head(10))
 
                 # Save the data to the path in hdf5 format
                 print("Saving data to ", bar_data_path)
-                self.HISTORICAL_DATA[asset['symbol']]['bar'].to_hdf(
+                self.HISTORICAL_DATA[symbol]['bar'].to_hdf(
                     bar_data_path, mode='a', key=asset["exchange"], index=True, format='table')
 
             return True
@@ -992,31 +999,44 @@ class PaperBroker(BaseBroker):
         super().streamMarketData(callback, assetStreams)
         loop = asyncio.new_event_loop()
         self.RUNNING_MARKET_STREAM = True
-        TF = assetStreams[0]['time_frame']  # strategy time frame
+        TF = None  # strategy time frame
+        hasFeature = False
 
         if self.MODE == IStrategyMode.BACKTEST:
             # Load Market data from yfinance for all assets
             self.HISTORICAL_DATA = {}
 
             for asset in tqdm(assetStreams, desc="Loading Historical Data"):
-                self.HISTORICAL_DATA[asset['symbol']] = {}
+                symbol = asset['symbol'] if asset.get(
+                    'feature') == None else asset['feature']
                 if asset['type'] == 'bar':
+                    self.HISTORICAL_DATA[symbol] = {}
                     # populate HISTORICAL_DATA
                     try:
                         if self._load_historical_bar_data(asset):
                             if self.MODE == IStrategyMode.BACKTEST:
-                                # Create signals dataframe
-                                size = self.HISTORICAL_DATA[asset['symbol']
-                                                            ]['bar'].shape[0]
-                                self.HISTORICAL_DATA[asset['symbol']]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
-                                    size), "short_exits": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
-                                # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
-                                self.HISTORICAL_DATA[asset['symbol']]['signals'][[
-                                    'entries', 'exits', 'short_entries', 'short_exits']] = False
-                                self.HISTORICAL_DATA[asset['symbol']]['signals'][[
-                                    'qty']] = 0
-                                print(
-                                    self.HISTORICAL_DATA[asset['symbol']]['signals'])
+
+                                if asset.get('feature') == None:
+                                    # Create signals dataframe
+                                    size = self.HISTORICAL_DATA[symbol
+                                                                ]['bar'].shape[0]
+                                    self.HISTORICAL_DATA[symbol]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
+                                        size), "short_exits": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
+                                    # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
+                                    self.HISTORICAL_DATA[symbol]['signals'][[
+                                        'entries', 'exits', 'short_entries', 'short_exits']] = False
+                                    self.HISTORICAL_DATA[symbol]['signals'][[
+                                        'qty']] = 0
+                                    if not TF:
+                                        # set the Main time frame to the first asset time frame
+                                        TF = asset['time_frame']
+                                else:
+                                    # change the symbol to the feature symbol in the multi index
+                                    self.HISTORICAL_DATA[symbol]['bar'].rename(
+                                        index={asset['symbol']: symbol}, inplace=True)
+                                    if hasFeature == False:
+                                        # signal for the backtest to use dynamic time resoltion
+                                        hasFeature = True
 
                     except Exception as e:
                         print("Removing Bar Stream",
@@ -1033,20 +1053,41 @@ class PaperBroker(BaseBroker):
             while self.get_current_time <= self.END_DATE and self.RUNNING_MARKET_STREAM and len(assetStreams) > 0:
                 try:
                     print("\nstreaming data for:", self.get_current_time, "\n")
-
                     for asset in assetStreams:
+                        isFeature = False
                         if asset['type'] == 'bar':
-                            try:
-                                # Get the current bar data with the index
-                                barData = self._get_current_bar(
-                                    asset['symbol'])
-                                if type(barData) == NoneType:
-                                    continue
-                                elif barData.empty:
-                                    continue
-                                else:
+                            if asset.get('feature') == None:
+                                symbol = asset['symbol']
+                            else:
+                                symbol = asset['feature']
+                                isFeature = True
 
-                                    loop.run_until_complete(callback(barData))
+                            try:
+                                if isFeature:
+                                    if self.PreviousTime == None:
+                                        barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') >= self.get_current_time.replace(
+                                            tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
+                                    else:
+                                        barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') > self.PreviousTime.replace(
+                                            tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
+                                    if type(barDatas) == NoneType:
+                                        continue
+                                    elif barDatas.empty:
+                                        continue
+                                    else:
+                                        for index in barDatas.index:
+                                            loop.run_until_complete(
+                                                callback(barDatas.loc[[index]], timeframe=asset['time_frame'], isFeature=True))
+                                else:
+                                    # Get the current bar data with the index
+                                    barData = self._get_current_bar(symbol)
+                                    if type(barData) == NoneType:
+                                        continue
+                                    elif barData.empty:
+                                        continue
+                                    else:
+                                        loop.run_until_complete(
+                                            callback(barData, timeframe=asset['time_frame'], isFeature=False))
 
                             except BaseException as e:
                                 print("Error: ", e)
@@ -1092,18 +1133,40 @@ class PaperBroker(BaseBroker):
 
             while self.RUNNING_MARKET_STREAM:
                 for asset in assetStreams:
+                    isFeature = False
+                    if asset.get('feature') == None:
+                        symbol = asset['symbol']
+                    else:
+                        symbol = asset['feature']
+                        isFeature = True
                     if asset['type'] == 'bar':
                         try:
-                            # Get the current bar data with the index
-                            barData = self._get_current_bar(
-                                asset['symbol'], asset['time_frame'])
-                            if type(barData) == NoneType:
-                                continue
-                            elif barData.empty:
-                                continue
+                            if isFeature:
+                                if self.PreviousTime == None:
+                                    barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') >= self.get_current_time.replace(
+                                        tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
+                                else:
+                                    barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') > self.PreviousTime.replace(
+                                        tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
+                                if type(barDatas) == NoneType:
+                                    continue
+                                elif barDatas.empty:
+                                    continue
+                                else:
+                                    for index in barDatas.index:
+                                        loop.run_until_complete(
+                                            callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
                             else:
-                                loop.run_until_complete(callback(barData))
-                                continue
+                                # Get the current bar data with the index
+                                barData = self._get_current_bar(
+                                    symbol, asset['time_frame'])
+                                if type(barData) == NoneType:
+                                    continue
+                                elif barData.empty:
+                                    continue
+                                else:
+                                    loop.run_until_complete(callback(barData, timeframe=asset['time_frame']))
+                                    continue
 
                         except BaseException as e:
                             print("Error: ", e)
@@ -1293,18 +1356,18 @@ class PaperBroker(BaseBroker):
         def calc_expectancy_ratio(trades: vbt.EntryTrades):
             if len(trades) == 0:
                 return np.nan
-            
+
             returns = trades.returns.values
             winners = returns[returns > 0]
             losers = returns[returns <= 0]
-            
+
             pct_winners = len(winners) / len(returns)
             pct_losers = len(losers) / len(returns)
-            
+
             avg_win = np.mean(winners) if len(winners) > 0 else 0
             avg_loss = abs(np.mean(losers)) if len(losers) > 0 else 1
             R = avg_win / avg_loss
-            
+
             E = pct_winners * R - pct_losers
             return E
 
@@ -1319,6 +1382,8 @@ class PaperBroker(BaseBroker):
 
         if self.MODE == IStrategyMode.BACKTEST:
             for asset in tqdm(self.HISTORICAL_DATA.keys(), desc="Running VBT Backtest"):
+                if self.HISTORICAL_DATA[asset].get('signals') == None:
+                    continue
                 try:
                     vbtParams = {
                         "init_cash": self.STARTING_CASH,
@@ -1337,7 +1402,8 @@ class PaperBroker(BaseBroker):
                     # run the backtest
                     print("Running backtest for with Vector BT for:", asset)
                     results[asset] = vbt.Portfolio.from_signals(**vbtParams)
-                    print(results[asset].stats(metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
+                    print(results[asset].stats(
+                        metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
                 except Exception as e:
                     print("Failed to run backtest for ", asset, e)
                     continue

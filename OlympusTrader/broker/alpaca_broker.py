@@ -22,7 +22,7 @@ from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
-from .interfaces import ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote, IOrderLegs, IOrderLeg
+from .interfaces import ISupportedBrokerFeatures, ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote, IOrderLegs, IOrderLeg
 from ..utils.timeframe import ITimeFrame as tf
 from ..insight.insight import Insight
 
@@ -55,6 +55,9 @@ class AlpacaBroker(BaseBroker):
             os.getenv('ALPACA_API_KEY'),  os.getenv('ALPACA_SECRET_KEY'))
         self.crypto_stream_client = CryptoDataStream(
             os.getenv('ALPACA_API_KEY'),  os.getenv('ALPACA_SECRET_KEY'), feed=CryptoFeed.US, url_override=BaseURL.MARKET_DATA_STREAM + "/v1beta3/crypto/" + CryptoFeed.US)
+
+        self.supportedFeatures = ISupportedBrokerFeatures(
+            barDataStreaming=True, trailingStop=False, maxOrderValue=200_000.00)
 
     def get_history(self, asset: IAsset, start: datetime, end: datetime, resolution: tf):
         # Convert to TimeFrame from OlympusTrader from alpaca
@@ -89,7 +92,8 @@ class AlpacaBroker(BaseBroker):
             if data.empty:
                 return None
             # format Data Frame open, high, low, close, volume
-            data = data[['open', 'high', 'low', 'close', 'volume']]  # 'timestamp'
+            # 'timestamp'
+            data = data[['open', 'high', 'low', 'close', 'volume']]
             # print(data)
             return data
         except:
@@ -212,7 +216,7 @@ class AlpacaBroker(BaseBroker):
                 else:
                     continue
 
-        order =  IOrder(
+        order = IOrder(
             order_id=order.id,
             asset=self.get_ticker_info(order.symbol),
             filled_price=float(
@@ -233,7 +237,7 @@ class AlpacaBroker(BaseBroker):
             filled_at=order.filled_at,
             legs=legs
         )
-        
+
         return order
 
     def get_latest_quote(self, asset: IAsset):
@@ -484,15 +488,30 @@ class AlpacaBroker(BaseBroker):
         loop = asyncio.new_event_loop()
 
         for assetStream in assetStreams:
+
             if assetStream['type'] == 'bar':
+                async def alpaca_stream_callback(data):
+                    """ Alpaca only generates one bar at a time no matter the timeframe so we need to send the to each feature
+                        base_strategy should handle the rest
+                    """
+                    bardata = self.format_on_bar(data)
+                    timestamp = bardata.index[0][1]
+                    for asset in assetStreams:
+                        if asset['symbol'] == assetStream['symbol'] and asset['time_frame'].is_time_increment(timestamp):
+                            await callback(bardata, timeframe=asset['time_frame'])
+
+                if assetStream.get('feature') != None:
+                    # We dont want to add multiple streams for the same asset
+                    
+                    continue
                 if assetStream['asset_type'] == 'stock':
                     StockStreamCount += 1
                     self.stock_stream_client.subscribe_bars(
-                        callback, assetStream.get('symbol'))
+                        alpaca_stream_callback, assetStream.get('symbol'))
                 elif assetStream['asset_type'] == 'crypto':
                     CryptoStreamCount += 1
                     self.crypto_stream_client.subscribe_bars(
-                        callback, assetStream.get('symbol'))
+                        alpaca_stream_callback, assetStream.get('symbol'))
             else:
                 raise NotImplementedError(
                     f"Stream type {assetStream['type']} not supported")
