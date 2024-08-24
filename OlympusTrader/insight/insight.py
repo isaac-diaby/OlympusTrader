@@ -481,7 +481,7 @@ class Insight:
         limit_price = limit_price if limit_price != None else self.limit_price
         # FIXME: use the broker to get the latest price and to check if the market order would be within range of the bracket order
         if limit_price == None:
-            print("WARNING: invalid entry insight: limit price is not set, Using Market Order")
+            print("WARNING: limit price is not set, Using Market Order")
             return True
 
         if self.SL:

@@ -9,11 +9,13 @@ class MarketOrderEntryPriceExecutor(BaseExecutor):
     This executor is used to set the entry price for market orders. The entry price is set to the current close price of the asset.
     Get price from latest bar if limit price is not set.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    :param strategy (BaseStrategy): The strategy instance
 
     Note: This is only applicable for insights that are set to market orders and have no limit price set. 
     If a limit is set, executor passes the insight to the next executor.
+
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

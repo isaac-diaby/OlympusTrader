@@ -136,7 +136,7 @@ class BaseBroker(abc.ABC):
     def format_on_bar(self, bar: Any) -> Optional[pd.DataFrame]:
         """
         Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}
-        -  (data={}, index=[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
+        -  (data={}, index=MultiIndex[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
 
         """
         pass

@@ -15,6 +15,8 @@ class PercentageDCALevels(BaseExecutor):
     :param includes (list[str]): The alphas to include
     :param dcaPercentage (float): The percentage to space the DCA levels
     :param dcalevels (int): The number of DCA levels to add
+    Author:
+        @isaac-diaby
     """
     includes: list[str]
     """alpha to include"""

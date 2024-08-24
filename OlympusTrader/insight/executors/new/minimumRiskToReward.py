@@ -9,12 +9,13 @@ class MinimumRiskToRewardExecutor(BaseExecutor):
 
     **This will update your strategy instance with the minimum risk to reward ratio required.** (STRATEGY.minRewardRiskRatio)
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
-        minimumRR (float): The minimum risk to reward ratio required. Default is 2.0
+    :param strategy (BaseStrategy): The strategy instance
+    :param minimumRR (float): The minimum risk to reward ratio required. Default is 2.0
 
     Note: You will need to have already set the limit price, stop loss and  take profit levels in the insight before using this executor.
-
+    
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy, minimumRR=2.0):

@@ -10,8 +10,10 @@ class BasicTakeProfitExecutor(BaseExecutor):
     ### Executor for Basic Take Profit
     This executor is used to take profit on insights that have reached the take profit price.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    :param strategy (BaseStrategy): The strategy instance
+    
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

@@ -9,15 +9,17 @@ class TestEntryAlpha(BaseAlpha):
     This alpha model generates insights if there is no other insight.
     This is intended for testing purposes.
 
-    Parameters:
-    - strategy: BaseStrategy - Strategy instance
-    - atrPeriod: int - ATR Period
-    - baseConfidenceModifierField: str - Field to modify base confidence
+    :param strategy (BaseStrategy): The strategy instance
+    :param atrPeriod (int): The period for the ATR indicator
+    :param baseConfidenceModifierField (str): The field to use for modifying the base confidence
+
+    Author:
+        @isaac-diaby
     """
     atrColumn: str
 
     def __init__(self, strategy,  atrPeriod=14,  baseConfidenceModifierField=None):
-        super().__init__(strategy, "TEST_ENTRY", "0.1", baseConfidenceModifierField)
+        super().__init__(strategy, "TEST_ENTRY", "1.0", baseConfidenceModifierField)
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
         ]
@@ -38,11 +40,11 @@ class TestEntryAlpha(BaseAlpha):
             latestIATR = latestBar[self.atrColumn]
             baseConfidence = self.STRATEGY.baseConfidence
             # Modify Confidence based on baseConfidenceModifierField
-            # if (self.baseConfidenceModifierField):
-            #     baseConfidence *= abs(self.get_baseConfidenceModifier(symbol))
+            if (self.baseConfidenceModifierField):
+                baseConfidence *= abs(self.get_baseConfidenceModifier(symbol))
 
-            # if baseConfidence <= 0:
-            #     return self.returnResults(message="Base Confidence is 0.")
+            if baseConfidence <= 0:
+                return self.returnResults(message="Base Confidence is 0.")
 
             if len(self.STRATEGY.insights) > 0:
                 return self.returnResults(message="Insight already exists.")
@@ -50,7 +52,7 @@ class TestEntryAlpha(BaseAlpha):
             # Generate Test Entry
             if (latestBar.close > latestBar.open):
                 TP = self.STRATEGY.tools.dynamic_round(
-                    latestBar.close + (latestIATR*10), symbol)
+                    latestBar.close + (latestIATR*5), symbol)
                 SL = self.STRATEGY.tools.dynamic_round(
                     latestBar.close - (latestIATR*1.5), symbol)
                 ENTRY = self.STRATEGY.tools.dynamic_round(
@@ -72,7 +74,7 @@ class TestEntryAlpha(BaseAlpha):
             else:
                 if self.STRATEGY.assets[symbol]["shortable"]:
                     TP = self.STRATEGY.tools.dynamic_round(
-                        latestBar.close - (latestIATR*10), symbol)
+                        latestBar.close - (latestIATR*5), symbol)
                     SL = self.STRATEGY.tools.dynamic_round(
                         latestBar.close + (latestIATR*1.5), symbol)
                     ENTRY = self.STRATEGY.tools.dynamic_round(

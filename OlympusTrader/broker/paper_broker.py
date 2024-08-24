@@ -56,11 +56,14 @@ class PaperBroker(BaseBroker):
     ACCOUNT_HISTORY: dict[datetime.date, IAccount] = {}
 
     FeedDelay: int = 0
+     # DEBUG
+    VERBOSE: int = 0
 
-    def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf', feedDelay: int = 0):
+    def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf', feedDelay: int = 0, verbose: int = 0):
 
         super().__init__(ISupportedBrokers.PAPER, True, feed)
         self.MODE = mode
+        self.VERBOSE = verbose
         self.LEVERAGE = leverage
         self.STARTING_CASH = cash
         self.ACCOUNT = IAccount(account_id='PAPER_ACCOUNT', equity=self.STARTING_CASH, cash=self.STARTING_CASH, currency=currency,
@@ -300,12 +303,13 @@ class PaperBroker(BaseBroker):
                 order['filled_at'] = self.get_current_time
                 order['updated_at'] = self.get_current_time
                 # update buying power difference
-                bp_change = (order['qty'] *
+                bp_change = abs((order['qty'] *
                              order['limit_price']) - (order['qty'] *
-                                                      order['filled_price'])
+                                                      order['filled_price']))
                 if (self.Account['buying_power'] - bp_change) < 0:
                     # cant afford the new price
-                    order['status'] = ITradeUpdateEvent.REJECTED
+                    # order['status'] = ITradeUpdateEvent.REJECTED
+                    order['status'] = ITradeUpdateEvent.CANCELED
                     self._update_order(order)
                     loop.run_until_complete(callback(ITradeUpdate(
                         order, order['status'])))
@@ -459,7 +463,7 @@ class PaperBroker(BaseBroker):
                         self.Positions[symbol][orderId]['qty'] -= order['qty']
                     # Clear buying power wwithheld by the order
                     self.Account['cash'] += np.round(
-                        (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
+                        (order['qty'] * order['stop_price']) / self.LEVERAGE, 2)
                     # check if the posistion partially closed
                     # if order['status'] == ITradeUpdateEvent.CLOSED:
                     #     quantityChange = oldPosition['qty'] - order['qty']
@@ -496,7 +500,11 @@ class PaperBroker(BaseBroker):
                     return
 
         # print("Position: ", self.Positions[symbol][orderId])
-        oldPosition = self.Positions[symbol][orderId].copy()
+        oldPosition = self.Positions[symbol].get(orderId)
+        if oldPosition:
+            oldPosition = self.Positions[symbol][orderId].copy()
+        else: 
+            return
         self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order['stop_price'] else order['stop_price']
 
         if self.Positions[symbol][orderId]['current_price'] == oldPosition['current_price'] and order['status'] != ITradeUpdateEvent.CLOSED:
@@ -542,6 +550,12 @@ class PaperBroker(BaseBroker):
             else:
                 self.HISTORICAL_DATA[symbol
                                      ]['signals'].loc[currentBarIndex, 'short_entries'] = True
+            # Record the entry price
+            if order['filled_price']:
+                if np.isnan(self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0]):
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = order['filled_price']
+                else:
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['filled_price']) / 2
 
         elif signalType == 'exit':
             # Log the exit signal
@@ -551,14 +565,25 @@ class PaperBroker(BaseBroker):
             else:
                 self.HISTORICAL_DATA[symbol
                                      ]['signals'].loc[currentBarIndex, 'short_exits'] = True
+            # Record the exit price
+            if order['stop_price']:
+                if np.isnan(self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0]):
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = order['stop_price']
+                else:
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['stop_price']) / 2
 
         # Set the Size
+        # position = self.get_position(symbol=symbol, mode='active')
+        # if position:
+        #     self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex,
+        #                                                 'qty'] = position['qty']
+        # else:
         if order['side'] == IOrderSide.BUY:
             self.HISTORICAL_DATA[symbol
-                                 ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
+                                    ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
         else:
             self.HISTORICAL_DATA[symbol
-                                 ]['signals'].loc[currentBarIndex, 'qty'] -= order['qty']
+                                    ]['signals'].loc[currentBarIndex, 'qty'] -= order['qty']
 
     def _update_order(self, order: IOrder):
         if self.Orders.get(order['order_id']):
@@ -1021,12 +1046,14 @@ class PaperBroker(BaseBroker):
                                     size = self.HISTORICAL_DATA[symbol
                                                                 ]['bar'].shape[0]
                                     self.HISTORICAL_DATA[symbol]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
-                                        size), "short_exits": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
+                                        size), "short_exits": np.zeros(size),"price": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "price", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
                                     # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
                                     self.HISTORICAL_DATA[symbol]['signals'][[
                                         'entries', 'exits', 'short_entries', 'short_exits']] = False
                                     self.HISTORICAL_DATA[symbol]['signals'][[
                                         'qty']] = 0
+                                    self.HISTORICAL_DATA[symbol]['signals'][[
+                                        'price']] = np.nan
                                     if not TF:
                                         # set the Main time frame to the first asset time frame
                                         TF = asset['time_frame']
@@ -1052,7 +1079,8 @@ class PaperBroker(BaseBroker):
 
             while self.get_current_time <= self.END_DATE and self.RUNNING_MARKET_STREAM and len(assetStreams) > 0:
                 try:
-                    print("\nstreaming data for:", self.get_current_time, "\n")
+                    if self.VERBOSE > 0:
+                        print("\nstreaming data for:", self.get_current_time, "\n")
                     for asset in assetStreams:
                         isFeature = False
                         if asset['type'] == 'bar':
@@ -1141,32 +1169,19 @@ class PaperBroker(BaseBroker):
                         isFeature = True
                     if asset['type'] == 'bar':
                         try:
-                            if isFeature:
-                                if self.PreviousTime == None:
-                                    barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') >= self.get_current_time.replace(
-                                        tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
-                                else:
-                                    barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') > self.PreviousTime.replace(
-                                        tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
-                                if type(barDatas) == NoneType:
-                                    continue
-                                elif barDatas.empty:
-                                    continue
-                                else:
-                                    for index in barDatas.index:
-                                        loop.run_until_complete(
-                                            callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                            # Get the current bar data with the index
+                            barData = self._get_current_bar(
+                                symbol, asset['time_frame'])
+                            if type(barData) == NoneType:
+                                continue
+                            elif barData.empty:
+                                continue
                             else:
-                                # Get the current bar data with the index
-                                barData = self._get_current_bar(
-                                    symbol, asset['time_frame'])
-                                if type(barData) == NoneType:
-                                    continue
-                                elif barData.empty:
-                                    continue
-                                else:
-                                    loop.run_until_complete(callback(barData, timeframe=asset['time_frame']))
-                                    continue
+                                for index in barDatas.index:
+                                    loop.run_until_complete(
+                                        callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                                # loop.run_until_complete(callback(barData, timeframe=asset['time_frame']))
+                                continue
 
                         except BaseException as e:
                             print("Error: ", e)
@@ -1394,13 +1409,18 @@ class PaperBroker(BaseBroker):
                             "short_entries": self.HISTORICAL_DATA[asset]['signals']['short_entries'].reset_index(level='symbol', drop=True),
                             "exits": self.HISTORICAL_DATA[asset]['signals']['exits'].reset_index(level='symbol', drop=True),
                             "short_exits": self.HISTORICAL_DATA[asset]['signals']['short_exits'].reset_index(level='symbol', drop=True),
+                            "price": self.HISTORICAL_DATA[asset]['signals']['price'].reset_index(level='symbol', drop=True),
                             "size":  self.HISTORICAL_DATA[asset]['signals']['qty'].abs().reset_index(level='symbol', drop=True),
-                            "freq": timeFrame.unit.value[0].lower()
+                            "freq": timeFrame.unit.value[0].lower(),
+                            "accumulate": True
                         }
 
                         # run the backtest
-                        print("Running backtest for with Vector BT for:", asset)
-                        results[asset] = vbt.Portfolio.from_signals(**vbtParams)
+                        print("Running backtest with Vector BT for:", asset)
+                        results[asset] = vbt.Portfolio.from_signals(
+                            **vbtParams)
+                        # results[asset] = vbt.Portfolio.from_orders(
+                        #     **vbtParams)
                         print(results[asset].stats(
                             metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
                     except Exception as e:

@@ -355,6 +355,8 @@ class BaseStrategy(abc.ABC):
                     print("Backtesting results saved for", symbol, "at", path)
                 else:
                     print("No backtesting results found for", symbol)
+            # show the user the simulation account
+            print("Simulation Account",  self.BROKER.Account)
 
     def _startUISharedMemory(self):
         """ Starts the UI shared memory."""
@@ -631,7 +633,12 @@ class BaseStrategy(abc.ABC):
                     assetDataStreamInfo['asset_type'] = assetInfo.get('asset_type')
                     if options['time_frame'] != self.RESOLUTION:
                         assetDataStreamInfo['feature'] = f"{assetDataStreamInfo['symbol']}.{assetDataStreamInfo['time_frame']}"
-                        self.HISTORY[assetDataStreamInfo['feature']] = pd.DataFrame()
+                        if assetDataStreamInfo['feature'] in self.HISTORY:
+                            if not isinstance(self.HISTORY[assetDataStreamInfo['feature']], pd.DataFrame):
+                                self.HISTORY[assetDataStreamInfo['feature']] = pd.DataFrame()
+                        else:
+                            self.HISTORY[assetDataStreamInfo['feature']] = pd.DataFrame()
+                            
                     assetDataStreamInfo['type'] = eventType
                     self.STREAMS.append(IMarketDataStream(**assetDataStreamInfo))
             case _:
@@ -698,7 +705,6 @@ class BaseStrategy(abc.ABC):
             if data.empty:
                 print('Bar is None')
                 return
-            data = bar
 
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
@@ -720,11 +726,13 @@ class BaseStrategy(abc.ABC):
                 # Check if the bar is part of the resolution of the strategy or if it is a feature event
                 isFeature = False
                 for stream in self.STREAMS:
-                    if stream["type"] == "bar" and stream['symbol'] == symbol and stream['time_frame'].value != self.resolution.value:
+                    if stream["type"] == "bar" and (stream['symbol'] == symbol or stream['feature'] == symbol) and stream['time_frame'].value != self.resolution.value:
                         if  stream["time_frame"].value == timeframe.value and stream["time_frame"].is_time_increment(timestamp):
                             isFeature = True
                             # Update the feature symbol name
-                            symbol = stream['feature']
+                            if stream['feature'] != symbol:
+                                data.rename(index={symbol: stream['feature']}, inplace=True)
+                                symbol = stream['feature']
                             if self.VERBOSE > 0:
                                 print(f'Feature Bar is part of the resolution of the strategy: {symbol} - {timestamp} - {datetime.datetime.now()}')
                             break

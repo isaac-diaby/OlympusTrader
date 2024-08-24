@@ -7,14 +7,16 @@ class FullAccountQuantityToRiskExecutor(BaseExecutor):
     """
     ### Executor for Full Account Quantity to Risk
     This executor uses the full account cash balance to determine the quantity to trade.
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    
+    :param strategy (BaseStrategy): The strategy instance
 
     #### How it works:
     When a new insight is generated, the executor calculates the quantity to trade based on the account balance.
 
     Note: limit price ust be set in the insight before using this executor.
 
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):
@@ -27,26 +29,27 @@ class FullAccountQuantityToRiskExecutor(BaseExecutor):
         # Calculate the quantity to trade
         try:
             # Account size at to place order
-            # TODO: Add a Check if margin is enabled for this asset. If margin is enabled, then use buying_power to calculate the quantity.
-            account_size_at_risk = self.STRATEGY.account['cash']
+            account_size_at_risk = self.STRATEGY.account['buying_power'] if self.STRATEGY.assets[insight.symbol]['marginable'] else self.STRATEGY.account['cash']
+            if self.STRATEGY.broker.supportedFeatures.maxOrderValue is not None:
+                # Check if the account size at risk is greater than the maximum order value supported by the broker
+                account_size_at_risk = min(self.STRATEGY.broker.supportedFeatures.maxOrderValue, account_size_at_risk)
 
             # Calculate the quantity to trade based on the limit price and account size cash balance
             size_should_buy = account_size_at_risk/insight.limit_price
 
-            # Check if the quantity is greater than the minimum order size
-            if size_should_buy < self.STRATEGY.assets[insight.symbol]['min_order_size']:
-                response = self.returnResults(False, False, f"Quantity is less than the minimum order size: {
-                                              self.STRATEGY.assets[insight.symbol]['min_order_size']}")
-                self.changeState(
-                    insight, InsightState.REJECTED, response.message)
-                return response
 
             # Round down the quantity to the nearest whole number
             if size_should_buy > 1:
                 size_should_buy = np.floor(size_should_buy)
 
             else:
-                # TODO: May want to later check if the quantity is too small due to funds available
+                # Check if the quantity is greater than the minimum order size
+                if size_should_buy < self.STRATEGY.assets[insight.symbol]['min_order_size']:
+                    response = self.returnResults(False, False, f"Quantity is less than the minimum order size: {
+                                                self.STRATEGY.assets[insight.symbol]['min_order_size']}")
+                    self.changeState(
+                        insight, InsightState.REJECTED, response.message)
+                    return response
                 pass
 
             # Update the quantity in the insight

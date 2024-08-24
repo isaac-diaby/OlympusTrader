@@ -10,12 +10,13 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
     ### EMA Crossover Alpha
     This alpha model generates insights based on EMA Crossover.
 
-    Parameters:
-    - strategy: BaseStrategy - Strategy instance
-    - atrPeriod: int - ATR Period
-    - emaPeriod: int - EMA Period
-    - baseConfidenceModifierField: str - Field to modify base confidence
+    :param strategy (BaseStrategy): The strategy instance
+    :param atrPeriod (int): The period for the ATR indicator
+    :param emaPeriod (int): The period for the EMA indicator
+    :param baseConfidenceModifierField (str): The field to use for modifying the base confidence
 
+    Author:
+        @isaac-diaby
     """
     atrColumn: str
     emaColumn: str

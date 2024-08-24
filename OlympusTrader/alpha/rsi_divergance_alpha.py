@@ -13,13 +13,15 @@ class RSIDiverganceAlpha(BaseAlpha):
     ### RSI Divergance Alpha
     This alpha model generates insights based on RSI Divergance.
 
-    Parameters:
-    - local_window: int - Local Window for Points of Control
-    - divergance_window: int - Divergance Window for RSI Divergance
-    - atrPeriod: int - ATR Period
-    - rsiPeriod: int - RSI Period
-    - baseConfidenceModifierField: str - Field to modify base confidence
+    :param strategy (BaseStrategy): The strategy instance
+    :param local_window (int): The window to consider for local swing points
+    :param divergance_window (int): The window to consider for divergance
+    :param atrPeriod (int): The period for the ATR indicator
+    :param rsiPeriod (int): The period for the RSI indicator
+    :param baseConfidenceModifierField (str): The field to use for modifying the base confidence
 
+    Author:
+        @isaac-diaby
 
     """
     local_window: int

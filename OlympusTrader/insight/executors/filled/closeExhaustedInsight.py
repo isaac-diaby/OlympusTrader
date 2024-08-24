@@ -7,8 +7,10 @@ class CloseExhaustedInsightExecutor(BaseExecutor):
     ### Executor for Closing Exhausted Insights
     This executor is used to close exhausted insights.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+   :param strategy (BaseStrategy): The strategy instance
+
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

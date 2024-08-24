@@ -7,9 +7,10 @@ class CloseMarketChangedExecutor(BaseExecutor):
     ### Executor for Closing Market Changed Insights
     This executor is used to close insights that have the market changed flag to true.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    :param strategy (BaseStrategy): The strategy instance
 
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

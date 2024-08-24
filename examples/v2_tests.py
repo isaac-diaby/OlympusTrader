@@ -37,9 +37,9 @@ class QbitTB(Strategy):
             {"kind": 'rsi', "length": 14, "scalar": 10}
             ])
         self.warm_up = 36
-        self.execution_risk = 0.04  # 4% of account per trade
+        self.execution_risk = 0.08  # 4% of account per trade
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
-        self.baseConfidence = 0.3
+        self.baseConfidence = 0.67
 
         # Alphas
         self.add_alphas([
@@ -171,8 +171,11 @@ class QbitTB(Strategy):
 if __name__ == "__main__":
 
     # Paper Broker for backtesting
+    # broker = PaperBroker(cash=1_000_000, start_date=datetime(
+    #         2024, 7, 1), end_date=datetime(2024, 8, 23))
+    
     broker = PaperBroker(cash=1_000_000, start_date=datetime(
-            2024, 7, 1), end_date=datetime(2024, 8, 6))
+            2024, 8, 16), end_date=datetime(2024, 8, 23))
     
     # Strategy
     # 1 Minute
@@ -182,8 +185,10 @@ if __name__ == "__main__":
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
     #     5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
     # 1 Hour
+    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+        5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 
     
     # live paper trading on the paper broker 
@@ -195,4 +200,3 @@ if __name__ == "__main__":
     strategy.add_events('bar', stored=True, stored_path='data', applyTA=True)
 
     strategy.run()
-    print("Simulation Account", broker.Account)

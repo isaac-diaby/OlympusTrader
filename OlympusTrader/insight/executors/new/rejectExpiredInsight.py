@@ -7,8 +7,10 @@ class RejectExpiredInsightExecutor(BaseExecutor):
     ### Executor for Rejecting Expired Insights
     This executor is used to reject insights that have expired.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+   :param strategy (BaseStrategy): The strategy instance
+   
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

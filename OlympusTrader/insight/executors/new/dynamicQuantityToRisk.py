@@ -9,16 +9,17 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
     ### Executor for Dynamic Quantity to Risk
     This executor uses risks a percentage of the account balance to determine the quantity to trade.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
-        maximum_costbasis (float): The maximum cost basis for the trade. Default is 200,000.
-        minimum_costbasis (float): The minimum cost basis for the trade. Default is 1,000.
+    :param strategy (BaseStrategy): The strategy instance
+    :param maximum_costbasis (float): The maximum cost basis for the trade. Default is 200,000.
+    :param minimum_costbasis (float): The minimum cost basis for the trade. Default is 1,000.
 
     #### How it works:
     When a new insight is generated, the executor calculates the quantity to trade based on the percentage of the account balance which is a percentage of insight.confidence * RISK.
 
     Note: limit price and stop loss levels must be set in the insight before using this executor.
 
+    Author:
+        @isaac-diaby
     """
     maximum_costbasis: float
     minimum_costbasis: float

@@ -7,8 +7,10 @@ class DefaultOnRejectExecutor(BaseExecutor):
     ### Executor for Default On Reject
     This executor is used to delete the insight from the strategy when it is rejected.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    :param strategy (BaseStrategy): The strategy instance
+
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

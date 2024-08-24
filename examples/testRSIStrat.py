@@ -102,29 +102,29 @@ class QbitTB(Strategy):
             return
 
             # TEST
-        if (len(self.insights) < 1):
-            if (marketState > 0):
-                print(f"Insight - {symbol}: TEST: Long")
-                TP = self.tools.dynamic_round(
-                    (latestBar.close + (latestIATR*10)), symbol)
-                SL = self.tools.dynamic_round(
-                    (latestBar.close - (latestIATR*1.5)), symbol)
-                ENTRY = latestBar.close
-                # ENTRY = previousBar.high if (abs(
-                #     previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
-                self.add_insight(Insight(IOrderSide.BUY, symbol,
-                                     StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
-            else:
-                print(f"Insight - {symbol}: TEST: Short")
-                TP = self.tools.dynamic_round(
-                    (latestBar.close - (latestIATR*10)), symbol)
-                SL = self.tools.dynamic_round(
-                    (latestBar.close + (latestIATR*1.5)), symbol)
-                ENTRY = latestBar.close
-                # ENTRY = previousBar.low if (abs(
-                #     previousBar.low - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
-                self.add_insight(Insight(IOrderSide.SELL, symbol,
-                                     StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
+        # if (len(self.insights) < 1):
+        #     if (marketState > 0):
+        #         print(f"Insight - {symbol}: TEST: Long")
+        #         TP = self.tools.dynamic_round(
+        #             (latestBar.close + (latestIATR*10)), symbol)
+        #         SL = self.tools.dynamic_round(
+        #             (latestBar.close - (latestIATR*1.5)), symbol)
+        #         ENTRY = latestBar.close
+        #         # ENTRY = previousBar.high if (abs(
+        #         #     previousBar.high - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+        #         self.add_insight(Insight(IOrderSide.BUY, symbol,
+        #                              StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
+        #     else:
+        #         print(f"Insight - {symbol}: TEST: Short")
+        #         TP = self.tools.dynamic_round(
+        #             (latestBar.close - (latestIATR*10)), symbol)
+        #         SL = self.tools.dynamic_round(
+        #             (latestBar.close + (latestIATR*1.5)), symbol)
+        #         ENTRY = latestBar.close
+        #         # ENTRY = previousBar.low if (abs(
+        #         #     previousBar.low - latestBar.close) < latestIATR) else dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+        #         self.add_insight(Insight(IOrderSide.SELL, symbol,
+        #                              StrategyTypes.TEST, self.resolution, None, ENTRY, [TP], SL, baseConfidence*abs(marketState), 'HRVCM', 2, 3))
 
         if (latestBar['RSI_14'] < 30 and previousBar['RSI_14'] > 30 and marketState > 0):
             # print(f"Insight - {symbol}: Long RSI: {latestBar['RSI_14']}")
@@ -252,10 +252,13 @@ class QbitTB(Strategy):
                             # self.close_position(
                             #     insight.symbol, holding['qty'])
 
-                    order = insight.submit()
+                    order = self.submit_order(insight)
 
                     if order:
-                       pass
+                        self.insights[insight.INSIGHT_ID].updateOrderID(
+                            order['order_id'])
+                        self.insights[insight.INSIGHT_ID].updateState(
+                            InsightState.EXECUTED, f"Order ID: {order['order_id']}")
                     else:
                         self.insights[insight.INSIGHT_ID].updateState(
                             InsightState.REJECTED, f"Failed to submit order")
@@ -313,15 +316,24 @@ class QbitTB(Strategy):
                                     # Close 80% of the position
                                     quantityToClose = dynamic_round(
                                         insight.quantity*0.8)
-                                    closeOrder = insight.close(quantity=quantityToClose)
+                                    closeOrder = self.submit_order(Insight(IOrderSide.BUY if (
+                                        insight.side == IOrderSide.SELL) else IOrderSide.SELL, insight.symbol, StrategyTypes.MANUAL, self.resolution, quantityToClose))
                                     if closeOrder:
+                                        # update remaining quantity
+                                        self.insights[insight.INSIGHT_ID].quantity = insight.quantity - \
+                                            quantityToClose
                                         # Move SL to break even
                                         # TODO: update SL to break even
                                         self.insights[insight.INSIGHT_ID].SL = insight.limit_price
-                                        
+                                        self.insights[insight.INSIGHT_ID].TP.pop(
+                                            0)
+                                        # Reset TTL for the remaining position
+                                        self.insights[insight.INSIGHT_ID].updateState(InsightState.FILLED, f"Partial TP Hit: {insight.side:^8}: {insight.limit_price} -> {currentTP} -> {
+                                            latestBar.high if (insight.side == IOrderSide.BUY) else latestBar.low}, WON: ${round(insight.quantity*(insight.TP[0] - insight.limit_price), 2)}")
                                 else:
                                     # Close 100% of the position
-                                    closeOrder = insight.close()
+                                    closeOrder = self.submit_order(Insight(IOrderSide.BUY if (
+                                        insight.side == IOrderSide.SELL) else IOrderSide.SELL, insight.symbol, StrategyTypes.MANUAL, self.resolution, insight.quantity))
                     except BaseException as e:
                         if e.args[0]["code"] == "insufficient_balance":
                             # '{"available":"0.119784","balance":"0.119784","code":40310000,"message":"insufficient balance for BTC (requested: 0.12, available: 0.119784)","symbol":"USD"}'
@@ -336,8 +348,7 @@ class QbitTB(Strategy):
                                         InsightState.CANCELED, f"No funds to close position")
 
                     if (closeOrder):
-                        pass
-                        
+                        self.insights[insight.INSIGHT_ID].close_order_id = closeOrder['order_id']
 
                 return
 
@@ -352,11 +363,10 @@ class QbitTB(Strategy):
             case InsightState.CANCELED:
                 # Remove from insights if the insight is canceled
                 try:
-                    # if insight.
-                    # cancelOrder = insight.cancel(
-                    #     order_id=insight.order_id)  # Cancel Order
-                    # if cancelOrder:
-                    del self.insights[insight.INSIGHT_ID]
+                    cancelOrder = self.broker.cancel_order(
+                        order_id=insight.order_id)  # Cancel Order
+                    if cancelOrder:
+                        del self.insights[insight.INSIGHT_ID]
                 except BaseException as e:
                     if e.args[0]["code"] == "already_filled":
                         # Order is already be canceled or filled
@@ -369,6 +379,11 @@ class QbitTB(Strategy):
                 return
 
             case InsightState.REJECTED:
+                del self.insights[insight.INSIGHT_ID]
+                return
+
+            case InsightState.EXPIRED:
+                # TODO: Make sure that the order is closed and the position is closed
                 del self.insights[insight.INSIGHT_ID]
                 return
 
@@ -394,9 +409,9 @@ if __name__ == "__main__":
     # broker = PaperBroker(cash=1_000_000, start_date=datetime(
     #     2024, 5, 27, 14), end_date=datetime(2024, 5, 27, 16)) # 2 hours
     broker = PaperBroker(cash=1_000_000, start_date=datetime(
-        2024, 7, 1, 14), end_date=datetime(2024, 7, 30, 16))  # all of may
+        2024, 7, 1), end_date=datetime(2024, 8, 23))  # all of may
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+        1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 
     # strategy.add_events('bar')
     # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file

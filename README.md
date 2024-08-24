@@ -12,7 +12,7 @@ This is my implementation of a quant trading framework inspired by frameworks su
 
 The base strategy class manages everything else:
 
-- Getting the latest bar price for your timeframe
+- Getting the latest bar price for your timeframe and featured timeframes (multi-timeframe support)
 - Manages and tracking open and closed positions
 - Execution of Alpha models, Executors, your Strategy core functions such as start(), init(), generateInsight(),
 
@@ -21,16 +21,14 @@ Feel free to fork the project if you want to add a new broker or anything you wa
 ## In Progress
 
 - [ ] Add more brokers
-  - [ ] CCXT - hyper liquid
   - [ ] MT5 - MetaTrader5
-
-- [ ] Backtesting with VBT
+  - [ ] CCXT - hyper liquid
 
 ## OlympusTrader
 
 To get started you can look at the main.py file for my strategy for the general workflow.
 
-**Requirement** are: `pip install -r requirement.txt` - to install dependencies. Or run `docker compose up` to get both the UI and main.py script to run in a container (for deploy).
+**Requirement** are: `pip install olympustrader`. Or run `docker compose up` to get both the UI and main.py script to run in a container (for deploy).
 
 Create a .env file for your environment variables as of now the only available broker is alpaca so you will need to set ALPACA_API_KEY and ALPACA_SECRET_KEY in the .env file.
 

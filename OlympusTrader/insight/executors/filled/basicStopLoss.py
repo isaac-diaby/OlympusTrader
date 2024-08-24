@@ -11,11 +11,12 @@ class BasicStopLossExecutor(BaseExecutor):
     This executor is used to check if the insight has crossed the stop loss level. If the price crosses the stop loss level, the position is closed.
     Ideally this executor should be used in conjunction simple orders types with no OCO or bracket orders as the broker will close the position if the stop loss level is crossed.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
-
+    :param strategy (BaseStrategy): The strategy instance
 
     Note: You should have already set the stop loss price in the insight before using this executor.
+
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

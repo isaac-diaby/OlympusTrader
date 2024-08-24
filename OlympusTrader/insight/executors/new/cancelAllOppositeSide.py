@@ -8,9 +8,10 @@ class CancelAllOppositeSidetExecutor(BaseExecutor):
     This executor is used to cancel all opposite side Insights generated for the insight symbol.
     This is done by setting the market changed flag to True for all opposite side insights and closing or cancelling the trades insights.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    :param strategy (BaseStrategy): The strategy instance
 
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):

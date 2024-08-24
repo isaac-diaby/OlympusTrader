@@ -95,7 +95,7 @@ class AlpacaBroker(BaseBroker):
             # 'timestamp'
             data = data[['open', 'high', 'low', 'close', 'volume']]
             # print(data)
-            return data
+            return self.format_on_bar(data)
         except:
             return None
 
@@ -586,16 +586,22 @@ class AlpacaBroker(BaseBroker):
                 event = trade.event
         return self.format_order(trade.order), event
 
-    def format_on_bar(self, bar: Bar):
-        data = pd.DataFrame(data={
-            'open': bar.open,
-            'high': bar.high,
-            'low': bar.low,
-            'close': bar.close,
-            'volume': bar.volume,
-        }, index=[(bar.symbol, bar.timestamp)], columns=['open', 'high', 'low', 'close', 'volume'])
+    def format_on_bar(self, bar: Union[Bar, pd.DataFrame, pd.Series]):
+        if isinstance(bar, pd.DataFrame):
+            return bar
+        elif isinstance(bar, Bar):
+            index = pd.MultiIndex.from_product(
+                [[bar.symbol], [bar.timestamp]], names=['symbol', 'date'])
+            data = pd.DataFrame(data={
+                'open': bar.open,
+                'high': bar.high,
+                'low': bar.low,
+                'close': bar.close,
+                'volume': bar.volume,
+            }, index=index, columns=['open', 'high', 'low', 'close', 'volume'])
         # data.set_index(['symbol', )], inplace=True)
-        return data
+            return data
+        return None
 
     def format_on_quote(self, quote: Quote):
         quote

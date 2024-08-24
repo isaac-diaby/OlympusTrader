@@ -7,8 +7,10 @@ class DefaultOnCancelledExecutor(BaseExecutor):
     ### Executor for Default On Cancelled
     This executor is used to delete the insight from the strategy when it is cancelled.
 
-    Args:
-        strategy (BaseStrategy): The strategy instance
+    :param strategy (BaseStrategy): The strategy instance
+
+    Author:
+        @isaac-diaby
     """
 
     def __init__(self, strategy):
