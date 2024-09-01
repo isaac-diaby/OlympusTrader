@@ -26,12 +26,11 @@ build:
     # Install TA-Lib
     - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
     - tar -xvzf ta-lib-0.4.0-src.tar.gz
-    - export TAlib_PREFIX=`pwd`/talib
-    - mkdir -p ${TAlib_PREFIX}
-    - cd ta-lib/ && ./configure --prefix=${TAlib_PREFIX} && make && make install && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+    - mkdir -p ${READTHEDOCS_REPOSITORY_PATH}/talib
+    - cd ta-lib/ && ./configure --prefix=${READTHEDOCS_REPOSITORY_PATH}/talib && make && make install && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
     # - cd ta-lib/ && ./configure --prefix=/usr && make && make install && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
-    - TA_LIBRARY_PATH=`$TAlib_PREFIX`/lib
-    - TA_INCLUDE_PATH=`$TAlib_PREFIX`/include
+    - TA_LIBRARY_PATH=`$READTHEDOCS_REPOSITORY_PATH`/talib/lib
+    - TA_INCLUDE_PATH=`$READTHEDOCS_REPOSITORY_PATH`/talib/include
 
     post_install:
     - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install --with docs
