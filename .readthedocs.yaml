@@ -29,8 +29,8 @@ build:
     - mkdir -p ${READTHEDOCS_REPOSITORY_PATH}/talib
     - cd ta-lib/ && ./configure --prefix=${READTHEDOCS_REPOSITORY_PATH}/talib && make && make install && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
     # - cd ta-lib/ && ./configure --prefix=/usr && make && make install && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
-    # - TA_LIBRARY_PATH=${READTHEDOCS_REPOSITORY_PATH}/talib/lib
-    # - TA_INCLUDE_PATH=${READTHEDOCS_REPOSITORY_PATH}/talib/include
+    - export TA_LIBRARY_PATH=${READTHEDOCS_REPOSITORY_PATH}/talib/lib
+    - export TA_INCLUDE_PATH=${READTHEDOCS_REPOSITORY_PATH}/talib/include
 
     post_install:
     - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install --with docs
