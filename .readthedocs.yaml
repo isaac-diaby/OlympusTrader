@@ -23,12 +23,9 @@ build:
     # Install TA-Lib
     - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
     - tar -xvzf ta-lib-0.4.0-src.tar.gz
-    - cd ta-lib/
-    - ls -alt
-    - ./configure --prefix=/usr
-    - make
-    - make install
-    - cd ..
+    - ./ta-lib/configure --prefix=/usr
+    - make -C ta-lib
+    - make -C ta-lib install
     - rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
 
