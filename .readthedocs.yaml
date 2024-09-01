@@ -17,6 +17,7 @@ build:
   apt_packages:
     - build-essential
     - wget
+    - tar
   jobs:
     pre_create_environment:
     # Install TA-Lib
