@@ -1,5 +1,9 @@
 # Welcome to OlympusTrader
 
+  [![Documentation Status](https://readthedocs.org/projects/olympustrader/badge/?version=latest)](https://olympustrader.readthedocs.io/en/latest/?badge=latest)
+  [![PyPI version](https://badge.fury.io/py/olympustrader.svg)](https://badge.fury.io/py/olympustrader)
+  [![Downloads](https://pepy.tech/badge/olympustrader)](https://pepy.tech/project/olympustrader)
+
 This is my implementation of a quant trading framework inspired by frameworks such as QuantConnect and Blankly. The main idea is to create a workflow that allows users to create their trading strategy and execute complex trades with dependencies and a Risk-first approach. The core components are Insights(potential trade idea) which can have dynamic components such as:
 
 - How to enter
