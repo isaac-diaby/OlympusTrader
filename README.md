@@ -60,13 +60,14 @@ class  QbitTB(Strategy):
 
 
  def  on_bar(self,  symbol,  bar):
-  # Your strategy, self.insights[symbol].append(Insight(YOUR INSIGHT DATA))
+  # Your strategy, TA's and other functions should be called here
   pass
 
 
 
  def  generateInsights(self,  symbol:  str):
   # Generate insights for your strategy. This is run after the on_bar function
+  #  self.add_insight(...
   pass
 
 
@@ -223,81 +224,10 @@ You can read about what each executor does in the `OlympusTrader.insight.executo
 
 Each executor returns an ExecutorResults object that tells you if the executor was successful or not and the reason why it failed. You can use this to log the results of the executor and make decisions based on the results. But by default the framework will log the results of failed executors for you and skip the insight if it fails (eg if the insight is in the NEW state - based on the executor it may reject the insight).
 
-## OlympusTrader.BaseStrategy => OlympusTrader.Strategy
+## Documentation
 
-The BaseStrategy has the execution flow for a strategy but it's recommended to use the Strategy class.
+The documentation is still in progress but you can find the documentation for the framework at [OlympusTrader](https://olympustrader.readthedocs.io/en/latest/)
 
-We will go over some important properties in the BaseStrategy.
-
-### Broker
-
-`self.broker -> BaseBroker type`
-
-This has the core API for the broker that you selected and allows you to get historical data, stream data, account information and execution trades.
-
-### State
-
-`self.state -> dict type`
-
-Your variables and state of your strategy as a dict type.
-
-### Account
-
-`self.account -> IAccount type`
-
-Your account information such as currency, cash, equity, and buying power, allowed to short.
-
-### Assets
-
-`self.assets -> dict[str, Asset] type`
-
-Returns the metadata of assets that are in your universe (stocks in play). Includes the ticker, full name, if it is tradable or shorting is enabled with your broker, the exchange, fraction shares is allowed.
-
-### History
-
-`self.history -> dict[str,  pd.DataFrame] type`
-
-This is a running pd.DataFrame of bar data for all of assets in the universe. The key of the dict is the asset's symbol.
-
-### Insights
-
-`self.insights -> dict[str, Insight] type`
-
-Return your insights (possible trade entries).
-
-### Positions
-
-`self.positions -> dict[str, IPosition] type`
-
-Returns your open positions and includes information such as the average entry price, number of shares, market value, current price and the current profit/loss.
-
-### Orders
-
-`self.orders -> List[IOrder] type`
-
-Returns a list of active orders (placed or filled) and meta data around it.
-
-### Start()
-
-This function is called once at the start of the strategy. You can use this function to init your strategy set state via `self.state` and load historical data for the security asset with `self.broker.get_history()`
-
-### init()
-
-This function is called for every asset in the universe at the start of the strategy. You can use this function to init your strategy set state via `self.state` and load historical data for the security asset with `self.broker.get_history()`
-
-### universe()
-
-The universe sets the security in play. Like QuantConnect, you can call this function to load asset data. It simply requires you to return a set of tickers that you want to load into your strategy. Here you can build a strategy that filters the market to only include specific requirements such as above-average relative volume, market cap etc.
-
-### on_bar()
-
-Here you can build your strategy and call any functions you may need. In the main example, I use pandas-ta to load my indicators and numpy to work on discovering RSI divergence in the price action. As mentioned this is my strategy so I'll be developing it further over time as a starting point for future users of this framework.
-
-### teardown()
-
-The teardown function is called when you interrupt the program and can be used to close positions and pending orders when you want to stop the program.
-
----
 
 ## Collaborations
 

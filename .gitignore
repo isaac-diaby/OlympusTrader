@@ -13,3 +13,4 @@ data/*
 backtests/*
 strategy/*
 ```
+docs/build/*
