@@ -19,11 +19,11 @@ build:
     - wget
     - tar
   jobs:
-    pre_create_environment:
+    post_install:
     # Install TA-Lib
-    - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
-      tar -xvzf ta-lib-0.4.0-src.tar.gz && \
-      cd ta-lib/ && \
+    - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+    - tar -xvzf ta-lib-0.4.0-src.tar.gz
+    - cd ta-lib/ && \
       ./configure --prefix=/usr && \
       make && \
       make install && \
