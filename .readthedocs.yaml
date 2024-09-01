@@ -17,9 +17,10 @@ build:
   commands:
   # Install TA-Lib
   - apt-get update && apt-get install -y \
-    build-essential \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential 
+    # \
+    # wget \
+    # && rm -rf /var/lib/apt/lists/*
 
   - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xvzf ta-lib-0.4.0-src.tar.gz && \
