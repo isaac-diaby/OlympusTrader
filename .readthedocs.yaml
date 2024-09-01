@@ -14,13 +14,11 @@ build:
     # nodejs: "19"
     # rust: "1.64"
     # golang: "1.19"
+  apt_packages:
+    - build-essential
+    - wget
   commands:
   # Install TA-Lib
-  - apt-get install -y build-essential 
-    # \
-    # wget \
-    # && rm -rf /var/lib/apt/lists/*
-
   - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xvzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib/ && \
