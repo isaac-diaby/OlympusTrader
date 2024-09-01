@@ -19,7 +19,7 @@ build:
     - wget
     - tar
   jobs:
-    post_install:
+    pre_install:
     # Install TA-Lib
     - wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
     - tar -xvzf ta-lib-0.4.0-src.tar.gz
