@@ -1,3 +1,2 @@
-sphinx == "^8.0.2"
-piccolo-theme == "^0.24.0"
-sphinx-autobuild == "^2024.4.16"
+sphinx
+piccolo-theme
