@@ -604,7 +604,6 @@ class AlpacaBroker(BaseBroker):
         return None
 
     def format_on_quote(self, quote: Quote):
-        quote
         data = IQuote(
             symbol=quote.symbol,
             ask=quote.ask_price,

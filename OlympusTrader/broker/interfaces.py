@@ -30,6 +30,8 @@ class ISupportedBrokerFeatures:
 class ISupportedBrokers(Enum):
     """Supported Brokers."""
     ALPACA = 'AlpacaBroker'
+    CCXT = 'CCXTBroker'
+    MT5 = 'MetaTrader5Broker'
     PAPER = 'PapeVrokerr'
     BASE = 'BaseBroker'
 

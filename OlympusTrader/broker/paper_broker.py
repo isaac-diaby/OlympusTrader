@@ -195,6 +195,9 @@ class PaperBroker(BaseBroker):
 
     def get_order(self, order_id):
         return self.Orders.get(order_id)
+    def format_order(self, order) -> IOrder:
+        assert isinstance(order, IOrder), "Order must be a dictionary"
+        return order
 
     def cancel_order(self, order_id: str):
         order = self.Orders.get(order_id)
@@ -449,21 +452,34 @@ class PaperBroker(BaseBroker):
         if self.Positions[symbol].get(orderId):
             match order['status']:
                 case ITradeUpdateEvent.FILLED:
+                    # watch changes in the position - order filled
+                    pass
                     # Update the position quantity
+                    # if order['stop_price']:
+                    #     if order['side'] == IOrderSide.BUY:
+                    #         self.Positions[symbol][orderId]['qty'] -= order['qty']
+                    #     else:
+                    #         self.Positions[symbol][orderId]['qty'] += order['qty']
+                    #     # Clear buying power wwithheld by the order
+                    #     self.Account['cash'] += np.round(
+                    #         (order['qty'] * order['stop_price']) / self.LEVERAGE, 2)
+                case ITradeUpdateEvent.CLOSED:
                     if order['stop_price']:
-                        if order['side'] == IOrderSide.BUY:
+                        if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY:
+                        # if order['side'] == IOrderSide.BUY:
+                            assert order['side'] == IOrderSide.SELL, "Order side must be SELL for closing a BUY position"
                             self.Positions[symbol][orderId]['qty'] -= order['qty']
-                        else:
+                        elif self.Positions[symbol][orderId]['side'] == IOrderSide.SELL:
+                            assert order['side'] == IOrderSide.BUY, "Order side must be BUY for closing a SELL position"
                             self.Positions[symbol][orderId]['qty'] += order['qty']
 
-                case ITradeUpdateEvent.CLOSED:
-                    if order['side'] == IOrderSide.BUY:
-                        self.Positions[symbol][orderId]['qty'] += order['qty']
-                    else:
-                        self.Positions[symbol][orderId]['qty'] -= order['qty']
-                    # Clear buying power wwithheld by the order
-                    self.Account['cash'] += np.round(
-                        (order['qty'] * order['stop_price']) / self.LEVERAGE, 2)
+                        # Clear buying power wwithheld by the order
+                        self.Account['cash'] += np.round(
+                            (order['qty'] * self.Positions[symbol][orderId]['avg_entry_price']) / self.LEVERAGE, 2)
+                        # self.Account['cash'] += np.round(
+                        # (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
+                    else: 
+                        print("Order Close Without stop_price:", order)
                     # check if the posistion partially closed
                     # if order['status'] == ITradeUpdateEvent.CLOSED:
                     #     quantityChange = oldPosition['qty'] - order['qty']
@@ -493,8 +509,7 @@ class PaperBroker(BaseBroker):
                     )
                     return
                 case ITradeUpdateEvent.CANCELED:
-                    # refund the blocked cash
-                    # Clear buying power wwithheld by the order
+                    # refund the blocked cash for the order
                     self.Account['cash'] += np.round(
                         (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
                     return
@@ -516,8 +531,7 @@ class PaperBroker(BaseBroker):
 
             # Update the position market value
             self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
-                np.abs(self.Positions[symbol][orderId]['qty']
-                       )  # qunaity can be negative for short positions
+                np.abs(self.Positions[symbol][orderId]['qty'])  # qunaity can be negative for short positions
 
             # Update the unrealized PnL
             self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
@@ -529,8 +543,8 @@ class PaperBroker(BaseBroker):
             self.Account['cash'] += changeInPL
         else:
             # self.Positions[symbol]['market_value']
-            self.Account['cash'] += np.round(self.Positions[symbol][orderId]
-                                             ['cost_basis'] / self.LEVERAGE, 2)
+            # self.Account['cash'] += np.round((self.Positions[symbol][orderId]
+            #                                  ['cost_basis'] / self.LEVERAGE), 2)
             if self.Positions[symbol][orderId]['qty'] == 0:
                 del self.Positions[symbol][orderId]
             # TODO: Later we can remove the position from the Positions dictionary
@@ -860,6 +874,9 @@ class PaperBroker(BaseBroker):
         return order
 
     def update_account_history(self):
+        if self.VERBOSE >= 2:
+            print("Updating Account History")
+            print("Account: ", self.Account)
         self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
 
     def update_account_balance(self):

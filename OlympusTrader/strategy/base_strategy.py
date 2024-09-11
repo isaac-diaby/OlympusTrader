@@ -447,7 +447,7 @@ class BaseStrategy(abc.ABC):
                     # print('Error in _insightListener:', e)
                     pass
             else:
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()

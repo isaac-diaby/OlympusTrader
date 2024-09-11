@@ -133,7 +133,7 @@ class BaseBroker(abc.ABC):
 
 
     @abc.abstractmethod
-    def format_on_bar(self, bar: Any) -> Optional[pd.DataFrame]:
+    def format_on_bar(self, bar: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         """
         Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}
         -  (data={}, index=MultiIndex[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
@@ -146,7 +146,11 @@ class BaseBroker(abc.ABC):
         """Format stream quote data"""
         pass
 
-
+    @abc.abstractmethod
+    def format_order(self, order: Any) -> IOrder:
+        """Format stream Order data"""
+        pass
+    
     @abc.abstractmethod
     def format_on_trade_update(self, trade: Any) -> tuple[IOrder, ITradeUpdateEvent]:
         """Format stream Trade Order data and event"""
