@@ -507,8 +507,6 @@ class PaperBroker(BaseBroker):
 
             # or order['status'] != ITradeUpdateEvent.CLOSED or not order['stop_price']:
             if oldPosition != 0:
-                print("position Qunatity =", self.Positions[symbol][orderId]['qty'], "Older => ", oldPosition["qty"])
-
                 # Update the position market value
                 self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
                     np.abs(oldPosition['qty'])  # qunaity can be negative for short positions
