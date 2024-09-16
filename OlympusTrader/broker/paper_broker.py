@@ -332,7 +332,7 @@ class PaperBroker(BaseBroker):
                 """
                 autopass = False
                 if currentBar.high == currentBar.low:
-                    pricePadding = 0.001  #  0.1%
+                    pricePadding = 0.001  # 0.1%
                     if ((currentBar.high*(1+pricePadding)) >= order['limit_price'] >= (currentBar.low*(1-pricePadding))):
                         autopass = True
 
@@ -443,6 +443,7 @@ class PaperBroker(BaseBroker):
         if currentBar is None:
             return
         currentBar = currentBar.iloc[0]
+        oldPosition: IPosition = None
 
         # check if there is a position for the symbol
         if not self.Positions.get(symbol):
@@ -450,19 +451,13 @@ class PaperBroker(BaseBroker):
 
         # Check if this is a tracked open position
         if self.Positions[symbol].get(orderId):
+            oldPosition = self.Positions[symbol].get(orderId).copy()
             match order['status']:
                 case ITradeUpdateEvent.FILLED:
                     # watch changes in the position - order filled
                     pass
-                    # Update the position quantity
-                    # if order['stop_price']:
-                    #     if order['side'] == IOrderSide.BUY:
-                    #         self.Positions[symbol][orderId]['qty'] -= order['qty']
-                    #     else:
-                    #         self.Positions[symbol][orderId]['qty'] += order['qty']
-                    #     # Clear buying power wwithheld by the order
-                    #     self.Account['cash'] += np.round(
-                    #         (order['qty'] * order['stop_price']) / self.LEVERAGE, 2)
+
+
                 case ITradeUpdateEvent.CLOSED:
                     if order['stop_price']:
                         if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY:
@@ -476,20 +471,8 @@ class PaperBroker(BaseBroker):
                         # Clear buying power wwithheld by the order
                         self.Account['cash'] += np.round(
                             (order['qty'] * self.Positions[symbol][orderId]['avg_entry_price']) / self.LEVERAGE, 2)
-                        # self.Account['cash'] += np.round(
-                        # (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
                     else: 
                         print("Order Close Without stop_price:", order)
-                    # check if the posistion partially closed
-                    # if order['status'] == ITradeUpdateEvent.CLOSED:
-                    #     quantityChange = oldPosition['qty'] - order['qty']
-                    #     if quantityChange > 0:
-                    #         # Partially closed
-                    #         adjustedCostBasis = self.Positions[symbol][orderId]['cost_basis'] * \
-                    #                                 np.abs(self.Positions[symbol][orderId]['qty']) / order['qty']
-
-                    #         self.Positions[symbol][orderId]['cost_basis'] = adjustedCostBasis
-                    #         self.Account['cash'] += np.round(adjustedCostBasis / self.LEVERAGE, 2)
 
         else:
             match order['status']:
@@ -507,50 +490,45 @@ class PaperBroker(BaseBroker):
                         current_price=order['filled_price'],
                         unrealized_pl=0
                     )
-                    return
+                    pass
                 case ITradeUpdateEvent.CANCELED:
                     # refund the blocked cash for the order
                     self.Account['cash'] += np.round(
                         (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
-                    return
+                    pass
+                    
 
-        # print("Position: ", self.Positions[symbol][orderId])
-        oldPosition = self.Positions[symbol].get(orderId)
         if oldPosition:
-            oldPosition = self.Positions[symbol][orderId].copy()
+            self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order['stop_price'] else order['stop_price']
+
+            if self.Positions[symbol][orderId]['current_price'] == oldPosition['current_price'] and order['status'] != ITradeUpdateEvent.CLOSED:
+                # No price change in the position since the last update
+                return
+
+            # or order['status'] != ITradeUpdateEvent.CLOSED or not order['stop_price']:
+            if oldPosition != 0:
+                print("position Qunatity =", self.Positions[symbol][orderId]['qty'], "Older => ", oldPosition["qty"])
+
+                # Update the position market value
+                self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
+                    np.abs(oldPosition['qty'])  # qunaity can be negative for short positions
+
+                # Update the unrealized PnL
+                self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
+                                                                    ) if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY else (self.Positions[symbol][orderId]['cost_basis'] - self.Positions[symbol][orderId]['market_value'])
+
+                # Update the account equity
+                changeInPL = round(self.Positions[symbol][orderId]['unrealized_pl'] -
+                                oldPosition['unrealized_pl'], 2)
+                self.Account['cash'] += changeInPL
+                self.Account['equity'] += changeInPL
+
+            if self.Positions[symbol][orderId]['qty'] == 0:
+                # remove the position from the Positions dictionary
+                del self.Positions[symbol][orderId]
+
         else: 
             return
-        self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order['stop_price'] else order['stop_price']
-
-        if self.Positions[symbol][orderId]['current_price'] == oldPosition['current_price'] and order['status'] != ITradeUpdateEvent.CLOSED:
-            # No price change in the position since the last update
-            return
-
-        # or order['status'] != ITradeUpdateEvent.CLOSED or not order['stop_price']:
-        if self.Positions[symbol][orderId]['qty'] != 0:
-
-            # Update the position market value
-            self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
-                np.abs(self.Positions[symbol][orderId]['qty'])  # qunaity can be negative for short positions
-
-            # Update the unrealized PnL
-            self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
-                                                                ) if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY else (self.Positions[symbol][orderId]['cost_basis'] - self.Positions[symbol][orderId]['market_value'])
-
-            # Update the account equity
-            changeInPL = round(self.Positions[symbol][orderId]['unrealized_pl'] -
-                               oldPosition['unrealized_pl'], 2)
-            self.Account['cash'] += changeInPL
-        else:
-            # self.Positions[symbol]['market_value']
-            # self.Account['cash'] += np.round((self.Positions[symbol][orderId]
-            #                                  ['cost_basis'] / self.LEVERAGE), 2)
-            if self.Positions[symbol][orderId]['qty'] == 0:
-                del self.Positions[symbol][orderId]
-            # TODO: Later we can remove the position from the Positions dictionary
-            # del self.Positions[symbol]
-        # print("Updated Position: ",
-        #       self.Positions[symbol], self.Account['cash'], self.Account['buying_power'])
 
     def _log_signal(self, order: IOrder, signalType: Literal['entry', 'exit']):
         symbol = order['asset']['symbol']
@@ -586,12 +564,7 @@ class PaperBroker(BaseBroker):
                 else:
                     self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['stop_price']) / 2
 
-        # Set the Size
-        # position = self.get_position(symbol=symbol, mode='active')
-        # if position:
-        #     self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex,
-        #                                                 'qty'] = position['qty']
-        # else:
+
         if order['side'] == IOrderSide.BUY:
             self.HISTORICAL_DATA[symbol
                                     ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
@@ -610,7 +583,7 @@ class PaperBroker(BaseBroker):
             if not oldOrder:
                 self.PENDING_ORDERS.append(order)
 
-                """ Check if the order is affecting any acrive orders as it might be a order to close a position  and update the active orders accordingly"""
+                """ Check if the order is affecting any active orders as it might be an order to close a position and update the active orders accordingly"""
                 if self.get_position(order['asset']['symbol']):
                     tempCloseOrder = order.copy()
                     conflicting = False
@@ -786,11 +759,6 @@ class PaperBroker(BaseBroker):
                 order = self._submit_order(orderRequest)
                 return order
 
-                # if self.MODE == IStrategyMode.BACKTEST:
-                # else:
-                #     raise NotImplementedError(
-                #         f'Mode {self.MODE} not supported')
-
         except BaseException as e:
             raise e
 
@@ -883,39 +851,6 @@ class PaperBroker(BaseBroker):
         self.ACCOUNT['buying_power'] = max(np.round(
             self.ACCOUNT['cash'] * self.LEVERAGE, 2), 0)
 
-        # Update the account equity
-        posistion_value = 0
-        # check if there are any open positions
-        if len(self.get_positions()) != 0:
-            for position in self.get_positions().values():
-                if position == None:
-                    continue
-                posistion_value += np.round(position['market_value'], 2)
-
-        # Helper function to calculate the position value
-        def calculate_position_value(order):
-            try:
-                return np.round(order['qty'] * order['limit_price'], 2)
-            except:
-                # Close order dont have limit price
-                return 0
-        # Check if there are any pending orders
-        if len(self.PENDING_ORDERS) != 0:
-            for order in self.PENDING_ORDERS:
-                posistion_value += calculate_position_value(order)
-        # Check if there are any closing orders
-        if len(self.CLOSE_ORDERS) != 0:
-            for order in self.CLOSE_ORDERS:
-                posistion_value += calculate_position_value(order)
-
-        # check if there are any cancel orders
-        if len(self.CANCELED_ORDERS) != 0:
-            for order in self.CANCELED_ORDERS:
-                posistion_value += calculate_position_value(order)
-
-        # Update the account equity
-        self.ACCOUNT['equity'] = self.ACCOUNT['cash'] + \
-            np.round(posistion_value / self.LEVERAGE, 2)
 
     def format_on_bar(self, bar, symbol: str):
         if self.DataFeed == 'yf':
