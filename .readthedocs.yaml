@@ -35,7 +35,7 @@ build:
     # - export TA_INCLUDE_PATH=${READTHEDOCS_REPOSITORY_PATH}/talib/include
 
     post_install:
-    -  export TA_LIBRARY_PATH=$READTHEDOCS_REPOSITORY_PATH/talib/lib && export TA_INCLUDE_PATH=$READTHEDOCS_REPOSITORY_PATH/talib/include && VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install --with docs
+    -  export TA_LIBRARY_PATH=$READTHEDOCS_REPOSITORY_PATH/talib/lib && export TA_INCLUDE_PATH=$READTHEDOCS_REPOSITORY_PATH/talib/include && VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install --with docs -E talib
 
 
 # Build documentation in the "docs/" directory with Sphinx

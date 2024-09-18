@@ -273,7 +273,7 @@ class Insight:
         return False
 
     def close(self, quantity: Optional[float] = None, retry: bool = True, bypassStateCheck: bool = False):
-        if (self.state == InsightState.FILLED or bypassStateCheck) and not self._closing:
+        if (self.state == InsightState.FILLED or bypassStateCheck) and ( self._closing == False):
             partialClose = False
             try:
                 if quantity != None and self.quantity:
@@ -314,7 +314,7 @@ class Insight:
                             # The position has already been closed as the balance is 0
                             self.updateState(
                                 InsightState.CANCELED, f"No funds to close position")
-        if not self._closing:
+        elif self._closing == False:
             print("Insight is not in a valid state to be closed", self.state)
 
         return False
@@ -371,7 +371,7 @@ class Insight:
         if price == self.limit_price:
             print(
                 f"Limit price is the same as the current limit price: {price} == {self.limit_price}")
-            return False
+            return True
         # check if the insight is already filled
         if self.state == InsightState.FILLED:
             print(
@@ -576,7 +576,10 @@ class Insight:
         return self
 
     def updateTakeProfitLegs(self, leg: IOrderLeg):
+        # TODO: Check if there is a take profit order leg already set if so update the limit price
+
         self.legs['take_profit'] = leg
+        self.TP[-1] = leg['limit_price']
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
@@ -595,7 +598,9 @@ class Insight:
         return False
 
     def updateStopLossLegs(self, leg: IOrderLeg):
+        # TODO: Check if there is a stop loss order leg already set if so update the limit price
         self.legs['stop_loss'] = leg
+        self.SL = leg['limit_price']
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
@@ -624,16 +629,18 @@ class Insight:
         return self.legs.get('trailing_stop')
 
     def positionFilled(self, price: float, qty: float, order_id: str = None):
-        if order_id != None:
+        if self.order_id == None:
             self.updateOrderID(order_id)
+
+        assert self.order_id == order_id, f"Order ID: {order_id} does not match the insight's order ID: {self.order_id}"
         self.limit_price = price
         self.quantity = qty
         self.partialFilled(qty)
-        self.updateState(InsightState.FILLED, f"Trade Filled: {
-                         self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
+        self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
+        
         return self
 
-    def partialFilled(self, qty: float,):
+    def partialFilled(self, qty: float):
         if self._partial_filled_quantity == None:
             self._partial_filled_quantity = 0
         if qty <= self.quantity:
@@ -645,6 +652,9 @@ class Insight:
             return
 
     def positionClosed(self, price: float, close_order_id: str, qty: float = None):
+        if self.close_order_id == None:
+            self.updateCloseOrderID(close_order_id)
+        assert self.close_order_id == close_order_id, f"Close Order ID: {close_order_id} does not match the insight's close order ID: {self.close_order_id}"
         if qty != None:
             self.quantity = qty
         # Handle multiple Take Profit levels
@@ -653,7 +663,7 @@ class Insight:
             self.close_price /= 2
         else:
             self.close_price = price
-        self.updateCloseOrderID(close_order_id)
+
         self.updateState(InsightState.CLOSED)
 
         # Close all of the child insights

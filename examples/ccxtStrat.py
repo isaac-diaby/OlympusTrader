@@ -1,10 +1,12 @@
 from datetime import datetime
+import os
 from pathlib import Path
 
+from ccxt.pro import mexc
 import numpy as np
 import pandas as pd
 from OlympusTrader.broker.interfaces import IOrderSide, ITradeUpdateEvent
-from OlympusTrader.broker.paper_broker import PaperBroker
+from OlympusTrader.broker.ccxt_broker import CCXTBroker
 from OlympusTrader.strategy.strategy import Strategy
 from OlympusTrader.insight.insight import Insight, InsightState, StrategyTypes
 from OlympusTrader.strategy.interfaces import IStrategyMode
@@ -29,24 +31,16 @@ from OlympusTrader.insight.executors.rejected.defaultOnReject import DefaultOnRe
 from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClosedExecutor
 
 
-class QbitTB(Strategy):
+class CCXTTB(Strategy):
     def start(self):
-        self.add_ta([
-            {"kind": 'macd', "fast": 16, "slow": 36, "signal": 9},
-            {"kind": 'atr', "length": 14},
-            {"kind": 'rsi', "length": 14, "scalar": 10}
-            ])
-        self.warm_up = 36
         self.execution_risk = 0.08  # 4% of account per trade
         self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.67
 
         # Alphas
         self.add_alphas([
-        RSIDiverganceAlpha(self, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        EMAPriceCrossoverAlpha(self, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        # TestEntryAlpha(self, atrPeriod=14)
-    ])
+            TestEntryAlpha(self, atrPeriod=14)
+        ])
         # New Executors
         self.add_executors([
             RejectExpiredInsightExecutor(self),
@@ -81,67 +75,25 @@ class QbitTB(Strategy):
             DefaultOnRejectExecutor(self)
         ])
 
-
     def init(self, asset):
         state = self.state
 
-        # inital market state
-        if (state.get('market_state') == None):
-            state['market_state'] = {}
-        state['market_state'][asset['symbol']] = 0
-
         # load warm up history
-
         self.history[asset['symbol']] = pd.concat([self.history[asset['symbol']], self.broker.get_history(
             asset, self.resolution.add_time_increment(datetime.now(),  self.warm_up*-3), datetime.now(), self.resolution)])
 
     def universe(self):
         # universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
-        universe = {'btc-usd'}
+        # universe = {'btc/usd'}
+        universe = {'btc/usdt', 'eth/usdt', 'sol/usdt'}
         # universe = {'btc-usd','eth-usd'}
         return universe
 
     def on_bar(self, symbol, bar):
-        self.computeMarketState(symbol)
         pass
 
     def generateInsights(self, symbol: str):
         pass
- 
-    def computeMarketState(self, symbol: str):
-        marketState = self.state['market_state'][symbol]
-        history = self.history[symbol]
-        IMACD = history[['MACD_16_36_9', 'MACDh_16_36_9', 'MACDs_16_36_9']]
-        IRSI = history['RSI_14']
-        # print(f"MACD: {IMACD.iloc[-1]}, {IMACD.iloc[-1, 0]}, {IMACD.iloc[-1, 1]}, {IMACD.iloc[-1, 2]}")
-        # print(f"RSI: {IRSI.iloc[-1]}")
-        marketState = 0
-        if ((IMACD.iloc[-1, 0] > 0)):  # MACD value and  # MACD histogram are both positive
-            marketState += 3
-        elif ((IMACD.iloc[-1, 0] < 0)):  # MACD value and  # MACD histogram are both positive
-            marketState -= 3
-        # if ((IMACD.iloc[-1, 0] > 0) and (IMACD.iloc[-1, 2] < 0)):  # MACD value and  # MACD histogram are both positive
-        #     marketState += 3
-        # elif ((IMACD.iloc[-1, 0] < 0) and (IMACD.iloc[-1, 2] > 0)): # MACD value and  # MACD histogram are both positive
-        #     marketState -= 3
-        if (IRSI.iloc[-1] < 30):
-            marketState += 2
-        elif (IRSI.iloc[-1] > 70):
-            marketState -= 2
-
-        # take no action if Market Has no Volume based on the Volume Quantile > 0.75
-        # if (history['volume'].iloc[-1] < round(history['volume'].quantile(0.75), 2)):
-        #     marketState = 0
-
-        if (marketState > 0):
-            marketState += 1
-        elif (marketState < 0):
-            marketState -= 1
-
-        # print(f"{symbol} Market State: {marketState}, MACD: {IMACD.iloc[-1, 0]}, RSI: {IRSI.iloc[-1]}")
-        marketState = min(max(marketState, -5), 5)
-        self.state['market_state'][symbol] = marketState
-        return marketState
 
     def executeInsight(self, insight: Insight):
         match insight.state:
@@ -156,7 +108,6 @@ class QbitTB(Strategy):
             # case InsightState.EXECUTED:
             #     return
             # case InsightState.FILLED:
-            #     # TODO: check if the trade needs to lower risk by moving stop loss
             #     return
             # case InsightState.CLOSED:
             #     return
@@ -173,30 +124,30 @@ if __name__ == "__main__":
     # Paper Broker for backtesting
     # broker = PaperBroker(cash=1_000_000, start_date=datetime(
     #         2024, 7, 1), end_date=datetime(2024, 8, 23))
-    
-    broker = PaperBroker(cash=100_000, start_date=datetime(
-            2024, 8, 16), end_date=datetime(2024, 8, 23), verbose=1, leverage=1.0)
-    
-    # Strategy
-    # 1 Minute
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
-    # 5 Minute
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
-    # 1 Hour
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
+    # exchange = alpaca({
+    #     'apiKey': os.getenv('ALPACA_API_KEY'),
+    #     'secret': os.getenv('ALPACA_SECRET_KEY'),
+    # })
+    exchange = mexc({
+        'apiKey': os.getenv('MEXC_API_KEY'),
+        'secret': os.getenv('MEXC_SECRET_KEY'),
+        'enableRateLimit': True,
+        "options": {
+            'adjustForTimeDifference': True,
+            'recvWindow': 50000,
+            # "verbose": True
+        },
 
-    
-    # live paper trading on the paper broker 
-    # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
+    })
+
+    broker = CCXTBroker(exchange=exchange, paper=False)
+    # broker = CCXTBroker(exchange=exchange, paper=True)
+
+    # Strategy
+    strategy = CCXTTB(broker, variables={}, resolution=ITimeFrame(
+        5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
 
     # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
-    strategy.add_events('bar', stored=True, stored_path='data', applyTA=True)
+    strategy.add_events('bar')
 
     strategy.run()

@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
     # Live Paper Broker for backtesting
     # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
-    broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
+    broker = PaperBroker(cash=100_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
 
 
     # Strategy live paper trading on the paper broker 

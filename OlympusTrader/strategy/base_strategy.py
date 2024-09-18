@@ -346,9 +346,9 @@ class BaseStrategy(abc.ABC):
 
             # Save the backtest results
             for symbol in tqdm(self.BACKTESTING_RESULTS.keys(), desc="Saving Backtest Results"):
-                save_path = Path(f"backtests/{self.STRATEGY_ID}")
+                save_path = Path(f"backtests/{self.NAME}/{self.STRATEGY_ID}")
                 save_path.mkdir(parents=True, exist_ok=True)
-                path = f"backtests/{self.STRATEGY_ID}/{symbol}-{self.resolution}-backtest"
+                path = f"{save_path}/{symbol}-{self.resolution}-backtest"
                 if (self.BACKTESTING_RESULTS.get(symbol)):
                     self.BACKTESTING_RESULTS[symbol].save(path)
                     self.BACKTESTING_RESULTS[symbol].plot().show()
@@ -447,7 +447,7 @@ class BaseStrategy(abc.ABC):
                     # print('Error in _insightListener:', e)
                     pass
             else:
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()

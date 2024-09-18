@@ -11,6 +11,7 @@ from OlympusTrader.alpha import BaseAlpha
 
 # Brokers
 from OlympusTrader.broker.alpaca_broker import AlpacaBroker
+from OlympusTrader.broker.ccxt_broker import CCXTBroker
 from OlympusTrader.broker.paper_broker import PaperBroker
 from OlympusTrader.broker.interfaces import IOrderSide
 
