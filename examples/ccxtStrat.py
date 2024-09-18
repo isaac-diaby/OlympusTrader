@@ -2,7 +2,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-from ccxt import mexc
+from ccxt.pro import mexc
 import numpy as np
 import pandas as pd
 from OlympusTrader.broker.interfaces import IOrderSide, ITradeUpdateEvent
@@ -84,7 +84,8 @@ class CCXTTB(Strategy):
 
     def universe(self):
         # universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
-        universe = {'btc-usd'}
+        # universe = {'btc/usd'}
+        universe = {'btc/usdt', 'eth/usdt', 'sol/usdt'}
         # universe = {'btc-usd','eth-usd'}
         return universe
 
@@ -130,9 +131,17 @@ if __name__ == "__main__":
     exchange = mexc({
         'apiKey': os.getenv('MEXC_API_KEY'),
         'secret': os.getenv('MEXC_SECRET_KEY'),
+        'enableRateLimit': True,
+        "options": {
+            'adjustForTimeDifference': True,
+            'recvWindow': 50000,
+            # "verbose": True
+        },
+
     })
 
-    broker = CCXTBroker(exchange=exchange, paper=True,)
+    broker = CCXTBroker(exchange=exchange, paper=False)
+    # broker = CCXTBroker(exchange=exchange, paper=True)
 
     # Strategy
     strategy = CCXTTB(broker, variables={}, resolution=ITimeFrame(
