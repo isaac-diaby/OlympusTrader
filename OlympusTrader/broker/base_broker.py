@@ -8,7 +8,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-from .interfaces import IQuote, ISupportedBrokerFeatures, ISupportedBrokers
+from .interfaces import IQuote, ISupportedBrokerFeatures, ISupportedBrokers, ITradeUpdate
 
 from .interfaces import IAsset, IAccount, IOrder, IPosition, ITradeUpdateEvent
 from ..insight.insight import Insight
@@ -137,7 +137,6 @@ class BaseBroker(abc.ABC):
         """
         Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}
         -  (data={}, index=MultiIndex[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
-
         """
         pass
 
@@ -154,7 +153,8 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def format_on_trade_update(self, trade: Any) -> tuple[IOrder, ITradeUpdateEvent]:
         """Format stream Trade Order data and event"""
-        pass
+        if isinstance(trade, ITradeUpdate):
+            return trade.order, trade.event
 
     def get_current_time(self) -> datetime:
         return datetime.now()

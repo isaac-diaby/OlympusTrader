@@ -12,7 +12,11 @@ services:
     restart: always
     build:
       context: ./
-      dockerfile: Docker/Dockerfile.trader
+      # dockerfile: docker/trader.Dockerfile # This is for strategy in the strategies directory
+      # dockerfile: Docker/Dockerfile.trader # This is for just main.py in the root directory
+      dockerfile: Docker/localTrader.Dockerfile # like trader.Dockerfile but for internal use - local framework source code  local
+      args:
+        STRATEGY: ${STRATEGY:-SuperTrendStrategy}
     ports:
       - 50000:50000
     env_file:

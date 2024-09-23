@@ -42,7 +42,12 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     make install && \
     cd .. && \
     rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
-    
+
+# COPY --from=builder /usr/lib/talib* /usr/lib/
+# COPY --from=builder /usr/include/talib* /usr/include/
+
+# ENV TA_LIBRARY_PATH=/usr/lib
+# ENV TA_INCLUDE_PATH=/usr/include
 
 # Download dependencies as a separate step to take advantage of Docker's caching.
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.

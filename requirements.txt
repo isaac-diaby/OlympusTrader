@@ -1,19 +1,20 @@
 
-alpaca-py
-yfinance
+olympustrader[talib]
+# alpaca-py
+# yfinance
 
 
-TA-Lib
-pandas_ta
-scipy
+# TA-Lib
+# pandas_ta
+# scipy
 
-streamlit
+# streamlit
 
-numpy==1.26.4
-pandas
-quantstats
+# numpy==1.26.4
+# pandas
+# quantstats
 
-python-dotenv
-nest_asyncio
-tqdm
-tables
+# python-dotenv
+# nest_asyncio
+# tqdm
+# tables

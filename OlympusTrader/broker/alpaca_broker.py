@@ -494,11 +494,13 @@ class AlpacaBroker(BaseBroker):
                     """ Alpaca only generates one bar at a time no matter the timeframe so we need to send the to each feature
                         base_strategy should handle the rest
                     """
-                    bardata = self.format_on_bar(data)
-                    timestamp = bardata.index[0][1]
+                    barData = self.format_on_bar(data)
+                    timestamp = barData.index[0][1]
+                    # TODO: WE may be able to skip this if python still hass access to the local scope variables assetStream during the loop. 
+                    # We may be able to use the assetStream variable directly in the callback instead of looping over it as we are passing by ref to the alpace callback.
                     for asset in assetStreams:
                         if asset['symbol'] == assetStream['symbol'] and asset['time_frame'].is_time_increment(timestamp):
-                            await callback(bardata, timeframe=asset['time_frame'])
+                            await callback(barData, timeframe=asset['time_frame'])
 
                 if assetStream.get('feature') != None:
                     # We dont want to add multiple streams for the same asset

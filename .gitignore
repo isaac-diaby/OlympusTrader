@@ -11,6 +11,7 @@ share/**/*
 **/.DS_Store
 data/*
 backtests/*
+strategies/*
 strategy/*
-```
+
 docs/build/*

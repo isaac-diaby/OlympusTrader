@@ -3,7 +3,7 @@ from enum import Enum
 from types import NoneType
 from typing import List, Literal, TYPE_CHECKING, Optional, Self, Type, Union
 from uuid import uuid4, UUID
-
+from numpy import isnan
 
 from ..utils.timeframe import ITimeFrame
 from ..broker.interfaces import IAsset, IOrderSide, IOrderType, IOrderClass, IOrderLegs, IOrderLeg
@@ -452,7 +452,7 @@ class Insight:
 
     def checkValidQuantity(self, shouldUpdateState: bool = False):
         # Check if quantity is invalid
-        if self.quantity == None or self.ASSET['min_order_size'] > self.quantity:
+        if self.quantity == None or self.ASSET['min_order_size'] > self.quantity or isnan(self.quantity):
             if shouldUpdateState:
                 self.updateState(
                     InsightState.REJECTED, 'Invalid Quantity')
@@ -633,6 +633,8 @@ class Insight:
             self.updateOrderID(order_id)
 
         assert self.order_id == order_id, f"Order ID: {order_id} does not match the insight's order ID: {self.order_id}"
+        # TODO: Some times for market orders the price is not set so we will need to run the TP and SL calculations based on the current filled price.
+        # We may want to give the traders the option to set a new TP and SL based on the current price. or just move the TP and SL based on the current price to match the minumem RRR.
         self.limit_price = price
         self.quantity = qty
         self.partialFilled(qty)
@@ -654,7 +656,7 @@ class Insight:
     def positionClosed(self, price: float, close_order_id: str, qty: float = None):
         if self.close_order_id == None:
             self.updateCloseOrderID(close_order_id)
-        assert self.close_order_id == close_order_id, f"Close Order ID: {close_order_id} does not match the insight's close order ID: {self.close_order_id}"
+        assert ((self.close_order_id == close_order_id) or (self.order_id == close_order_id)), f"Close Order ID: {close_order_id} does not match the insight's close order ID: {self.close_order_id}"
         if qty != None:
             self.quantity = qty
         # Handle multiple Take Profit levels
