@@ -345,19 +345,34 @@ class BaseStrategy(abc.ABC):
                 self.resolution)
 
             # Save the backtest results
-            for symbol in tqdm(self.BACKTESTING_RESULTS.keys(), desc="Saving Backtest Results"):
-                save_path = Path(f"backtests/{self.NAME}/{self.STRATEGY_ID}")
-                save_path.mkdir(parents=True, exist_ok=True)
-                path = f"{save_path}/{symbol}-{self.resolution}-backtest"
-                if (self.BACKTESTING_RESULTS.get(symbol)):
-                    self.BACKTESTING_RESULTS[symbol].save(path)
-                    self.BACKTESTING_RESULTS[symbol].plot().show()
-                    print("Backtesting results saved for", symbol, "at", path)
-                else:
-                    print("No backtesting results found for", symbol)
+            self.saveBacktestResults()
+            
             # show the user the simulation account
-            print("Simulation Account",  self.BROKER.Account)
+            print("Simulation Account",  self.BROKER.Account )
 
+
+    def saveBacktestResults(self):
+        """ Save the backtest results."""
+        if self.MODE != IStrategyMode.BACKTEST:
+            print("Backtest results can only be saved in backtest mode")
+            return
+        # check if there are backtest results
+        if len(self.BACKTESTING_RESULTS) == 0:
+            print("No backtest results to save")
+            return
+        
+        # Save the backtest results
+        for symbol in tqdm(self.BACKTESTING_RESULTS.keys(), desc="Saving Backtest Results"):
+            save_path = Path(f"backtests/{self.NAME}/{self.STRATEGY_ID}")
+            save_path.mkdir(parents=True, exist_ok=True)
+            path = f"{save_path}/{symbol}-{self.resolution}-backtest"
+            if (self.BACKTESTING_RESULTS.get(symbol)):
+                self.BACKTESTING_RESULTS[symbol].save(path)
+                self.BACKTESTING_RESULTS[symbol].plot().show()
+                print("Backtesting results saved for", symbol, "at", path)
+            else:
+                print("No backtesting results found for", symbol)
+        
     def _startUISharedMemory(self):
         """ Starts the UI shared memory."""
         if not self.WITHUI:
@@ -484,10 +499,13 @@ class BaseStrategy(abc.ABC):
                                 if orderdata['legs']:
                                     self.INSIGHTS[i].updateLegs(
                                         legs=orderdata['legs'])
-                                # Update the insight with the filled price
-                                self.INSIGHTS[i].positionFilled(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata["filled_qty"])
-                                
+                                try: 
+                                        
+                                    # Update the insight with the filled price
+                                    self.INSIGHTS[i].positionFilled(
+                                        orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata["filled_qty"], orderdata['order_id'])
+                                except AssertionError as e:
+                                    continue
                                 if insight.PARANT == None and len(self.INSIGHTS[i].CHILDREN) > 0:
                                     # set the childe insight to be active
                                     for uid, childInsight in insight.CHILDREN.items():
@@ -548,7 +566,7 @@ class BaseStrategy(abc.ABC):
                                                 orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'])
                                         return
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
-                        if (((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side))) or \
+                        if (((orderdata['qty'] == insight.quantity) and (orderdata['side'] != insight.side) and insight.close_order_id == None )) or \
                             ((insight.close_order_id != None) and (insight.close_order_id == orderdata['order_id'])) or \
                             (insight.order_id == orderdata['order_id']) or \
                             (insight.legs != None and
@@ -559,13 +577,16 @@ class BaseStrategy(abc.ABC):
                                 )
                             ):
                             # Update the insight closed price
-                            if self.MODE != IStrategyMode.BACKTEST:
-                                self.INSIGHTS[i].positionClosed(
-                                    orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['filled_qty'])
-                            else:
-                                self.INSIGHTS[i].positionClosed(
-                                    orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['filled_qty'])
-                            return  # No need to continue
+                            try:
+                                if self.MODE != IStrategyMode.BACKTEST:
+                                    self.INSIGHTS[i].positionClosed(
+                                        orderdata['filled_price'] if orderdata['filled_price'] != None else orderdata['limit_price'], orderdata['order_id'], orderdata['filled_qty'])
+                                else:
+                                    self.INSIGHTS[i].positionClosed(
+                                        orderdata['stop_price'] if orderdata['stop_price'] != None else orderdata['filled_price'], orderdata['order_id'], orderdata['filled_qty'])
+                                return  # No need to continue
+                            except AssertionError as e:
+                                continue
 
                     continue
 

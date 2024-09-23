@@ -56,7 +56,7 @@ class PaperBroker(BaseBroker):
     ACCOUNT_HISTORY: dict[datetime.date, IAccount] = {}
 
     FeedDelay: int = 0
-     # DEBUG
+    # DEBUG
     VERBOSE: int = 0
 
     def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf', feedDelay: int = 0, verbose: int = 0):
@@ -195,6 +195,7 @@ class PaperBroker(BaseBroker):
 
     def get_order(self, order_id):
         return self.Orders.get(order_id)
+
     def format_order(self, order) -> IOrder:
         assert isinstance(order, IOrder), "Order must be a dictionary"
         return order
@@ -301,29 +302,33 @@ class PaperBroker(BaseBroker):
             if order['type'] == IOrderType.MARKET:
                 # Market order - FILLED at the current close price
                 order['filled_price'] = currentBar.open
-
+                order['filled_qty'] = order['qty']
                 order['status'] = ITradeUpdateEvent.FILLED
                 order['filled_at'] = self.get_current_time
                 order['updated_at'] = self.get_current_time
                 # update buying power difference
-                bp_change = abs((order['qty'] *
-                             order['limit_price']) - (order['qty'] *
-                                                      order['filled_price']))
-                if (self.Account['buying_power'] - bp_change) < 0:
-                    # cant afford the new price
-                    # order['status'] = ITradeUpdateEvent.REJECTED
-                    order['status'] = ITradeUpdateEvent.CANCELED
+                # bp_change = abs((order['qty'] *
+                #              order['limit_price']) - (order['qty'] *
+                #                                       order['filled_price']))
+                # if (self.Account['buying_power'] - bp_change) < 0:
+                # cant afford the new price
+                # order['status'] = ITradeUpdateEvent.REJECTED
+                # order['status'] = ITradeUpdateEvent.CANCELED
+                # self._update_order(order)
+                # loop.run_until_complete(callback(ITradeUpdate(
+                #     order, order['status'])))
+                # continue
+
+                # self.Account['cash'] -= np.round(
+                #     bp_change/self.LEVERAGE, 2)
+                try:
                     self._update_order(order)
                     loop.run_until_complete(callback(ITradeUpdate(
                         order, order['status'])))
-                    continue
+                except BaseException as e:
+                    if e.code == "insufficient_funds":
+                        print("Error: ", e)
 
-                self.Account['cash'] -= np.round(
-                    bp_change/self.LEVERAGE, 2)
-                order['filled_qty'] = order['qty']
-                self._update_order(order)
-                loop.run_until_complete(callback(ITradeUpdate(
-                    order, order['status'])))
                 continue
 
             elif order['type'] == IOrderType.LIMIT:
@@ -343,9 +348,13 @@ class PaperBroker(BaseBroker):
                     order['status'] = ITradeUpdateEvent.FILLED
                     order['filled_at'] = self.get_current_time
                     order['updated_at'] = self.get_current_time
-                    self._update_order(order)
-                    loop.run_until_complete(callback(ITradeUpdate(
-                        order, order['status'])))
+                    try:
+                        self._update_order(order)
+                        loop.run_until_complete(callback(ITradeUpdate(
+                            order, order['status'])))
+                    except BaseException as e:
+                        if e.code == "insufficient_funds":
+                            print("Error: ", e)
                     continue
 
     def processActiveOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
@@ -411,6 +420,7 @@ class PaperBroker(BaseBroker):
             currentBar = currentBar.iloc[0]
 
             order['stop_price'] = currentBar.open
+            order['filled_qty'] = order['qty']
             order['status'] = ITradeUpdateEvent.CLOSED
             order['filled_at'] = self.get_current_time
             order['updated_at'] = self.get_current_time
@@ -457,11 +467,10 @@ class PaperBroker(BaseBroker):
                     # watch changes in the position - order filled
                     pass
 
-
                 case ITradeUpdateEvent.CLOSED:
                     if order['stop_price']:
                         if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY:
-                        # if order['side'] == IOrderSide.BUY:
+                            # if order['side'] == IOrderSide.BUY:
                             assert order['side'] == IOrderSide.SELL, "Order side must be SELL for closing a BUY position"
                             self.Positions[symbol][orderId]['qty'] -= order['qty']
                         elif self.Positions[symbol][orderId]['side'] == IOrderSide.SELL:
@@ -469,34 +478,46 @@ class PaperBroker(BaseBroker):
                             self.Positions[symbol][orderId]['qty'] += order['qty']
 
                         # Clear buying power wwithheld by the order
+                        entryPrince = order['filled_price'] if order[
+                            'filled_price'] != None else self.Positions[symbol][orderId]['avg_entry_price']
                         self.Account['cash'] += np.round(
-                            (order['qty'] * self.Positions[symbol][orderId]['avg_entry_price']) / self.LEVERAGE, 2)
-                    else: 
+                            (order['qty'] * entryPrince) / self.LEVERAGE, 2)
+                        # self.Account['cash'] += np.round(
+                        #     (order['qty'] * self.Positions[symbol][orderId]['avg_entry_price']) / self.LEVERAGE, 2)
+                    else:
                         print("Order Close Without stop_price:", order)
 
         else:
             match order['status']:
                 case ITradeUpdateEvent.FILLED:
                     # add positions dictionary
+                    entryPrince = order['filled_price'] if order['filled_price'] != None else currentBar.close
+                    market_value = entryPrince * order['qty']
                     self.Positions[symbol][orderId] = IPosition(
                         asset=order['asset'],
-                        avg_entry_price=order['filled_price'],
+                        avg_entry_price=entryPrince,
                         qty=order['qty'] if order['side'] == IOrderSide.BUY else -order['qty'],
                         side=order['side'],
-                        market_value=order['filled_price'] *
-                        order['qty'],
-                        cost_basis=order['filled_price'] *
-                        order['qty'],
-                        current_price=order['filled_price'],
+                        market_value=market_value,
+                        cost_basis=market_value,
+                        current_price=entryPrince,
                         unrealized_pl=0
                     )
+                    marginRequired = order['qty'] * order['filled_price']
+                    if self.Account['cash'] < marginRequired/self.LEVERAGE:
+                        # Not enough buying power
+                        order['status'] = ITradeUpdateEvent.CANCELED
+                        self.CANCELED_ORDERS.append(order)
+                        raise BaseException({
+                            "code": "insufficient_funds",
+                            "data": {"order_id": order['order_id']}
+                        })
+                    self.Account['cash'] -= np.round(
+                        marginRequired/self.LEVERAGE, 2)
                     pass
                 case ITradeUpdateEvent.CANCELED:
-                    # refund the blocked cash for the order
-                    self.Account['cash'] += np.round(
-                        (order['qty'] * order['limit_price']) / self.LEVERAGE, 2)
+                    # ORder will just be canclled
                     pass
-                    
 
         if oldPosition:
             self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order['stop_price'] else order['stop_price']
@@ -509,7 +530,9 @@ class PaperBroker(BaseBroker):
             if oldPosition != 0:
                 # Update the position market value
                 self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
-                    np.abs(oldPosition['qty'])  # qunaity can be negative for short positions
+                    np.abs(
+                        # qunaity can be negative for short positions
+                        oldPosition['qty'])
 
                 # Update the unrealized PnL
                 self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
@@ -517,7 +540,7 @@ class PaperBroker(BaseBroker):
 
                 # Update the account equity
                 changeInPL = round(self.Positions[symbol][orderId]['unrealized_pl'] -
-                                oldPosition['unrealized_pl'], 2)
+                                   oldPosition['unrealized_pl'], 2)
                 self.Account['cash'] += changeInPL
                 self.Account['equity'] += changeInPL
 
@@ -525,7 +548,7 @@ class PaperBroker(BaseBroker):
                 # remove the position from the Positions dictionary
                 del self.Positions[symbol][orderId]
 
-        else: 
+        else:
             return
 
     def _log_signal(self, order: IOrder, signalType: Literal['entry', 'exit']):
@@ -543,9 +566,11 @@ class PaperBroker(BaseBroker):
             # Record the entry price
             if order['filled_price']:
                 if np.isnan(self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0]):
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = order['filled_price']
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex,
+                                                                'price'] = order['filled_price']
                 else:
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['filled_price']) / 2
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (
+                        self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['filled_price']) / 2
 
         elif signalType == 'exit':
             # Log the exit signal
@@ -558,17 +583,18 @@ class PaperBroker(BaseBroker):
             # Record the exit price
             if order['stop_price']:
                 if np.isnan(self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0]):
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = order['stop_price']
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex,
+                                                                'price'] = order['stop_price']
                 else:
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['stop_price']) / 2
-
+                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (
+                        self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['stop_price']) / 2
 
         if order['side'] == IOrderSide.BUY:
             self.HISTORICAL_DATA[symbol
-                                    ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
+                                 ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
         else:
             self.HISTORICAL_DATA[symbol
-                                    ]['signals'].loc[currentBarIndex, 'qty'] -= order['qty']
+                                 ]['signals'].loc[currentBarIndex, 'qty'] -= order['qty']
 
     def _update_order(self, order: IOrder):
         if self.Orders.get(order['order_id']):
@@ -599,6 +625,9 @@ class PaperBroker(BaseBroker):
                                 self.ACTIVE_ORDERS.remove(activeOrder)
 
                                 tempCloseOrder['order_id'] = activeOrder['order_id']
+                                tempCloseOrder['filled_price'] = activeOrder['filled_price']
+                                tempCloseOrder['filled_qty'] = activeOrder['filled_qty']
+
                                 self.CLOSE_ORDERS.append(tempCloseOrder.copy())
                                 tempCloseOrder['qty'] = 0
                                 conflicting = True
@@ -612,6 +641,8 @@ class PaperBroker(BaseBroker):
 
                                 # send the close order to the close orders
                                 tempCloseOrder['order_id'] = activeOrder['order_id']
+                                tempCloseOrder['filled_price'] = activeOrder['filled_price']
+                                tempCloseOrder['filled_qty'] = tempCloseOrder['qty']
                                 self.CLOSE_ORDERS.append(tempCloseOrder.copy())
                                 tempCloseOrder['qty'] = 0
                                 conflicting = True
@@ -623,6 +654,8 @@ class PaperBroker(BaseBroker):
                                 # send the close order for the active order
                                 tempCloseOrder['order_id'] = activeOrder['order_id']
                                 tempCloseOrder['qty'] = activeOrder['qty']
+                                tempCloseOrder['filled_price'] = activeOrder['filled_price']
+                                tempCloseOrder['filled_qty'] = tempCloseOrder['qty']
                                 self.CLOSE_ORDERS.append(tempCloseOrder.copy())
 
                                 tempCloseOrder['qty'] = quantityLeft
@@ -633,14 +666,15 @@ class PaperBroker(BaseBroker):
                                 break
                     if tempCloseOrder['qty'] > 0 and conflicting:
                         # Add the order to the pending orders
-                        tempCloseOrder['order_id'] = order['order_id']
-                        self.PENDING_ORDERS.append(tempCloseOrder.copy())
+                        order['qty'] = tempCloseOrder['qty']
+                        self.PENDING_ORDERS.append(order)
 
         def onFilledOrder():
             if oldOrder in self.PENDING_ORDERS:
                 self.PENDING_ORDERS.remove(oldOrder)
 
                 # update position of the order
+
                 self._update_position(order)
                 # Add the order to the active orders
                 if self.Positions[order['asset']['symbol']][order['order_id']]['qty'] != 0:
@@ -733,6 +767,9 @@ class PaperBroker(BaseBroker):
             "time_in_force": ITimeInForce.GTC,
             "order_class": IOrderClass.SIMPLE
         }
+
+        assert insight.quantity > 0, "Order quantity must be greater than 0"
+
         if insight.TP and insight.SL:
             orderRequest["order_class"] = IOrderClass.BRACKET
             orderRequest["take_profit"] = insight.TP[-1]
@@ -835,7 +872,14 @@ class PaperBroker(BaseBroker):
             legs=legs
 
         )
-        self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)
+
+        if self.Account['cash'] < marginRequired/self.LEVERAGE:
+            # Not enough buying power
+            raise BaseException({
+                "code": "insufficient_funds",
+                "data": {"order_id": order['order_id']}
+            })
+        # self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)
         self._update_order(order)
         return order
 
@@ -848,7 +892,6 @@ class PaperBroker(BaseBroker):
     def update_account_balance(self):
         self.ACCOUNT['buying_power'] = max(np.round(
             self.ACCOUNT['cash'] * self.LEVERAGE, 2), 0)
-
 
     def format_on_bar(self, bar, symbol: str):
         if self.DataFeed == 'yf':
@@ -996,7 +1039,7 @@ class PaperBroker(BaseBroker):
                                     size = self.HISTORICAL_DATA[symbol
                                                                 ]['bar'].shape[0]
                                     self.HISTORICAL_DATA[symbol]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
-                                        size), "short_exits": np.zeros(size),"price": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "price", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
+                                        size), "short_exits": np.zeros(size), "price": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "price", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
                                     # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
                                     self.HISTORICAL_DATA[symbol]['signals'][[
                                         'entries', 'exits', 'short_entries', 'short_exits']] = False
@@ -1030,7 +1073,8 @@ class PaperBroker(BaseBroker):
             while self.get_current_time <= self.END_DATE and self.RUNNING_MARKET_STREAM and len(assetStreams) > 0:
                 try:
                     if self.VERBOSE > 0:
-                        print("\nstreaming data for:", self.get_current_time, "\n")
+                        print("\nstreaming data for:",
+                              self.get_current_time, "\n")
                     for asset in assetStreams:
                         isFeature = False
                         if asset['type'] == 'bar':
@@ -1381,7 +1425,6 @@ class PaperBroker(BaseBroker):
                     continue
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
-        # TODO: Save the results to a foler and with the backtest meta data (in json or YML file)
         return results
 
     @property
@@ -1393,7 +1436,16 @@ class PaperBroker(BaseBroker):
     @Account.setter
     def Account(self, account: IAccount):
         """ Sets the state of the strategy."""
-        self.ACCOUNT = account
+        cash = account.get('cash')
+        if cash and cash != self.ACCOUNT['cash']:
+            self.ACCOUNT['cash'] = max(cash, 0)
+        equity = account.get('equity')
+        if equity and equity != self.ACCOUNT['equity']:
+            self.ACCOUNT['equity'] = max(equity, 0)
+
+        if account.get('leverage') and account.get('leverage') != self.ACCOUNT['leverage']:
+            self.ACCOUNT['leverage'] = account['leverage']
+
         self.update_account_balance()
 
 

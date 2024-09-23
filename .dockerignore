@@ -29,8 +29,7 @@
 **/node_modules
 **/npm-debug.log
 **/obj
-**/secrets.dev.yaml
-**/values.dev.yaml
+
 
 **/Docker
 **/bin
@@ -40,8 +39,8 @@
 **/share
 **/research
 **/tests
-**/v0.1
 data/**/*
+examples/**/*
+docs/**/*
 
-LICENSE
-README.md
+# README.md
