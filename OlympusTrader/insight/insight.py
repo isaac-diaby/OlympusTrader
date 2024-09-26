@@ -186,8 +186,11 @@ class Insight:
                         self.cancelTakeProfitLeg()
                     if self.stopLossOrderLeg:
                         self.cancelStopLossLeg()
-                    order = self.BROKER.execute_insight_order(Insight(
-                        self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity), self.ASSET)
+                        # close insight
+                        closInsight = Insight(self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity)
+                        closeInsight.order_id = self.order_id
+                        # Submit the insight to close the position 
+                    order = self.BROKER.execute_insight_order(closeInsight, self.ASSET)
 
                 else:
                     # Submit the insight to enter a position
@@ -273,6 +276,9 @@ class Insight:
         return False
 
     def close(self, quantity: Optional[float] = None, retry: bool = True, bypassStateCheck: bool = False):
+        """
+        Used to close a Insight (position) or to partially close a position (if you have multiple take profit levels)
+        """
         if (self.state == InsightState.FILLED or bypassStateCheck) and ( self._closing == False):
             partialClose = False
             try:
@@ -289,8 +295,10 @@ class Insight:
                         self._closing = True
                         return True
                 else:
-                    closePartialOrder = self.submit(partialCloseInsight=Insight(
-                        self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, quantity))
+                    partialCloseInsight = Insight(self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, quantity)
+                    # This is needed for MT5 as you need to link the position ID to the order. We would also use this on the broker end to determain id the order is being closed (force close!)
+                    partialCloseInsight.order_id = self.order_id
+                    closePartialOrder = self.submit(partialCloseInsight=partialCloseInsight)
                     if closePartialOrder:
                         if self.TP:
                             self.TP.pop(0)  # Remove the first TP level

@@ -193,7 +193,20 @@ class ITimeFrame:
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
-
+    def __int__(self):
+        match self.unit_value:
+            case ITimeFrameUnit.Minute:
+                return self.amount_value
+            case ITimeFrameUnit.Hour:
+                return self.amount_value * 60
+            case ITimeFrameUnit.Day:
+                return self.amount_value * (60 * 24)
+            case ITimeFrameUnit.Week:
+                return self.amount_value * (60 * 24 * 7)
+            case ITimeFrameUnit.Month:
+                return self.amount_value * (60 * 24 * 7 * 30)
+            case _:
+                return self.amount_value
     def __str__(self):
         return self.value
 
