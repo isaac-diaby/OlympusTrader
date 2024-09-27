@@ -11,6 +11,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, List, Optional, Union
 import asyncio
+import numpy as np
 
 
 class Mt5Broker(BaseBroker):
@@ -22,7 +23,7 @@ class Mt5Broker(BaseBroker):
     """Market Streams"""
 
     TF_MAPPING = {
-            '1Min': mt5.TIMEFRAME_M1,
+            '1Min': mt5.TIMEFRAME_M1, 
             '5Min': mt5.TIMEFRAME_M5,
             '15Min': mt5.TIMEFRAME_M15,
             '30Min': mt5.TIMEFRAME_M30,
@@ -36,17 +37,19 @@ class Mt5Broker(BaseBroker):
 
     def __init__(self, paper: bool, feed=None):
         super().__init__(ISupportedBrokers.MT5, paper, feed)
+        print("MetaTrader5 package author: ",mt5.__author__)
+        print("MetaTrader5 package version: ",mt5.__version__)
 
         if not mt5.initialize():
-            mt5.shutdown()
             raise BaseException("initialize() failed, error code =", mt5.last_error())
 
         assert os.getenv('MT5_LOGIN'), 'MT5_LOGIN not set'
         assert os.getenv('MT5_SECRET_KEY'), 'MT5_SECRET_KEY not set'
         assert os.getenv('MT5_SERVER'), 'MT5_SERVER not set'
-        auth = mt5.login(login=os.getenv('MT5_LOGIN'), password=os.getenv('MT5_SECRET_KEY'), server=os.getenv('MT5_SERVER'))
+
+        auth = mt5.login(login=int(os.getenv('MT5_LOGIN')), password=os.getenv('MT5_SECRET_KEY'), server=os.getenv('MT5_SERVER'))
         if not auth:
-            raise BaseException("Failed to login to MetaTrader 5")
+            raise BaseException("Failed to login to MetaTrader 5", mt5.last_error())
 
         self.supportedFeatures = ISupportedBrokerFeatures(
             barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
@@ -85,6 +88,7 @@ class Mt5Broker(BaseBroker):
                 min_price_increment=tickerInfo.point
             )
             self.TICKER_INFO[symbol] = tickerAsset
+            return tickerAsset
 
         except Exception as e:
             print(f"Error: {e}")
@@ -264,7 +268,7 @@ class Mt5Broker(BaseBroker):
         # TF_MAPPING
         try: 
             rates = mt5.copy_rates_range(asset['symbol'], int(resolution), start, end)
-            if not rates:
+            if rates.size < 1:
                 return None
             bar = self.format_on_bar(rates, asset['symbol'])
 
@@ -370,7 +374,7 @@ class Mt5Broker(BaseBroker):
                                     if asset['time_frame'].is_time_increment(barData.index[0][1]):
                                         loop.run_until_complete(callable(barData, timeframe=asset['time_frame']))
 
-                    self._MARKET_STREAMS[asset] = pool.submit(MT5BarStreamer, asset)
+                    self._MARKET_STREAMS[asset] = loop.run_in_executor(pool, MT5BarStreamer, asset)
                     
                 else:
                     raise NotImplementedError(f"Stream type {asset['type']} not supported")
@@ -391,16 +395,16 @@ class Mt5Broker(BaseBroker):
                     self.RUNNING_MARKET_STREAM = False
 
     def format_on_bar(self, bar: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
-        if isinstance(bar, Array[Tuple[datetime, float, float, float, float, float]]):
+        if isinstance(bar, np.ndarray):
             index = pd.MultiIndex.from_product(
-                [[symbol], pd.to_datetime(bar.index, utc=True)], names=['symbol', 'date'])
+                [[symbol], pd.to_datetime(bar['time'], utc=True, unit='s')], names=['symbol', 'date'])
 
             res = pd.DataFrame(data={
-                'open': bar['open'].values,
-                'high': bar['high'].values,
-                'low': bar['low'].values,
-                'close': bar['close'].values,
-                'volume': bar['tick_volume'].values,
+                'open': bar['open'],
+                'high': bar['high'],
+                'low': bar['low'],
+                'close': bar['close'],
+                'volume': bar['tick_volume'],
             }, index=index, columns=['open', 'high', 'low', 'close', 'volume'])
             return res
         else:
