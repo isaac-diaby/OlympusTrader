@@ -116,7 +116,7 @@ class MT5_test(Strategy):
 if __name__ == "__main__":
     live = True
 
-    tf = ITimeFrame(5, ITimeFrameUnit.Minute)
+    tf = ITimeFrame(1, ITimeFrameUnit.Minute)
   
     if live:
         broker = Mt5Broker(paper=False)
