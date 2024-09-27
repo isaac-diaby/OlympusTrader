@@ -8,7 +8,7 @@ from .interfaces import IOrderClass, IOrderLeg, IOrderLegs, ISupportedBrokers, I
 from .interfaces import IOrderSide, IOrderType
 from ..strategy.interfaces import IMarketDataStream
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, List, Optional, Union
 import asyncio
 import numpy as np
@@ -23,37 +23,39 @@ class Mt5Broker(BaseBroker):
     """Market Streams"""
 
     TF_MAPPING = {
-            '1Min': mt5.TIMEFRAME_M1, 
-            '5Min': mt5.TIMEFRAME_M5,
-            '15Min': mt5.TIMEFRAME_M15,
-            '30Min': mt5.TIMEFRAME_M30,
-            '1Hour': mt5.TIMEFRAME_H1,
-            '4Hour': mt5.TIMEFRAME_H4,
-            '1Day': mt5.TIMEFRAME_D1,
-            '1Week': mt5.TIMEFRAME_W1,
-            '1Month': mt5.TIMEFRAME_MN1
-        }
-        # TODO: make sure the resolution is in the correct format
+        '1Min': mt5.TIMEFRAME_M1,
+        '5Min': mt5.TIMEFRAME_M5,
+        '15Min': mt5.TIMEFRAME_M15,
+        '30Min': mt5.TIMEFRAME_M30,
+        '1Hour': mt5.TIMEFRAME_H1,
+        '4Hour': mt5.TIMEFRAME_H4,
+        '1Day': mt5.TIMEFRAME_D1,
+        '1Week': mt5.TIMEFRAME_W1,
+        '1Month': mt5.TIMEFRAME_MN1
+    }
+    # TODO: make sure the resolution is in the correct format
 
     def __init__(self, paper: bool, feed=None):
         super().__init__(ISupportedBrokers.MT5, paper, feed)
-        print("MetaTrader5 package author: ",mt5.__author__)
-        print("MetaTrader5 package version: ",mt5.__version__)
+        print("MetaTrader5 package author: ", mt5.__author__)
+        print("MetaTrader5 package version: ", mt5.__version__)
 
         if not mt5.initialize():
-            raise BaseException("initialize() failed, error code =", mt5.last_error())
+            raise BaseException(
+                "initialize() failed, error code =", mt5.last_error())
 
         assert os.getenv('MT5_LOGIN'), 'MT5_LOGIN not set'
         assert os.getenv('MT5_SECRET_KEY'), 'MT5_SECRET_KEY not set'
         assert os.getenv('MT5_SERVER'), 'MT5_SERVER not set'
 
-        auth = mt5.login(login=int(os.getenv('MT5_LOGIN')), password=os.getenv('MT5_SECRET_KEY'), server=os.getenv('MT5_SERVER'))
+        auth = mt5.login(login=int(os.getenv('MT5_LOGIN')), password=os.getenv(
+            'MT5_SECRET_KEY'), server=os.getenv('MT5_SERVER'))
         if not auth:
-            raise BaseException("Failed to login to MetaTrader 5", mt5.last_error())
+            raise BaseException(
+                "Failed to login to MetaTrader 5", mt5.last_error())
 
         self.supportedFeatures = ISupportedBrokerFeatures(
             barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
-
 
     def __del__(self):
         # Shut down connection to the MetaTrader 5
@@ -62,17 +64,17 @@ class Mt5Broker(BaseBroker):
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
         if self.TICKER_INFO.get(symbol):
             return self.TICKER_INFO[symbol]
-        try: 
+        try:
             symbol = symbol.replace('/', '')
             tickerInfo = mt5.symbol_info(symbol)
             if not tickerInfo:
                 return None
             if not tickerInfo.visible:
                 print(symbol, "is not visible, trying to switch on")
-                if not mt5.symbol_select(symbol,True):
+                if not mt5.symbol_select(symbol, True):
                     print("Failed to switch on", symbol)
                     None
-            
+
             tickerAsset: IAsset = IAsset(
                 id=tickerInfo.name,
                 name=tickerInfo.description,
@@ -95,20 +97,21 @@ class Mt5Broker(BaseBroker):
             return None
 
     def get_account(self) -> IAccount:
-        try: 
+        try:
             account_info = mt5.account_info()
 
             if not account_info:
                 return None
 
             account = IAccount(
-                account_id= account_info.login,
-                equity= account_info.equity,
-                cash= account_info.balance,
-                currency= account_info.currency,
-                buying_power= account_info.margin_free,
-                shorting_enabled= account_info.trade_allowed, # TODO: Check if this is correct as we are just assuming
-                leverage= account_info.leverage
+                account_id=account_info.login,
+                equity=account_info.equity,
+                cash=account_info.balance,
+                currency=account_info.currency,
+                buying_power=account_info.margin_free,
+                # TODO: Check if this is correct as we are just assuming
+                shorting_enabled=account_info.trade_allowed,
+                leverage=account_info.leverage
             )
             return account
         except Exception as e:
@@ -117,7 +120,7 @@ class Mt5Broker(BaseBroker):
 
     def get_position(self, symbol) -> IPosition:
         try:
-            position=mt5.positions_get(symbol=symbol)
+            position = mt5.positions_get(symbol=symbol)
             if not position:
                 return None
 
@@ -129,11 +132,12 @@ class Mt5Broker(BaseBroker):
 
     def get_positions(self) -> dict[str, IPosition]:
         try:
-            positions=mt5.positions_get()
+            positions = mt5.positions_get()
             if not positions:
                 return None
 
-            positions = {position.ticket: self.format_position(position) for position in positions}
+            positions = {position.ticket: self.format_position(
+                position) for position in positions}
             # positions = {position.symbol: self.format_position(position) for position in positions}
             return positions
 
@@ -142,47 +146,35 @@ class Mt5Broker(BaseBroker):
             return None
 
     def format_position(self, position: Any) -> IPosition:
-        if position:
-            if isinstance(position, TradePosition):
-                return IPosition(
-                    asset=self.get_ticker_info(position.symbol),
-                    avg_entry_price=position.price_open,
-                    qty=position.volume,
-                    side=IOrderSide.BUY if position.type==0 else IOrderSide.SELL,
-                    market_value=position.price_current * position.volume,
-                    cost_basis=position.price_open * position.volume,
-                    current_price=position.price_current,
-                    unrealized_pl=position.profit
-                )
-            else:
-                return IPosition(
-                    asset=self.get_ticker_info(position.symbol),
-                    avg_entry_price=position.price_open,
-                    qty=position.volume,
-                    side=IOrderSide.BUY if position.type==0 else IOrderSide.SELL,
-                    market_value=position.volume_current,
-                    cost_basis=position.price_open,
-                    current_price=position.price_current,
-                    unrealized_pl=position.profit
-                )
-           
-
-        return None
-        
+        try:
+            #Should always be a Trade Posion Class
+            return IPosition(
+                asset=self.get_ticker_info(position.symbol),
+                avg_entry_price=position.price_open,
+                qty=position.volume,
+                side=IOrderSide.BUY if position.type == 0 else IOrderSide.SELL,
+                market_value=position.price_current * position.volume,
+                cost_basis=position.price_open * position.volume,
+                current_price=position.price_current,
+                unrealized_pl=position.profit
+            )
+        except Exception as e:
+            print("Error: {e}")
+            return None
     def close_position(self, symbol: str, qty: Optional[float] = None, percent: Optional[float] = None) -> Optional[IOrder]:
         """
         Close a position the param symbol for mt5 is the ticket ID
         """
         super().close_position(symbol, qty, percent)
         try:
-            #  Get the position 
+            #  Get the position
             positions = self.get_positions()
             if not positions:
                 return
             position = positions[symbol]
             if not position:
                 return None
-            
+
             qty_confirmed = None
             # check if we are closing more than we have
             if qty:
@@ -190,16 +182,16 @@ class Mt5Broker(BaseBroker):
                     raise BaseException("Cannot close more than you have")
                 else:
                     qty_confirmed = qty
-            elif percent:  
-                qty_confirmed = ( position['qty'] * percent)  
-            
+            elif percent:
+                qty_confirmed = (position['qty'] * percent)
+
             # TODO: Will have to test if its position_by or position to close the position  -this looks right for now idk what the difference is rn
             if qty_confirmed != None:
                 request = {
                     "action": mt5.TRADE_ACTION_DEAL,
                     "symbol": position['asset'].get('symbol'),
                     "volume": qty_confirmed,
-                    "type": mt5.ORDER_TYPE_BUY if position.side == IOrderSide.SELL else mt5.ORDER_TYPE_SELL, 
+                    "type": mt5.ORDER_TYPE_BUY if position.side == IOrderSide.SELL else mt5.ORDER_TYPE_SELL,
                     "magic": 234777,
                     "comment": "OlympusTrader Close",
                     "type_time": mt5.ORDER_TIME_GTC,
@@ -212,7 +204,7 @@ class Mt5Broker(BaseBroker):
                 return self.format_order(result)
             else:
                 return None
-        
+
         except BaseException as e:
             print(e)
             return None
@@ -229,7 +221,7 @@ class Mt5Broker(BaseBroker):
             orders: dict[str, IOrder] = {}
         except Exception as e:
             print(f"Error: {e}")
-            return None 
+            return None
 
     def get_order(self, order_id) -> Optional[IOrder]:
         try:
@@ -250,24 +242,24 @@ class Mt5Broker(BaseBroker):
             return None
 
     def cancel_order(self, order_id: str) -> Optional[str]:
-        try: 
+        try:
             request = {
-                        "action": mt5.TRADE_ACTION_REMOVE,
-                        "order": order_id,
-                        "comment": "OlympusTrader Cancel",
-                    }
+                "action": mt5.TRADE_ACTION_REMOVE,
+                "order": order_id,
+                "comment": "OlympusTrader Cancel",
+            }
             result = mt5.order_send(request)
             # FIXME: This could also return an error as the position has been filled so cant be cancelled - we will need to check for that.
             return order_id
         except Exception as e:
             print(f"Error: {e}")
             return None
-        
 
     def get_history(self, asset: IAsset, start, end, resolution) -> pd.DataFrame:
         # TF_MAPPING
-        try: 
-            rates = mt5.copy_rates_range(asset['symbol'], int(resolution), start, end)
+        try:
+            rates = mt5.copy_rates_range(
+                asset['symbol'], int(resolution), start, end)
             if rates.size < 1:
                 return None
             bar = self.format_on_bar(rates, asset['symbol'])
@@ -298,7 +290,7 @@ class Mt5Broker(BaseBroker):
             request['type'] = mt5.ORDER_TYPE_BUY_LIMIT if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL_LIMIT
             request['price'] = insight.limit_price
         elif insight.type == IOrderType.MARKET:
-            request['type'] = mt5.ORDER_TYPE_BUY if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL 
+            request['type'] = mt5.ORDER_TYPE_BUY if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL
         # set the take profit and stop loss
         if insight.TP:
             request['tp'] = insight.TP[-1]
@@ -310,15 +302,17 @@ class Mt5Broker(BaseBroker):
         if insight.order_id:
             # This is likely a close order / reduce order
             request['position'] = insight.order_id
-        
-        
+
         try:
             result = mt5.order_send(request)
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                # TODO: Check if we need to handle this differently return the error
+                print(f"Order send failed, retcode={result.retcode}")
+                return None
             return self.format_order(result)
         except Exception as e:
             print(f"Error: {e}")
             return None
-        
 
     def startTradeStream(self, callback: Awaitable):
         """
@@ -327,7 +321,7 @@ class Mt5Broker(BaseBroker):
         super().startTradeStream(callback)
         self.RUNNING_TRADE_STREAM = True
         # Rate limit for new trade signals
-        rate = 1 
+        rate = 1
         loop = asyncio.new_event_loop()
         lastChecked = datetime.now()
         while self.RUNNING_TRADE_STREAM:
@@ -339,58 +333,71 @@ class Mt5Broker(BaseBroker):
                 for order in new_incoming_orders:
                     loop.run_until_complete(callable(self.format_order(order)))
             lastChecked = now
-        loop.close() 
+        loop.close()
 # TradeOrder(ticket=530218319, time_setup=1582282114, time_setup_msc=1582282114681, time_done=1582303777, time_done_msc=1582303777582, time_expiration=0, ...
-
 
     async def closeTradeStream(self):
         # TODO: Will have to build this out
-        self.RUNNING_TRADE_STREAM = False 
+        self.RUNNING_TRADE_STREAM = False
         pass
 
     def streamMarketData(self, callback: Awaitable, assetStreams):
         super().streamMarketData(callback, assetStreams)
         self.RUNNING_MARKET_STREAM = True
-        
+
         barStreamCount = len(
             [asset for asset in assetStreams if asset['type'] == 'bar'])
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
         loop = asyncio.new_event_loop()
-        rate = 1 
+        rate = 1
         for asset in assetStreams:
             try:
                 if asset['type'] == 'bar':
+
                     async def MT5BarStreamer(asset):
                         # Set to last valid time (May need to change as we dont want any signals for past data)
                         lastChecked = datetime.now()
                         while self.RUNNING_MARKET_STREAM:
-                            await asyncio.sleep((asset['time_frame'].get_next_time_increment(lastChecked) - lastChecked).total_seconds())
+                            nextTimetoCheck = asset['time_frame'].get_next_time_increment(lastChecked)
+                            await asyncio.sleep((nextTimetoCheck - lastChecked).total_seconds())
                             # may use self.TF_MAPPING[]
-                            bars = mt5.copy_rates_from(asset['symbol'], int(asset['time_frame']), lastChecked)
+                            bars = mt5.copy_rates_from(asset['symbol'], int(
+                                asset['time_frame']), lastChecked, asset['time_frame'].amount)
                             if bars and len(bars) > 0:
-                                barDatas = self.format_on_bar(bars, asset['symbol'])
-                                for barData in barDatas:
-                                    if asset['time_frame'].is_time_increment(barData.index[0][1]):
-                                        loop.run_until_complete(callable(barData, timeframe=asset['time_frame']))
-
-                    self._MARKET_STREAMS[asset] = loop.run_in_executor(pool, MT5BarStreamer, asset)
-                    
+                                barDatas = self.format_on_bar(
+                                    bars, asset['symbol'])
+                                for idx in range(0, len(barDatas)):
+                                    try:
+                                        bar = barDatas.iloc[[idx]]
+                                        if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked.replace(tzinfo=timezone.utc)):
+                                            loop.run_until_complete(
+                                                callback(bar, timeframe=asset['time_frame']))
+                                    except Exception as e:
+                                        print(f"Error: {e}")
+                                        continue
+                            lastChecked = nextTimetoCheck  # Update the last checked time for this stream. 
+                    streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
+                    self._MARKET_STREAMS[streamKey] = loop.create_task(
+                        MT5BarStreamer(asset), name=f"Market:{streamKey}")
+                    # self._MARKET_STREAMS[streamKey] = loop.run_in_executor(pool, MT5BarStreamer, asset)
                 else:
-                    raise NotImplementedError(f"Stream type {asset['type']} not supported")
+                    raise NotImplementedError(
+                        f"Stream type {asset['type']} not supported")
             except Exception as e:
                 print(f"Error: {e}")
                 continue
-
-        
+        # TODO: Will need a way to close this stream as its not being referenced anywhere else
+        loop.run_forever()
 
     async def closeStream(self, assetStreams):
         if self.RUNNING_MARKET_STREAM:
             for asset in assetStreams:
-                marketStream = self._MARKET_STREAMS.get(asset)
+                streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
+                marketStream = self._MARKET_STREAMS.get(streamKey)
                 if marketStream:
                     await marketStream.cancel()
-                    del self._MARKET_STREAMS[asset]
+                    del self._MARKET_STREAMS[streamKey]
                 if len(self._MARKET_STREAMS) == 0:
                     self.RUNNING_MARKET_STREAM = False
 
@@ -410,7 +417,7 @@ class Mt5Broker(BaseBroker):
         else:
             return None
 
-    def format_on_quote(self, quote: Any, symbol = None ) -> IQuote:
+    def format_on_quote(self, quote: Any, symbol=None) -> IQuote:
         data = IQuote(
             symbol=symbol,
             bid=quote.bid,
@@ -419,13 +426,14 @@ class Mt5Broker(BaseBroker):
             ask_size=0,
             volume=quote.volume,
             timestamp=self.time
-            )
+        )
         return data
 
     def format_order(self, order: Any) -> IOrder:
-        if isinstance(order, IOrder):
-            return order
-        side = IOrderSide.BUY if (order.type == mt5.POSITION_TYPE_BUY) else IOrderSide.SELL
+        # if isinstance(order, dict):
+        #     return order
+        side = IOrderSide.BUY if (
+            order.type == mt5.POSITION_TYPE_BUY) else IOrderSide.SELL
         orderID = order.ticket
         #  TODO: add support for order legs
         legs = IOrderLegs()
@@ -467,7 +475,7 @@ class Mt5Broker(BaseBroker):
             """
 
         res = IOrder(
-             order_id=orderID,
+            order_id=orderID,
             asset=self.get_ticker_info(order.symbol),
             filled_price=float(
                 order.filled_avg_price) if order.filled_avg_price else None,
@@ -477,8 +485,10 @@ class Mt5Broker(BaseBroker):
             filled_qty=float(order.volume_current),
             side=side,
             type=IOrderType.LIMIT if order.type == mt5.ORDER_TYPE_BUY_LIMIT or order.type == mt5.ORDER_TYPE_SELL_LIMIT else IOrderType.MARKET,
-            order_class=IOrderClass.SIMPLE if (order.tp == 0 and order.sl == 0) else IOrderClass.OTO,
-            time_in_force= ITimeInForce.GTC  if (order.order_type_time == mt5.ORDER_TIME_GTC) else ITimeInForce.DAY,
+            order_class=IOrderClass.SIMPLE if (
+                order.tp == 0 and order.sl == 0) else IOrderClass.OTO,
+            time_in_force=ITimeInForce.GTC if (
+                order.order_type_time == mt5.ORDER_TIME_GTC) else ITimeInForce.DAY,
             status=order.status,
             created_at=order.time_setup,
             updated_at=order.time_done,
@@ -509,7 +519,7 @@ class Mt5Broker(BaseBroker):
             case mt5.ORDER_STATE_REQUEST_MODIFY:
                 event = ITradeUpdateEvent.REPLACED
             # case mt5.ORDER_STATE_PLACED:
-            #     # Might not even be needed  as mt5 does not have the accepted 
+            #     # Might not even be needed  as mt5 does not have the accepted
             #     event = ITradeUpdateEvent.ACCEPTED
             case _:
                 event = trade.event
