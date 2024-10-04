@@ -101,7 +101,7 @@ class IOrderRequest(TypedDict):
 class IAsset(TypedDict):
     id: str
     name: str
-    asset_type: Literal['stock', 'crypto']
+    asset_type: Literal['stock', 'crypto', 'forex']
     exchange: str
     symbol: str
     status: Literal['active', 'inactive']
@@ -110,8 +110,10 @@ class IAsset(TypedDict):
     shortable: bool
     fractionable: bool
     min_order_size: float
+    max_order_size: NotRequired[float]
     min_price_increment: float
     price_base: NotRequired[int]
+    contract_size: NotRequired[int] # For futures and options contracts only (in the asset's base currency). else None
 
 class IAccount(TypedDict):
     account_id: str

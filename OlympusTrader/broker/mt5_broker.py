@@ -8,7 +8,8 @@ from .interfaces import IOrderClass, IOrderLeg, IOrderLegs, ISupportedBrokers, I
 from .interfaces import IOrderSide, IOrderType
 from ..strategy.interfaces import IMarketDataStream
 import pandas as pd
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from pytz import timezone
 from typing import Any, Awaitable, List, Optional, Union
 import asyncio
 import numpy as np
@@ -75,19 +76,35 @@ class Mt5Broker(BaseBroker):
                     print("Failed to switch on", symbol)
                     None
 
+            # TODO: Store the size of one lot and max contract size
+            tradeable = False if tickerInfo.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED or (
+                tickerInfo.trade_mode == mt5.SYMBOL_TRADE_MODE_CLOSEONLY) else True
+            shortable = False if not tradeable or (
+                tickerInfo.trade_mode == mt5.SYMBOL_TRADE_MODE_LONGONLY) else True
+
+            fractionable = True if tickerInfo.volume_step < 1 else False
+
+            asset_type = tickerInfo.path.split('\\')[0].lower()
+
+            status = "active" if tickerInfo.visible else "inactive"
+
             tickerAsset: IAsset = IAsset(
                 id=tickerInfo.name,
                 name=tickerInfo.description,
-                asset_type=tickerInfo.path.split('\\')[0],
+                asset_type=asset_type,
                 exchange="MT5",
                 symbol=symbol,
-                status="active",
-                tradable=True,
+                status=status,
+                tradable=tradeable,
                 marginable=True,
-                shortable=True,
-                fractionable=True,
+                shortable=shortable,
+                fractionable=fractionable,
                 min_order_size=tickerInfo.volume_min,
-                min_price_increment=tickerInfo.point
+                max_order_size=tickerInfo.volume_max,
+                min_price_increment=tickerInfo.point,
+                price_base=tickerInfo.digits,
+                contract_size=tickerInfo.trade_contract_size
+
             )
             self.TICKER_INFO[symbol] = tickerAsset
             return tickerAsset
@@ -147,7 +164,7 @@ class Mt5Broker(BaseBroker):
 
     def format_position(self, position: Any) -> IPosition:
         try:
-            #Should always be a Trade Posion Class
+            # Should always be a Trade Posion Class
             return IPosition(
                 asset=self.get_ticker_info(position.symbol),
                 avg_entry_price=position.price_open,
@@ -161,6 +178,7 @@ class Mt5Broker(BaseBroker):
         except Exception as e:
             print("Error: {e}")
             return None
+
     def close_position(self, symbol: str, qty: Optional[float] = None, percent: Optional[float] = None) -> Optional[IOrder]:
         """
         Close a position the param symbol for mt5 is the ticket ID
@@ -258,6 +276,19 @@ class Mt5Broker(BaseBroker):
     def get_history(self, asset: IAsset, start, end, resolution) -> pd.DataFrame:
         # TF_MAPPING
         try:
+            tz = timezone("Etc/UTC")
+            exchangeTime = pd.Timestamp(mt5.symbol_info(
+                asset["symbol"]).time, unit='s', tz=tz)
+            nowTime = datetime.now(tz)
+            timeZoneShift = abs(exchangeTime - nowTime)
+
+            if nowTime > exchangeTime:
+                start = start - timeZoneShift
+                end = end - timeZoneShift
+            else:
+                start = start + timeZoneShift
+                end = end + timeZoneShift
+
             rates = mt5.copy_rates_range(
                 asset['symbol'], int(resolution), start, end)
             if rates.size < 1:
@@ -271,18 +302,25 @@ class Mt5Broker(BaseBroker):
 
     def execute_insight_order(self, insight, asset) -> Union[IOrder, None]:
         super().execute_insight_order(insight, asset)
-        deviation = 0
+        deviation = 20
         #   Might need to use the below action for limit orders
         # "action": TRADE_ACTION_PENDING
+
+        if asset['contract_size'] > 1:
+            volume = insight.contracts
+        else:
+            volume = insight.quantity
+
+        si = mt5.symbol_info(asset['symbol'])
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": insight.symbol,
-            "volume": insight.quantity,
+            "volume": volume,
             "type": mt5.ORDER_TYPE_BUY if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL,
             "deviation": deviation,
             "magic": 234777,
-            "comment": "OlympusTrader",
+            "comment": f"OlympusTrader Open - {insight.strategyType.value}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_RETURN,
         }
@@ -291,23 +329,41 @@ class Mt5Broker(BaseBroker):
             request['price'] = insight.limit_price
         elif insight.type == IOrderType.MARKET:
             request['type'] = mt5.ORDER_TYPE_BUY if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL
+            request['type_filling'] = mt5.ORDER_FILLING_IOC
+            request['price'] = mt5.symbol_info_tick(asset["symbol"]).ask if insight.side == IOrderSide.BUY else mt5.symbol_info_tick(asset["symbol"]).bid
         # set the take profit and stop loss
         if insight.TP:
+            # tp_points = round(np.abs(insight.TP[-1] - request['price']) * si.point)
+            # request['tp'] = tp_points if insight.side == IOrderSide.BUY else tp_points
             request['tp'] = insight.TP[-1]
         if insight.SL:
+            # sl_points = round(np.abs(insight.SL - request['price']) * si.point)
+            # request['sl'] = sl_points if insight.side == IOrderSide.BUY else sl_points
             request['sl'] = insight.SL
-
         # MT5 requires you to set the position ID if you are wanting to close the order.
         # we can check if it is a close order and set the position ID (open ID is set)
         if insight.order_id:
             # This is likely a close order / reduce order
             request['position'] = insight.order_id
+            request["comment"] = f"OlympusTrader Close - {insight.strategyType.value}"
 
         try:
+            check_result = mt5.order_check(request)
+            if check_result.retcode  != 0  and check_result.retcode != mt5.TRADE_RETCODE_DONE:
+                # TODO: Check if we need to handle this differently return the error
+                print(f"Order send failed, retcode={
+                      check_result.retcode}, comment={check_result.comment}")
+                # retcode=10027 Algorithmic trading is disabled
+                #
+                return None
+
             result = mt5.order_send(request)
             if result.retcode != mt5.TRADE_RETCODE_DONE:
-                # TODO: Check if we need to handle this differently return the error
-                print(f"Order send failed, retcode={result.retcode}")
+                # Should not error here as we have already checked
+                print(f"Order send failed, retcode={
+                      result.retcode}, comment={result.comment}")
+                # retcode=10027 Algorithmic trading is disabled
+                #
                 return None
             return self.format_order(result)
         except Exception as e:
@@ -329,7 +385,7 @@ class Mt5Broker(BaseBroker):
             now = datetime.now()
             new_incoming_orders = mt5.history_orders_get(lastChecked, now)
             # TODO:Check if they are sorted!
-            if new_incoming_orders:
+            if new_incoming_orders and len(new_incoming_orders) > 0:
                 for order in new_incoming_orders:
                     loop.run_until_complete(callable(self.format_order(order)))
             lastChecked = now
@@ -344,9 +400,9 @@ class Mt5Broker(BaseBroker):
     def streamMarketData(self, callback: Awaitable, assetStreams):
         super().streamMarketData(callback, assetStreams)
         self.RUNNING_MARKET_STREAM = True
-
         barStreamCount = len(
             [asset for asset in assetStreams if asset['type'] == 'bar'])
+        # Threading pools for the streams
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
         loop = asyncio.new_event_loop()
@@ -357,26 +413,45 @@ class Mt5Broker(BaseBroker):
 
                     async def MT5BarStreamer(asset):
                         # Set to last valid time (May need to change as we dont want any signals for past data)
-                        lastChecked = datetime.now()
+                        # tz = timezone('UTC')
+                        tz = timezone("Etc/UTC")
+                        # lastChecked = datetime.now(tz)
+                        # lastChecked = datetime.now()
+                        lastChecked = pd.Timestamp(mt5.symbol_info(
+                            asset["symbol"]).time, unit='s', tz=tz)
                         while self.RUNNING_MARKET_STREAM:
-                            nextTimetoCheck = asset['time_frame'].get_next_time_increment(lastChecked)
+                            nextTimetoCheck = asset['time_frame'].get_next_time_increment(
+                                lastChecked)
+                            # .replace(tzinfo=tz)
                             await asyncio.sleep((nextTimetoCheck - lastChecked).total_seconds())
                             # may use self.TF_MAPPING[]
+
+                            # bars = mt5.copy_rates_range(asset['symbol'], int(
+                            #     asset['time_frame']), lastChecked.timestamp(), nextTimetoCheck.timestamp())
+
                             bars = mt5.copy_rates_from(asset['symbol'], int(
-                                asset['time_frame']), lastChecked, asset['time_frame'].amount)
-                            if bars and len(bars) > 0:
+                                asset['time_frame']), lastChecked, 1)
+                            # bars = mt5.copy_rates_from(asset['symbol'], int(
+                            #     asset['time_frame']), lastChecked, 2)
+                            # May need the one below if we need to make the bar if the time frame is not supported
+                            # bars = mt5.copy_rates_from(asset['symbol'], int(
+                            #     asset['time_frame']), lastChecked, asset['time_frame'].amount)
+                            if isinstance(bars, np.ndarray) and len(bars) > 0:
                                 barDatas = self.format_on_bar(
                                     bars, asset['symbol'])
                                 for idx in range(0, len(barDatas)):
                                     try:
                                         bar = barDatas.iloc[[idx]]
-                                        if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked.replace(tzinfo=timezone.utc)):
+                                        # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
+                                        if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked.replace(tzinfo=tz)):
+                                            # TODO: Handle Feature streams? Strategy already handles renaming the index to include feature name
                                             loop.run_until_complete(
                                                 callback(bar, timeframe=asset['time_frame']))
                                     except Exception as e:
                                         print(f"Error: {e}")
                                         continue
-                            lastChecked = nextTimetoCheck  # Update the last checked time for this stream. 
+                            # Update the last checked time for this stream.
+                            lastChecked = nextTimetoCheck
                     streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
                     self._MARKET_STREAMS[streamKey] = loop.create_task(
                         MT5BarStreamer(asset), name=f"Market:{streamKey}")

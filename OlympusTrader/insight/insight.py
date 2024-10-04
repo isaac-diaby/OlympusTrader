@@ -85,6 +85,8 @@ class Insight:
     opposite_side: IOrderSide = None
     symbol: str = None  # symbol to trade
     quantity: Optional[float] = None  # quantity to trade
+    contracts: Optional[float] = None  # quantity to trade in contracts
+
     type: IOrderType = None  # market, limit, stop, stop_limit, trailing_stop
     classType: IOrderClass = None  # simple, bracket, oco, oto
     limit_price: Optional[float] = None
@@ -369,9 +371,25 @@ class Insight:
         self.quantity = quantity
         if self.checkValidQuantity():
             print(f"Updated quantity: {old_quantity} -> {self.quantity}")
+            if self.ASSET["contract_size"] > 1:
+                self.contracts = round(self.quantity / self.ASSET["contract_size"], 2)
             return True
         else:
             self.quantity = old_quantity
+            return False
+    def update_contracts(self, contracts: float):
+        if self.ASSET["contract_size"]:
+            old_contracts = self.contracts
+            self.contracts = contracts
+            if self.checkValidQuantity():
+                print(f"Updated contracts: {old_contracts} -> {self.contracts}")
+                self.quantity = self.contracts * self.ASSET["contract_size"]
+                return True
+            else:
+                self.contracts = old_contracts
+                return False
+        else:
+            print("Asset has no contract size")
             return False
 
     def update_limit_price(self, price: float, updateToLimit: bool = False):
@@ -460,11 +478,18 @@ class Insight:
 
     def checkValidQuantity(self, shouldUpdateState: bool = False):
         # Check if quantity is invalid
-        if self.quantity == None or self.ASSET['min_order_size'] > self.quantity or isnan(self.quantity):
+        if self.ASSET["contract_size"] and self.contracts:
+            if self.contracts == None or self.ASSET['min_order_size'] > self.contracts or isnan(self.contracts):
+                if shouldUpdateState:
+                    self.updateState(
+                        InsightState.REJECTED, 'Invalid Contracts')
+                return False
+        elif self.quantity == None or self.ASSET['min_order_size'] > self.quantity or isnan(self.quantity):
             if shouldUpdateState:
                 self.updateState(
                     InsightState.REJECTED, 'Invalid Quantity')
             return False
+        
         return True
 
     def checkIfCanShort(self, shouldUpdateState: bool = False):
