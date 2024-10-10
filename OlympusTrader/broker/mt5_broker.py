@@ -4,12 +4,11 @@ import os
 from time import sleep
 import MetaTrader5 as mt5
 from .base_broker import BaseBroker
-from .interfaces import IOrderClass, IOrderLeg, IOrderLegs, ISupportedBrokers, ISupportedBrokerFeatures, IAsset, IAccount, IOrder, IPosition, IQuote, ITimeInForce, ITradeUpdateEvent
+from .interfaces import IOrderClass, IOrderLeg, IOrderLegs, ISupportedBrokers, ISupportedBrokerFeatures, IAsset, IAccount, IOrder, IPosition, IQuote, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
 from .interfaces import IOrderSide, IOrderType
 from ..strategy.interfaces import IMarketDataStream
 import pandas as pd
-from datetime import datetime, timedelta
-from pytz import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, List, Optional, Union
 import asyncio
 import numpy as np
@@ -34,9 +33,17 @@ class Mt5Broker(BaseBroker):
         '1Week': mt5.TIMEFRAME_W1,
         '1Month': mt5.TIMEFRAME_MN1
     }
-    # TODO: make sure the resolution is in the correct format
+    """
+    Supported timeframes for MT5 
 
-    def __init__(self, paper: bool, feed=None):
+    TODO: make sure the resolution is in the correct format
+    """
+
+    TIMEZONE = timezone.utc
+    """MT5 Timezone"""
+
+
+    def __init__(self, paper: bool, feed=None, timezone = None):
         super().__init__(ISupportedBrokers.MT5, paper, feed)
         print("MetaTrader5 package author: ", mt5.__author__)
         print("MetaTrader5 package version: ", mt5.__version__)
@@ -54,6 +61,19 @@ class Mt5Broker(BaseBroker):
         if not auth:
             raise BaseException(
                 "Failed to login to MetaTrader 5", mt5.last_error())
+        terminal_info=mt5.terminal_info()
+        if terminal_info.tradeapi_disabled:
+            raise BaseException(
+                "Please enable trades from API in MetaTrader 5", mt5.last_error())
+        # set time zone
+
+        if timezone:
+            self.TIMEZONE = timezone
+        else:
+            if not self.get_broker_timezone():
+                raise BaseException("Failed to get broker's timezone from MetaTrader 5")
+
+
 
         self.supportedFeatures = ISupportedBrokerFeatures(
             barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
@@ -61,6 +81,22 @@ class Mt5Broker(BaseBroker):
     def __del__(self):
         # Shut down connection to the MetaTrader 5
         mt5.shutdown()
+    
+    def get_broker_timezone(self):
+        try:
+            symbols=mt5.symbols_get()
+            # Get the timezone shift from the first symbol
+            # tzdif = pd.Timestamp(symbols[0].time, unit='s') - datetime.now()
+            # tzdif = pd.Timestamp(symbols[0].time, unit='s') - pd.Timestamp.now()
+            tzdif = pd.Timestamp(symbols[0].time, unit='s', tz=timezone.utc) - pd.Timestamp.now(timezone.utc)
+            
+            self.TIMEZONE = timezone(tzdif.round(freq='H'))
+            # self.TIMEZONE = timezone(np.abs(tzdif).round(freq='H'))
+            return True
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
+
 
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
         if self.TICKER_INFO.get(symbol):
@@ -267,6 +303,10 @@ class Mt5Broker(BaseBroker):
                 "comment": "OlympusTrader Cancel",
             }
             result = mt5.order_send(request)
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                print(f"Order to cancel failed, retcode={
+                      result.retcode}, comment={result.comment}")
+                return None
             # FIXME: This could also return an error as the position has been filled so cant be cancelled - we will need to check for that.
             return order_id
         except Exception as e:
@@ -276,21 +316,22 @@ class Mt5Broker(BaseBroker):
     def get_history(self, asset: IAsset, start, end, resolution) -> pd.DataFrame:
         # TF_MAPPING
         try:
-            tz = timezone("Etc/UTC")
-            exchangeTime = pd.Timestamp(mt5.symbol_info(
-                asset["symbol"]).time, unit='s', tz=tz)
-            nowTime = datetime.now(tz)
-            timeZoneShift = abs(exchangeTime - nowTime)
+            # exchangeTime = pd.Timestamp(mt5.symbol_info(
+            #     asset["symbol"]).time, unit='s', tz=self.TIMEZONE)
+            # nowTime = datetime.now(self.TIMEZONE)
+            # timeZoneShift = abs(exchangeTime - nowTime)
 
-            if nowTime > exchangeTime:
-                start = start - timeZoneShift
-                end = end - timeZoneShift
-            else:
-                start = start + timeZoneShift
-                end = end + timeZoneShift
+            # if nowTime > exchangeTime:
+            #     start = start - timeZoneShift
+            #     end = end - timeZoneShift
+            # else:
+            #     start = start + timeZoneShift
+            #     end = end + timeZoneShift
 
             rates = mt5.copy_rates_range(
-                asset['symbol'], int(resolution), start, end)
+                asset['symbol'], int(resolution), start.astimezone(self.TIMEZONE).replace(tzinfo=timezone.utc), end.astimezone(self.TIMEZONE).replace(tzinfo=timezone.utc))
+            # rates = mt5.copy_rates_range(
+            #     asset['symbol'], int(resolution), start, end)
             if rates.size < 1:
                 return None
             bar = self.format_on_bar(rates, asset['symbol'])
@@ -302,7 +343,7 @@ class Mt5Broker(BaseBroker):
 
     def execute_insight_order(self, insight, asset) -> Union[IOrder, None]:
         super().execute_insight_order(insight, asset)
-        deviation = 20
+        deviation = 5
         #   Might need to use the below action for limit orders
         # "action": TRADE_ACTION_PENDING
 
@@ -310,6 +351,11 @@ class Mt5Broker(BaseBroker):
             volume = insight.contracts
         else:
             volume = insight.quantity
+        
+        if volume > self.get_ticker_info(insight.symbol).get("max_order_size", np.infty):
+            # We could clamp here but user logic would not be aware until after we commit the order.
+            print("exceesing max order limit")
+            return None 
 
         si = mt5.symbol_info(asset['symbol'])
 
@@ -326,7 +372,13 @@ class Mt5Broker(BaseBroker):
         }
         if insight.type == IOrderType.LIMIT:
             request['type'] = mt5.ORDER_TYPE_BUY_LIMIT if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL_LIMIT
+            # currentPrice = mt5.symbol_info_tick(asset["symbol"]).ask   if insight.side == IOrderSide.BUY else mt5.symbol_info_tick(asset["symbol"]).bid
+            # priceDiffInpoints = np.abs(currentPrice - insight.limit_price) * si.point
+            # request['price'] =  (currentPrice-priceDiffInpoints  if insight.side == IOrderSide.BUY else currentPrice+priceDiffInpoints) * si.point
             request['price'] = insight.limit_price
+            request['action'] = mt5.TRADE_ACTION_PENDING
+            # if si.filling_mode == mt5.SYMBOL_TRADE_EXECUTION_MARKET:
+            #      request['type_filling'] =  mt5.ORDER_FILLING_BOC
         elif insight.type == IOrderType.MARKET:
             request['type'] = mt5.ORDER_TYPE_BUY if insight.side == IOrderSide.BUY else mt5.ORDER_TYPE_SELL
             request['type_filling'] = mt5.ORDER_FILLING_IOC
@@ -365,7 +417,47 @@ class Mt5Broker(BaseBroker):
                 # retcode=10027 Algorithmic trading is disabled
                 #
                 return None
-            return self.format_order(result)
+            legs = IOrderLegs()
+            if result[10].tp:
+                legs['take_profit'] = IOrderLeg(
+                    order_id=None,
+                    limit_price=result[10].tp,
+                    filled_price=None,
+                    type=IOrderType.LIMIT,
+                    status=ITradeUpdateEvent.PENDING_NEW,
+                    order_class=IOrderClass.OTO,
+                    # created_at=leg.created_at,
+                    # updated_at=leg.updated_at,
+                    # submitted_at=leg.submitted_at,
+                    # filled_at=leg.filled_at
+                )
+            elif result[10].sl:
+                legs['stop_loss'] = IOrderLeg(
+                    order_id=None,
+                    limit_price=result[10].sl,
+                    filled_price=None,
+                    type=IOrderType.STOP,
+                    status=ITradeUpdateEvent.PENDING_NEW,
+                    order_class=IOrderClass.OTO,
+                    # created_at=leg.created_at,
+                    # updated_at=leg.updated_at,
+                    # submitted_at=leg.submitted_at,
+                    # filled_at=leg.filled_at
+            )
+            order = IOrder(
+                order_id=result.order,
+                asset=asset,
+                filled_price=None,
+                limit_price=result.ask if insight.side == IOrderSide.BUY else result.bid,
+                stop_price=None,
+                qty=result.volume,
+                filled_qty=None,
+                side=insight.side,
+                type=insight.type,
+                order_class=insight.classType,
+                legs=legs
+            )
+            return order
         except Exception as e:
             print(f"Error: {e}")
             return None
@@ -377,17 +469,25 @@ class Mt5Broker(BaseBroker):
         super().startTradeStream(callback)
         self.RUNNING_TRADE_STREAM = True
         # Rate limit for new trade signals
-        rate = 1
+        rate = 0.5
         loop = asyncio.new_event_loop()
-        lastChecked = datetime.now()
+
+        lastChecked = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
         while self.RUNNING_TRADE_STREAM:
             sleep(1/rate)
-            now = datetime.now()
+            now = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
             new_incoming_orders = mt5.history_orders_get(lastChecked, now)
+            new_incoming_deals = mt5.history_deals_get(lastChecked, now)
             # TODO:Check if they are sorted!
-            if new_incoming_orders and len(new_incoming_orders) > 0:
+            if (new_incoming_orders and len(new_incoming_orders) > 0) or (new_incoming_deals and len(new_incoming_deals) > 0):
+                # print("Oders", new_incoming_orders)
+                # print("Deal", new_incoming_deals)
                 for order in new_incoming_orders:
-                    loop.run_until_complete(callable(self.format_order(order)))
+                    try:
+                        loop.run_until_complete(callback(ITradeUpdate(order, order.state)))
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        
             lastChecked = now
         loop.close()
 # TradeOrder(ticket=530218319, time_setup=1582282114, time_setup_msc=1582282114681, time_done=1582303777, time_done_msc=1582303777582, time_expiration=0, ...
@@ -413,12 +513,10 @@ class Mt5Broker(BaseBroker):
 
                     async def MT5BarStreamer(asset):
                         # Set to last valid time (May need to change as we dont want any signals for past data)
-                        # tz = timezone('UTC')
-                        tz = timezone("Etc/UTC")
-                        # lastChecked = datetime.now(tz)
-                        # lastChecked = datetime.now()
-                        lastChecked = pd.Timestamp(mt5.symbol_info(
-                            asset["symbol"]).time, unit='s', tz=tz)
+           
+                        # lastChecked = pd.Timestamp(mt5.symbol_info(
+                        #     asset["symbol"]).time, unit='s', tz=self.TIMEZONE)
+                        lastChecked = pd.Timestamp.now(tz=self.TIMEZONE).replace(tzinfo=timezone.utc)
                         while self.RUNNING_MARKET_STREAM:
                             nextTimetoCheck = asset['time_frame'].get_next_time_increment(
                                 lastChecked)
@@ -443,15 +541,16 @@ class Mt5Broker(BaseBroker):
                                     try:
                                         bar = barDatas.iloc[[idx]]
                                         # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
-                                        if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked.replace(tzinfo=tz)):
+                                        if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
                                             # TODO: Handle Feature streams? Strategy already handles renaming the index to include feature name
                                             loop.run_until_complete(
                                                 callback(bar, timeframe=asset['time_frame']))
                                     except Exception as e:
                                         print(f"Error: {e}")
                                         continue
-                            # Update the last checked time for this stream.
+                            # Update the last checked time for this stream. -> moved to the top as run_until_complete may take over a min and we are clamped to the next min
                             lastChecked = nextTimetoCheck
+
                     streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
                     self._MARKET_STREAMS[streamKey] = loop.create_task(
                         MT5BarStreamer(asset), name=f"Market:{streamKey}")
@@ -507,33 +606,72 @@ class Mt5Broker(BaseBroker):
     def format_order(self, order: Any) -> IOrder:
         # if isinstance(order, dict):
         #     return order
-        side = IOrderSide.BUY if (
-            order.type == mt5.POSITION_TYPE_BUY) else IOrderSide.SELL
+        if type(order) == IOrder:
+            return order
+        
+        side = None
+        orderType = None
+        match order.type:
+            case mt5.POSITION_TYPE_BUY:
+                side = IOrderSide.BUY
+                orderType = IOrderType.MARKET
+            case mt5.POSITION_TYPE_SELL:
+                side = IOrderSide.SELL
+                orderType = IOrderType.MARKET
+            case mt5.ORDER_TYPE_BUY_LIMIT:
+                side = IOrderSide.BUY
+                orderType = IOrderType.LIMIT
+            case mt5.ORDER_TYPE_SELL_LIMIT:
+                side = IOrderSide.SELL
+                orderType = IOrderType.LIMIT
+            case mt5.ORDER_TYPE_BUY_STOP:
+                side = IOrderSide.BUY
+                orderType = IOrderType.STOP
+            case mt5.ORDER_TYPE_SELL_STOP:
+                side = IOrderSide.SELL
+                orderType = IOrderType.STOP
+            case mt5.ORDER_TYPE_BUY_STOP_LIMIT:
+                side = IOrderSide.BUY
+                orderType = IOrderType.STOP_LIMIT
+            case mt5.ORDER_TYPE_SELL_STOP_LIMIT:
+                side = IOrderSide.SELL
+                orderType = IOrderType.STOP_LIMIT
+            case mt5.ORDER_TYPE_CLOSE_BY:
+                pass
+            #     side = IOrderSide.BUY
+            #     orderType = IOrderType.STOP_LIMIT
+            case _:
+                raise NotImplementedError("Oder Type not found")
+
+        
+            
+
+
         orderID = order.ticket
         #  TODO: add support for order legs
         legs = IOrderLegs()
         if order.tp:
             legs['take_profit'] = IOrderLeg(
-                order_id=orderID,
+                order_id=None,
                 limit_price=order.tp,
                 filled_price=None,
                 type=IOrderType.LIMIT,
                 status=ITradeUpdateEvent.PENDING_NEW,
                 order_class=IOrderClass.OTO,
-                # created_at=leg.created_at,
+                created_at=pd.Timestamp(order.time_done, unit='s', tz=timezone.utc),
                 # updated_at=leg.updated_at,
                 # submitted_at=leg.submitted_at,
                 # filled_at=leg.filled_at
             )
-        elif order.sl:
+        if order.sl:
             legs['stop_loss'] = IOrderLeg(
-                order_id=orderID,
+                order_id=None,
                 limit_price=order.sl,
                 filled_price=None,
                 type=IOrderType.STOP,
                 status=ITradeUpdateEvent.PENDING_NEW,
                 order_class=IOrderClass.OTO,
-                # created_at=leg.created_at,
+                created_at=pd.Timestamp(order.time_done, unit='s', tz=timezone.utc),
                 # updated_at=leg.updated_at,
                 # submitted_at=leg.submitted_at,
                 # filled_at=leg.filled_at
@@ -552,23 +690,22 @@ class Mt5Broker(BaseBroker):
         res = IOrder(
             order_id=orderID,
             asset=self.get_ticker_info(order.symbol),
-            filled_price=float(
-                order.filled_avg_price) if order.filled_avg_price else None,
-            limit_price=order.price if order.price else None,
-            stop_price=float(order.stop_price) if order.stop_price else None,
-            qty=order.volume,
-            filled_qty=float(order.volume_current),
+            filled_price=order.price_current if order.price_open != 0.0 else (None if orderType != IOrderType.MARKET else order.price_current),
+            limit_price=order.price_open if order.price_open != 0.0 else None,
+            stop_price=order.price_stoplimit if order.price_stoplimit != 0.0 else None,
+            qty=order.volume_initial + order.volume_current,
+            filled_qty=order.volume_initial,
             side=side,
-            type=IOrderType.LIMIT if order.type == mt5.ORDER_TYPE_BUY_LIMIT or order.type == mt5.ORDER_TYPE_SELL_LIMIT else IOrderType.MARKET,
+            type=orderType,
             order_class=IOrderClass.SIMPLE if (
                 order.tp == 0 and order.sl == 0) else IOrderClass.OTO,
             time_in_force=ITimeInForce.GTC if (
-                order.order_type_time == mt5.ORDER_TIME_GTC) else ITimeInForce.DAY,
-            status=order.status,
-            created_at=order.time_setup,
-            updated_at=order.time_done,
-            submitted_at=order.time_setup,
-            filled_at=order.time_done,
+                order.type_time == mt5.ORDER_TIME_GTC) else ITimeInForce.DAY,
+            status=order.state,
+            created_at=pd.Timestamp(order.time_setup, unit='s', tz=timezone.utc),
+            updated_at=pd.Timestamp(order.time_done, unit='s', tz=timezone.utc),
+            submitted_at=pd.Timestamp(order.time_setup, unit='s', tz=timezone.utc),
+            filled_at= pd.Timestamp(order.time_done, unit='s', tz=timezone.utc),
             legs=legs
 
         )
@@ -576,7 +713,7 @@ class Mt5Broker(BaseBroker):
 
     def format_on_trade_update(self, trade: Any) -> tuple[IOrder, ITradeUpdateEvent]:
         event: ITradeUpdateEvent = None
-        match trade.status:
+        match trade.event:
             case mt5.ORDER_STATE_FILLED:
                 event = ITradeUpdateEvent.FILLED
             case mt5.ORDER_STATE_PARTIAL:
@@ -598,4 +735,6 @@ class Mt5Broker(BaseBroker):
             #     event = ITradeUpdateEvent.ACCEPTED
             case _:
                 event = trade.event
-        return self.format_order(trade.order), event
+        order = self.format_order(trade.order)
+        order["status"] = event
+        return order, event

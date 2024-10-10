@@ -33,7 +33,7 @@ class MT5_test(Strategy):
 
         # Alphas
         self.add_alphas([
-            TestEntryAlpha(self, atrPeriod=14)
+            TestEntryAlpha(self, atrPeriod=14, limitEntries=True)
         ])
         # New Executors
         self.add_executors([
@@ -78,7 +78,8 @@ class MT5_test(Strategy):
 
     def universe(self):
         # universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
-        universe = {'btc/usd'}
+        # universe = {'btc/usd'}
+        universe = {'btc/usd', 'ETHUSD'}
         # universe = {'gbp/usd'}
         # universe = {'btc/usd', 'gbp/usd'}
         # universe = {'btc/usdt', 'eth/usdt', 'sol/usdt'}
@@ -125,7 +126,7 @@ if __name__ == "__main__":
         # broker = CCXTBroker(exchange=exchange, paper=True)
 
         # Strategy
-        strategy = MT5_test(broker, variables={}, resolution=tf, verbose=1, ui=False, mode=IStrategyMode.LIVE)
+        strategy = MT5_test(broker, variables={}, resolution=tf, verbose=0, ui=False, mode=IStrategyMode.LIVE)
 
         # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
         strategy.add_events('bar')
