@@ -57,6 +57,9 @@ class BaseBroker(abc.ABC):
     @abc.abstractmethod
     def close_position(self, symbol: str, qty: Optional[float] = None, percent: Optional[float] = None) -> Optional[IOrder] :
         """Close a position by symbol"""
+        assert qty or percent, "qty or percent must be provided"
+        if percent:
+            assert (percent > 0) and (percent <= 1), "percent must be with in the range of 0-1"
         pass
 
     @abc.abstractmethod
