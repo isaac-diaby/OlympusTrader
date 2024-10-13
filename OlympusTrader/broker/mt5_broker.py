@@ -506,7 +506,6 @@ class Mt5Broker(BaseBroker):
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
         loop = asyncio.new_event_loop()
-        rate = 1
         for asset in assetStreams:
             try:
                 if asset['type'] == 'bar':
