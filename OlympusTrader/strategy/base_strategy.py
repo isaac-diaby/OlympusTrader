@@ -85,6 +85,7 @@ class BaseStrategy(abc.ABC):
     baseConfidence: float = 0.1  # Base Confidence level for the strategy
     shouldClosePartialFilledIfCancelled: bool = True
     """Insights that are partially filled and are cancelled should be closed if the insight is cancelled"""
+    insightRateLimit: int = 1
 
     BACKTESTING_CONFIG: IBacktestingConfig = IBacktestingConfig(
         preemptiveTA=False)
@@ -534,7 +535,7 @@ class BaseStrategy(abc.ABC):
                     break
             else:
                 # await asyncio.sleep(1)
-                sleep(1)
+                sleep(self.insightRateLimit)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
