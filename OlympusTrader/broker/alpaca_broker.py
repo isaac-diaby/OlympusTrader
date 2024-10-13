@@ -500,6 +500,7 @@ class AlpacaBroker(BaseBroker):
                     # We may be able to use the assetStream variable directly in the callback instead of looping over it as we are passing by ref to the alpace callback.
                     for asset in assetStreams:
                         if asset['symbol'] == assetStream['symbol'] and asset['time_frame'].is_time_increment(timestamp):
+                            # FIXME:Since this is one min candle we need to get the agreg of all of the previous candles if TF is greater than 1 min
                             await callback(barData, timeframe=asset['time_frame'])
 
                 if assetStream.get('feature') != None:

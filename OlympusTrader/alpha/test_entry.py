@@ -17,8 +17,9 @@ class TestEntryAlpha(BaseAlpha):
         @isaac-diaby
     """
     atrColumn: str
+    limitEntry: bool
 
-    def __init__(self, strategy,  atrPeriod=14,  baseConfidenceModifierField=None):
+    def __init__(self, strategy,  atrPeriod=14, limitEntries=False, baseConfidenceModifierField=None):
         super().__init__(strategy, "TEST_ENTRY", "1.0", baseConfidenceModifierField)
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
@@ -26,6 +27,7 @@ class TestEntryAlpha(BaseAlpha):
         self.atrColumn = f'ATRr_{atrPeriod}'
 
         self.STRATEGY.warm_up = atrPeriod
+        self.limitEntry = limitEntries
 
     def start(self):
         pass
@@ -52,11 +54,11 @@ class TestEntryAlpha(BaseAlpha):
             # Generate Test Entry
             if (latestBar.close > latestBar.open):
                 TP = self.STRATEGY.tools.dynamic_round(
-                    latestBar.close + (latestIATR*5), symbol)
+                    latestBar.close + (latestIATR*2), symbol)
                 SL = self.STRATEGY.tools.dynamic_round(
                     latestBar.close - (latestIATR*1.5), symbol)
                 ENTRY = self.STRATEGY.tools.dynamic_round(
-                    latestBar['close'], symbol)
+                    latestBar['close'], symbol) if self.limitEntry else None
 
                 return self.returnResults(insight=Insight(
                     side=IOrderSide.BUY,
@@ -64,7 +66,7 @@ class TestEntryAlpha(BaseAlpha):
                     strategyType=StrategyTypes.TEST,
                     tf=self.STRATEGY.resolution,
                     quantity=None,
-                    # limit_price=ENTRY,
+                    limit_price=ENTRY,
                     TP=[TP],
                     SL=SL,
                     confidence=baseConfidence,
@@ -74,11 +76,11 @@ class TestEntryAlpha(BaseAlpha):
             else:
                 if self.STRATEGY.assets[symbol]["shortable"]:
                     TP = self.STRATEGY.tools.dynamic_round(
-                        latestBar.close - (latestIATR*5), symbol)
+                        latestBar.close - (latestIATR*2), symbol)
                     SL = self.STRATEGY.tools.dynamic_round(
                         latestBar.close + (latestIATR*1.5), symbol)
                     ENTRY = self.STRATEGY.tools.dynamic_round(
-                        latestBar['close'], symbol)
+                        latestBar['close'], symbol) if self.limitEntry else None
 
                     return self.returnResults(insight=Insight(
                         side=IOrderSide.SELL,
@@ -86,7 +88,7 @@ class TestEntryAlpha(BaseAlpha):
                         strategyType=StrategyTypes.TEST,
                         tf=self.STRATEGY.resolution,
                         quantity=None,
-                        # limit_price=ENTRY,
+                        limit_price=ENTRY,
                         TP=[TP],
                         SL=SL,
                         confidence=baseConfidence,

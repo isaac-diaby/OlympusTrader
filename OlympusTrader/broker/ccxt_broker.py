@@ -42,8 +42,6 @@ class CCXTBroker(BaseBroker):
         super().__init__(f"{ISupportedBrokers.CCXT}_{
             self.exchange.id}", paper, feed)
         
-        self.supportedFeatures = ISupportedBrokerFeatures(
-            barDataStreaming=True, trailingStop=False)
 
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
         try:
@@ -83,8 +81,8 @@ class CCXTBroker(BaseBroker):
             else:
                 raise Exception('This exchange does not support load_markets')
         except Exception as e:
-            print(f"Error: {e}")
-            return None
+                print(f"Error: {e}")
+                return None
 
     def get_account(self):
         try:

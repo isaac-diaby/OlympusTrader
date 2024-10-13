@@ -538,6 +538,8 @@ class BaseStrategy(abc.ABC):
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
+            if self.POSITIONS == None:
+                self.POSITIONS = {}
         print("End of Insight Listener")
 
     async def _on_trade_update(self, trade):
