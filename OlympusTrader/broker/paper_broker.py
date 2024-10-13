@@ -1152,6 +1152,8 @@ class PaperBroker(BaseBroker):
                 if asset['type'] == 'bar':
                     self.HISTORICAL_DATA[asset['symbol']
                                          ]['bar'] = pd.DataFrame()
+                    if asset.get('feature') == None:
+                        TF = asset['time_frame']
 
             while self.RUNNING_MARKET_STREAM:
                 for asset in assetStreams:
@@ -1171,9 +1173,9 @@ class PaperBroker(BaseBroker):
                             elif barData.empty:
                                 continue
                             else:
-                                for index in barDatas.index:
+                                for index in barData.index:
                                     loop.run_until_complete(
-                                        callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                                        callback(barData.loc[[index]], timeframe=asset['time_frame']))
                                 # loop.run_until_complete(callback(barData, timeframe=asset['time_frame']))
                                 continue
 

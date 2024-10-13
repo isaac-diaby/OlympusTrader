@@ -3,6 +3,7 @@ import asyncio
 import os
 from pathlib import Path
 from threading import BrokenBarrierError, Thread
+from time import sleep
 from typing import Any, List, Optional, override, Union, Literal
 from uuid import uuid4, UUID
 import pandas as pd
@@ -228,118 +229,88 @@ class BaseStrategy(abc.ABC):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        if self.MODE == IStrategyMode.LIVE:
-            if self.BROKER.NAME == ISupportedBrokers.ALPACA:
-                # Exchange specific setup
-                pass
 
-            try:
-                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStreams") as pool:
-                    try:
-                        #  Trading data streams
-                        tradeStream = loop.run_in_executor(
-                            pool, self.BROKER.startTradeStream, self._on_trade_update)
-                        marketDataStream = loop.run_in_executor(
-                            pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
 
-                        # UI Shared Memory Server
-                        if self.WITHUI:
-                            server = self.SSM.get_server()
-                            loop.run_in_executor(
-                                pool, server.serve_forever)
-                            print('UI Shared Memory Server started')
+        # Start the strategy streams and listeners
 
-                        #  Insight executor and listener
-                        insighStream = loop.create_task(
-                            self._insightListener(), name="OlympusTraderInsightListener")
-
-                        insighStream = loop.run_in_executor(
-                            pool, loop.run_forever)
-
-                    except Exception as e:
-                        print(f'Exception from Threads: {e}')
-
-            except KeyboardInterrupt:
-                print("Interrupted execution by user")
-            finally:
-                self.teardown()
-                # asyncio.run(self.BROKER.closeTradeStream())
-                loop.stop()
-                pool.shutdown(wait=False)
-                asyncio.run(self.BROKER.closeStream(self.STREAMS))
-                self._Running = False
-                exit(0)
-
-        elif self.MODE == IStrategyMode.BACKTEST:
-            # Backtest
-            if self.VERBOSE > 0:
-                print(f"Running Backtest - {datetime.datetime.now()}")
-                start_time = timeit.default_timer()
-            try:
-                pool = ThreadPoolExecutor(
-                    max_workers=4, thread_name_prefix="OlympusTraderStreams")
-
+        try:
+            with ThreadPoolExecutor(max_workers=4, thread_name_prefix="OlympusTrader") as pool:
                 try:
                     #  Trading data streams
                     tradeStream = loop.run_in_executor(
                         pool, self.BROKER.startTradeStream, self._on_trade_update)
+                    # Market data streams - Bar data, Quote data
                     marketDataStream = loop.run_in_executor(
                         pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
-                    # marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
 
-                    insighStream = loop.create_task(
-                        self._insightListener(), name="OlympusTraderInsightListener")
-
-                    insighStream = loop.run_in_executor(
-                        pool, loop.run_forever)
                     # UI Shared Memory Server
                     if self.WITHUI:
                         server = self.SSM.get_server()
-                        loop.run_in_executor(
+                        uiStream = loop.run_in_executor(
                             pool, server.serve_forever)
-                        print('UI Shared Memory Server started')
+                        
 
-                    # TODO: Should probably use another barrier to check if the streams are running correctly after pulling the historical data
-                    while not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
-                        if self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
-                            break
+                    #  Insight executor and listener
+                    insighStream = pool.submit(self._insightListener)
+                    # insighStream = loop.run_in_executor(
+                    #     pool, loop.self._insightListener)
 
-                    while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
-                        # print("***-- Running Backtest --***")
-                        if not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
-                            tradeStream.cancel(
-                                "From Main: Trade Stream Closed")
-                            marketDataStream.cancel(
-                                "From Main: Market Stream Closed")
-                            insighStream.cancel(
-                                "From Main: Insight Stream Closed")
-                            loop.stop()
-                            # self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.abort()
-                            break
-                        # TODO: Teardown on last candle
-                        # self.teardown()
+                    # insighStream = loop.create_task(
+                    #     self._insightListener(), name="OlympusTrader_InsightListener")
+                    
+                    # insighStream = loop.run_in_executor(
+                    #         pool, loop.run_forever)
+                    if self.MODE == IStrategyMode.BACKTEST:
+
+                        # TODO: Should probably use another barrier to check if the streams are running correctly after pulling the historical data
+                        while not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
+                            if self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
+                                break
+                        if self.VERBOSE > 0:
+                            print(f"Running Backtest - {datetime.datetime.now()}")
+                            start_time = timeit.default_timer()
+
+                        while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
+                            # print("***-- Running Backtest --***")
+                            if not self.BROKER.RUNNING_MARKET_STREAM or not self.BROKER.RUNNING_TRADE_STREAM:
+                                # self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.abort()
+                                break
+                            # TODO: Teardown on last candle
+                            # self.teardown()
+                    else :
+                        loop.run_forever()
 
                     self.teardown()
+                    # TODO: May need to wait the insights to close before closing the streams
+                    
                     pool.shutdown(wait=False, cancel_futures=True)
+
+                    tradeStream.cancel(
+                                "From Main: Trade Stream Closed")
+                    marketDataStream.cancel("From Main: Market Stream Closed")
+                    insighStream.cancel("From Main: Insight Stream Closed")
+                    loop.stop()
+
+                    if self.WITHUI:
+                        uiStream.cancel(
+                            "From Main: UI Stream Closed")
 
                 except Exception as e:
                     print(f'Exception from Threads: {e}')
 
-                # loop.run_forever()
 
-            except KeyboardInterrupt:
-                print("Interrupted execution by user")
-                # self.BROKER.closeTradeStream()
-                # self.BROKER.closeStream(self.STREAMS)
-                # insighStream.cancel()
-            finally:
-                asyncio.run(self.BROKER.closeTradeStream())
-                asyncio.run(self.BROKER.closeStream(self.STREAMS))
-                self._Running = False
+        except KeyboardInterrupt as e:
+            print("Interrupted execution by user from", e)
+        finally:
+            # Close the streams on the broker side if the streams are still running and connected to the broker
+            asyncio.run(self.BROKER.closeTradeStream())
+            asyncio.run(self.BROKER.closeStream(self.STREAMS))
+            self._Running = False
 
+        if self.MODE == IStrategyMode.BACKTEST:
             if self.VERBOSE > 0:
                 print('Backtest Completed:',
-                      timeit.default_timer() - start_time)
+                        timeit.default_timer() - start_time)
 
             self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(
                 self.resolution)
@@ -349,6 +320,104 @@ class BaseStrategy(abc.ABC):
             
             # show the user the simulation account
             print("Simulation Account",  self.BROKER.Account )
+
+
+        # if self.MODE == IStrategyMode.LIVE:
+            
+        #     try:
+        #         with ThreadPoolExecutor(max_workers=3, thread_name_prefix="OlympusTraderStreams") as pool:
+        #             try:
+        #                 #  Trading data streams
+        #                 tradeStream = loop.run_in_executor(
+        #                     pool, self.BROKER.startTradeStream, self._on_trade_update)
+        #                 marketDataStream = loop.run_in_executor(
+        #                     pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+
+        #                 # UI Shared Memory Server
+        #                 if self.WITHUI:
+        #                     server = self.SSM.get_server()
+        #                     loop.run_in_executor(
+        #                         pool, server.serve_forever)
+        #                     print('UI Shared Memory Server started')
+
+        #                 #  Insight executor and listener
+        #                 insighStream = loop.create_task(
+        #                     self._insightListener(), name="OlympusTrader_InsightListener")
+
+        #                 insighStream = loop.run_in_executor(
+        #                     pool, loop.run_forever)
+                        
+
+        #             except Exception as e:
+        #                 print(f'Exception from Threads: {e}')
+
+        #     except KeyboardInterrupt:
+        #         print("Interrupted execution by user")
+        #     finally:
+        #         self.teardown()
+        #         # asyncio.run(self.BROKER.closeTradeStream())
+        #         loop.stop()
+        #         pool.shutdown(wait=False)
+        #         asyncio.run(self.BROKER.closeStream(self.STREAMS))
+        #         self._Running = False
+        #         exit(0)
+
+        # elif self.MODE == IStrategyMode.BACKTEST:
+        #     # Backtest
+        #     if self.VERBOSE > 0:
+        #         print(f"Running Backtest - {datetime.datetime.now()}")
+        #         start_time = timeit.default_timer()
+        #     try:
+        #         pool = ThreadPoolExecutor(
+        #             max_workers=4, thread_name_prefix="OlympusTraderStreams")
+
+        #         try:
+        #             #  Trading data streams
+        #             tradeStream = loop.run_in_executor(
+        #                 pool, self.BROKER.startTradeStream, self._on_trade_update)
+        #             marketDataStream = loop.run_in_executor(
+        #                 pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS)
+        #             # marketDataStream = asyncio.run( self.BROKER.streamMarketData(self._on_bar, self.STREAMS))
+
+        #             insighStream = loop.create_task(
+        #                 self._insightListener(), name="OlympusTraderInsightListener")
+
+        #             insighStream = loop.run_in_executor(
+        #                 pool, loop.run_forever)
+        #             # UI Shared Memory Server
+        #             if self.WITHUI:
+        #                 server = self.SSM.get_server()
+        #                 loop.run_in_executor(
+        #                     pool, server.serve_forever)
+                        
+
+        #         except Exception as e:
+        #             print(f'Exception from Threads: {e}')
+
+        #         # loop.run_forever()
+
+        #     except KeyboardInterrupt:
+        #         print("Interrupted execution by user")
+                # self.BROKER.closeTradeStream()
+                # self.BROKER.closeStream(self.STREAMS)
+                # insighStream.cancel()
+            # finally:
+            #     asyncio.run(self.BROKER.closeTradeStream())
+            #     asyncio.run(self.BROKER.closeStream(self.STREAMS))
+            #     self._Running = False
+
+            # if self.VERBOSE > 0:
+            #     print('Backtest Completed:',
+            #           timeit.default_timer() - start_time)
+
+            # self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(
+            #     self.resolution)
+
+            # # Save the backtest results
+            # self.saveBacktestResults()
+            
+            # # show the user the simulation account
+            # print("Simulation Account",  self.BROKER.Account )
 
 
     def saveBacktestResults(self):
@@ -398,12 +467,13 @@ class BaseStrategy(abc.ABC):
 
             self.SSM = SharedStrategyManager(
                 address=('', 50000), authkey=os.getenv('SSM_PASSWORD').encode())
+            print('UI Shared Memory Server Started')
 
         except Exception as e:
             print(f'Error in _startUISharedMemory: {e}')
             pass
 
-    async def _insightListener(self):
+    def _insightListener(self):
         """ Listen to the insights and manage the orders. """
         assert callable(
             self.executeInsight), 'executeInsight must be a callable function'
@@ -460,9 +530,11 @@ class BaseStrategy(abc.ABC):
                     self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
                 except BrokenBarrierError as e:
                     # print('Error in _insightListener:', e)
-                    pass
+                    # TODO: Should be checking if the backtesting range is completed but for now we will just break
+                    break
             else:
-                await asyncio.sleep(1)
+                # await asyncio.sleep(1)
+                sleep(1)
             # Update the account and positions
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
