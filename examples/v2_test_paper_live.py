@@ -37,7 +37,7 @@ class QbitTB(Strategy):
             ])
         self.warm_up = 36
         self.execution_risk = 0.04  # 4% of account per trade
-        self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
+        self.minRewardRiskRatio = 1.2  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.1
 
     def init(self, asset):
