@@ -55,6 +55,9 @@ class PaperBroker(BaseBroker):
 
     ACCOUNT_HISTORY: dict[datetime.date, IAccount] = {}
 
+    _MARKET_STREAMS: dict[IMarketDataStream, asyncio.Future] = {}
+    """Market Streams"""
+
     FeedDelay: int = 0
     # DEBUG
     VERBOSE: int = 0
@@ -138,10 +141,10 @@ class PaperBroker(BaseBroker):
                     self.get_current_time if shouldDelta else datetime.timedelta()
                 # print("start: ", self.get_current_time-start, "end: ", self.get_current_time-end)
                 data = yf.download(
-                    symbol, start=resolution.get_time_increment(start-delta), end=resolution.get_time_increment(end-delta), interval=formatTF)
+                    symbol, start=resolution.get_time_increment(start-delta), end=resolution.get_time_increment(end-delta), interval=formatTF, progress=False)
             else:
                 data = yf.download(
-                    symbol, start=start, end=end, interval=formatTF)
+                    symbol, start=start, end=end, interval=formatTF, progress=False)
 
             return self.format_on_bar(data, asset['symbol'])
         else:
@@ -799,89 +802,94 @@ class PaperBroker(BaseBroker):
 
     def _submit_order(self, orderRequest: IOrderRequest) -> IOrder:
         # check if the buying power is enough to place the order
+        try: 
+            if orderRequest['type'] == IOrderType.MARKET:
+                currentBar = self._get_current_bar(
+                    orderRequest['symbol'])
+                if currentBar.empty:
+                    return
+                currentBar = currentBar.iloc[0]
+                orderRequest['limit_price'] = currentBar.close
 
-        if orderRequest['type'] == IOrderType.MARKET:
-            currentBar = self._get_current_bar(
-                orderRequest['symbol'])
-            currentBar = currentBar.iloc[0]
-            orderRequest['limit_price'] = currentBar.close
+            marginRequired = orderRequest['qty'] * orderRequest['limit_price']
+            buying_power = self.Account["buying_power"]
 
-        marginRequired = orderRequest['qty'] * orderRequest['limit_price']
-        buying_power = self.Account["buying_power"]
+            # Account for the market value of the position if the order is in the opposite direction
+            position_agg = self.get_position(orderRequest['symbol'])
+            if position_agg:
+                if (orderRequest['side'] == IOrderSide.SELL and position_agg['qty'] < 0) or \
+                        (orderRequest['side'] == IOrderSide.BUY and position_agg['qty'] > 0):
+                    buying_power += position_agg['market_value']
 
-        # Account for the market value of the position if the order is in the opposite direction
-        position_agg = self.get_position(orderRequest['symbol'])
-        if position_agg:
-            if (orderRequest['side'] == IOrderSide.SELL and position_agg['qty'] < 0) or \
-                    (orderRequest['side'] == IOrderSide.BUY and position_agg['qty'] > 0):
-                buying_power += position_agg['market_value']
+            if buying_power < marginRequired:
+                raise BaseException({
+                    "code": "insufficient_balance",
+                    "data": {"symbol": orderRequest['symbol'],
+                            "requires": marginRequired,
+                            "available": self.Account["buying_power"],
+                            "message": "Insufficient balance to place the order"}
+                })
+            # check if the orderRequest is valid
+            # TP and SL should already be greater or less than the limit price depending on the side and  quantity based on Insight class logic
+            if orderRequest['qty'] == None or orderRequest['qty'] <= 0:
+                raise BaseException({
+                    "code": "invalid_order",
+                    "data": {"symbol": orderRequest['symbol'],
+                            "message": "Order quantity must be greater than 0"}
+                })
+            if (orderRequest['type'] == IOrderType.LIMIT or orderRequest['type'] == IOrderType.STOP_LIMIT) and not orderRequest['limit_price']:
+                raise BaseException({
+                    "code": "invalid_order",
+                    "data": {"symbol": orderRequest['symbol'],
+                            "message": "Limit price must be provided for limit order"}
+                })
 
-        if buying_power < marginRequired:
-            raise BaseException({
-                "code": "insufficient_balance",
-                "data": {"symbol": orderRequest['symbol'],
-                         "requires": marginRequired,
-                         "available": self.Account["buying_power"],
-                         "message": "Insufficient balance to place the order"}
-            })
-        # check if the orderRequest is valid
-        # TP and SL should already be greater or less than the limit price depending on the side and  quantity based on Insight class logic
-        if orderRequest['qty'] == None or orderRequest['qty'] <= 0:
-            raise BaseException({
-                "code": "invalid_order",
-                "data": {"symbol": orderRequest['symbol'],
-                         "message": "Order quantity must be greater than 0"}
-            })
-        if (orderRequest['type'] == IOrderType.LIMIT or orderRequest['type'] == IOrderType.STOP_LIMIT) and not orderRequest['limit_price']:
-            raise BaseException({
-                "code": "invalid_order",
-                "data": {"symbol": orderRequest['symbol'],
-                         "message": "Limit price must be provided for limit order"}
-            })
+            # Set up the order legs
+            legs = IOrderLegs()
+            if orderRequest.get('take_profit'):
+                legs["take_profit"] = IOrderLeg(
+                    order_id=uuid.uuid4(), limit_price=orderRequest['take_profit'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.get_current_time, updated_at=self.get_current_time, submitted_at=self.get_current_time)
 
-        # Set up the order legs
-        legs = IOrderLegs()
-        if orderRequest.get('take_profit'):
-            legs["take_profit"] = IOrderLeg(
-                order_id=uuid.uuid4(), limit_price=orderRequest['take_profit'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.get_current_time, updated_at=self.get_current_time, submitted_at=self.get_current_time)
+            if orderRequest.get('stop_loss'):
+                legs["stop_loss"] = IOrderLeg(
+                    order_id=uuid.uuid4(), limit_price=orderRequest['stop_loss'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.get_current_time, updated_at=self.get_current_time, submitted_at=self.get_current_time)
+            if orderRequest.get('trail_price'):
+                legs["trailing_stop"] = IOrderLeg(
+                    order_id=uuid.uuid4(), limit_price=orderRequest['trail_price'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.get_current_time, updated_at=self.get_current_time, submitted_at=self.get_current_time)
 
-        if orderRequest.get('stop_loss'):
-            legs["stop_loss"] = IOrderLeg(
-                order_id=uuid.uuid4(), limit_price=orderRequest['stop_loss'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.get_current_time, updated_at=self.get_current_time, submitted_at=self.get_current_time)
-        if orderRequest.get('trail_price'):
-            legs["trailing_stop"] = IOrderLeg(
-                order_id=uuid.uuid4(), limit_price=orderRequest['trail_price'], filled_price=None, status=ITradeUpdateEvent.NEW, filled_at=None, created_at=self.get_current_time, updated_at=self.get_current_time, submitted_at=self.get_current_time)
+            order = IOrder(
+                order_id=uuid.uuid4(),
+                asset=self.get_ticker_info(orderRequest['symbol']),
+                limit_price=orderRequest['limit_price'] if orderRequest['limit_price'] else None,
+                filled_price=None,
+                stop_price=None,
+                qty=orderRequest['qty'],
+                filled_qty=None,
+                side=orderRequest['side'],
+                type=orderRequest['type'],
+                time_in_force=orderRequest['time_in_force'],
+                status=ITradeUpdateEvent.NEW,
+                order_class=orderRequest['order_class'],
+                created_at=self.get_current_time,
+                updated_at=self.get_current_time,
+                submitted_at=self.get_current_time,
+                filled_at=None,
+                legs=legs
 
-        order = IOrder(
-            order_id=uuid.uuid4(),
-            asset=self.get_ticker_info(orderRequest['symbol']),
-            limit_price=orderRequest['limit_price'] if orderRequest['limit_price'] else None,
-            filled_price=None,
-            stop_price=None,
-            qty=orderRequest['qty'],
-            filled_qty=None,
-            side=orderRequest['side'],
-            type=orderRequest['type'],
-            time_in_force=orderRequest['time_in_force'],
-            status=ITradeUpdateEvent.NEW,
-            order_class=orderRequest['order_class'],
-            created_at=self.get_current_time,
-            updated_at=self.get_current_time,
-            submitted_at=self.get_current_time,
-            filled_at=None,
-            legs=legs
+            )
 
-        )
-
-        if self.Account['cash'] < marginRequired/self.LEVERAGE:
-            # Not enough buying power
-            raise BaseException({
-                "code": "insufficient_funds",
-                "data": {"order_id": order['order_id']}
-            })
-        # self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)
-        self._update_order(order)
-        return order
+            if self.Account['cash'] < marginRequired/self.LEVERAGE:
+                # Not enough buying power
+                raise BaseException({
+                    "code": "insufficient_funds",
+                    "data": {"order_id": order['order_id']}
+                })
+            # self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)
+            self._update_order(order)
+            return order
+        
+        except BaseException as e:
+            raise  e
 
     def update_account_history(self):
         if self.VERBOSE >= 2:
@@ -1147,55 +1155,75 @@ class PaperBroker(BaseBroker):
             print("End of Market Stream")
         else:
             #  live data feed
+            barStreamCount = 0
             for asset in assetStreams:
                 self.HISTORICAL_DATA[asset['symbol']] = {}
                 if asset['type'] == 'bar':
                     self.HISTORICAL_DATA[asset['symbol']
                                          ]['bar'] = pd.DataFrame()
-                    if asset.get('feature') == None:
-                        TF = asset['time_frame']
+                    barStreamCount += 1
+                    # if asset.get('feature') == None:
+                    #     TF = asset['time_frame']
 
-            while self.RUNNING_MARKET_STREAM:
-                for asset in assetStreams:
-                    isFeature = False
-                    if asset.get('feature') == None:
-                        symbol = asset['symbol']
-                    else:
-                        symbol = asset['feature']
-                        isFeature = True
-                    if asset['type'] == 'bar':
-                        try:
-                            # Get the current bar data with the index
-                            barData = self._get_current_bar(
-                                symbol, asset['time_frame'])
-                            if type(barData) == NoneType:
-                                continue
-                            elif barData.empty:
-                                continue
-                            else:
-                                for index in barData.index:
-                                    loop.run_until_complete(
-                                        callback(barData.loc[[index]], timeframe=asset['time_frame']))
-                                # loop.run_until_complete(callback(barData, timeframe=asset['time_frame']))
-                                continue
+            pool = ThreadPoolExecutor(max_workers=(
+            barStreamCount), thread_name_prefix="MarketDataStream")
+            for asset in assetStreams:
+                if asset['type'] == 'bar':
+                    # Stream data to callback one by one for each IAsset
+                    async def PaperBarStreamer(asset: IMarketDataStream):
+                        """
+                        Stream data to the callback function
+                        """
+                        lastChecked = pd.Timestamp.now() - datetime.timedelta(minutes=self.FeedDelay) # last checked time for the asset stream data - FeedDelay
+                        while self.RUNNING_MARKET_STREAM:
+                            nextTimetoCheck = asset['time_frame'].get_next_time_increment(lastChecked)
+                            await asyncio.sleep((nextTimetoCheck - lastChecked).total_seconds())
 
-                        except BaseException as e:
-                            print("Error: ", e)
-                            continue
-                    else:
-                        print('DataFeed not supported')
-                nextBarTime = TF.get_next_time_increment(self.get_current_time)
-                # you can add here any additional variable to break loop if necessary
-                print("Next Bar Time: ", nextBarTime,
-                      " Current Time: ", self.get_current_time)
-                while nextBarTime > datetime.datetime.now() - datetime.timedelta(minutes=self.FeedDelay):
-                    sleep(1)
+                            try:
+                                # Get the current bar data with the index
+                                barDatas = self._get_current_bar(
+                                    asset["symbol"], asset['time_frame'], lastChecked)
+                                if type(barDatas) == NoneType:
+                                    continue
+                                elif barDatas.empty:
+                                    continue
+                                else:
+                                    # TODO: May need to check if this is a feature or not and get the data accordingly
+                                    for idx in  range(0, len(barDatas)):
+                                        bar = barDatas.iloc[[idx]]
+                                        # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
+                                        if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked.replace(tzinfo=datetime.timezone.utc)):
+                                            loop.run_until_complete(
+                                                callback(bar, timeframe=asset['time_frame']))
+    
+                                        # loop.run_until_complete(
+                                        #     callback(barData.loc[[index]], timeframe=asset['time_frame']))
+                                    
+                            except BaseException as e:
+                                print("Error: ", e)
+                                continue
+                            
+                            lastChecked = nextTimetoCheck
+                    streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
+                    self._MARKET_STREAMS[streamKey] = loop.create_task(
+                        PaperBarStreamer(asset), name=f"Market:{streamKey}")
+            
+                    # pool.submit(, asset)
+            loop.run_forever()
+                    
+
 
     async def closeStream(self,  assetStreams: List[IMarketDataStream]):
-        self.RUNNING_MARKET_STREAM = False
-        # if self.MODE == IStrategyMode.BACKTEST:
-        # else:
-        #     raise NotImplementedError(f'Mode {self.MODE} not supported')
+        if self.RUNNING_MARKET_STREAM:
+            # _MARKET_STREAMS may nee to be part of the parant class
+            for asset in assetStreams:
+                streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
+                marketStream = self._MARKET_STREAMS.get(streamKey)
+                if marketStream:
+                    await marketStream.cancel()
+                    del self._MARKET_STREAMS[streamKey]
+                if len(self._MARKET_STREAMS) == 0:
+                    self.RUNNING_MARKET_STREAM = False
 
     def close_position(self, symbol: str, qty=None, percent=None):
         position = self.get_position(symbol)
@@ -1278,7 +1306,7 @@ class PaperBroker(BaseBroker):
         self.PreviousTime = self.CurrentTime
         self.CurrentTime = time
 
-    def _get_current_bar(self, symbol: str, timeFrame: ITimeFrame = ITimeFrame(unit=ITimeFrameUnit.Minute, amount=1)):
+    def _get_current_bar(self, symbol: str, timeFrame: ITimeFrame = ITimeFrame(unit=ITimeFrameUnit.Minute, amount=1), lastChecked: datetime.datetime = None) -> pd.DataFrame:
         currentBar = None
 
         def find_next_bar(start: datetime.datetime, end: datetime.datetime):
@@ -1288,6 +1316,7 @@ class PaperBroker(BaseBroker):
             try:
                 if self.HISTORICAL_DATA[symbol]['bar'].empty:
                     return None
+                # Try to get the exact current time bar
                 currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol, end:end], :]
                 # print("Current Bar: ", currentBar)
                 if currentBar.empty:
@@ -1299,6 +1328,7 @@ class PaperBroker(BaseBroker):
                 return None
 
         def convert_to_utc(time: datetime.datetime):
+            # time.astimezone(datetime.timezone.utc) # Some brokers may need this line as right now your just falsely assuming the time is in UTC when it may not be
             return time.replace(tzinfo=datetime.timezone.utc)
 
         if self.MODE == IStrategyMode.BACKTEST:
@@ -1322,24 +1352,29 @@ class PaperBroker(BaseBroker):
         else:
             # live data feed
             assert timeFrame, 'TimeFrame must be provided when using live data feed - _get_current_bar()'
-            tf_current_time = timeFrame.get_time_increment(
-                self.get_current_time)
+            useTime = self.get_current_time
+            
+            
+            tf_current_time = timeFrame.get_time_increment(useTime)
 
             current_time = convert_to_utc(tf_current_time)
-            if self.PreviousTime == None:
-                previous_time = current_time
-            else:
-                previous_time = convert_to_utc(self.PreviousTime)
+            # if self.PreviousTime == None:
+            #     # Default to the current time for backtesting 
+            #     previous_time = current_time
+            # else:
+            #     previous_time = convert_to_utc(self.PreviousTime)
+            # TODO: Else statement needs to be tested as we should just get the latest bar from the previous time
+            previous_time = convert_to_utc(lastChecked) if lastChecked else current_time
 
             find_next_bar(previous_time, current_time)
-            if type(currentBar) == NoneType:
+            if type(currentBar) == NoneType or currentBar.empty:
                 try:
                     if not self.TICKER_INFO[symbol]:
                         self.get_ticker_info(symbol)
-                    getBarsFrom = timeFrame.add_time_increment(
-                        self.get_current_time, -2)
+                    getBarsFrom = timeFrame.add_time_increment(tf_current_time, -2)
+                    # TODO: Could be using previous_time as we now track the last checked time for each asset stream
                     recentBars = self.get_history(
-                        self.TICKER_INFO[symbol], getBarsFrom, self.get_current_time, timeFrame)
+                        self.TICKER_INFO[symbol], getBarsFrom, timeFrame.get_next_time_increment(useTime), timeFrame)
                     self.HISTORICAL_DATA[symbol]['bar'] = pd.concat(
                         [self.HISTORICAL_DATA[symbol]['bar'], recentBars])
                     # Remove duplicates keys in the history as sometimes if we get duplicates
