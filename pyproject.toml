@@ -45,6 +45,8 @@ setuptools = "^72.1.0"
 vectorbt = "^0.26.2"
 quantstats = "^0.0.62"
 ccxt = "^4.3.95"
+dash = "^2.18.1"
+lightweight-charts = "^2.1"
 
 
 
