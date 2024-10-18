@@ -1,79 +1,171 @@
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
+import numpy as np
 import pandas as pd
+from dash_tvlwc import Tvlwc
+from dash_tvlwc.types import SeriesType, LineType, ColorType
+import plotly.graph_objects as go
+import plotly.express as px
+
 
 from OlympusTrader.ui.components.accountBalanceCard import AccountBalanceCard
+from OlympusTrader.ui.components.dashboardCard import dashboardCard
 from OlympusTrader.ui.components.insightDetail import InsightDetails
 from OlympusTrader.ui.components.placeholderChart import PlaceholderChart
+from OlympusTrader.ui.components.tradeRow import tradeRow
+from OlympusTrader.ui.components.dashboardNav import subnav
 
 dash.register_page(__name__, title="OlympusTrader - Overview", path='/')
 
-account_card_section = html.Div([
-    # TODO: Account Balance Card 
-    AccountBalanceCard(balance="£50,000", dailyChange="+£1,200")
-    # <DashboardCard title="Total Profit" value="$12,345" icon={<DollarSign />} />
-    # <DashboardCard title="Active Trades" value="8" icon={<Activity />} />
-    # <DashboardCard title="Win Rate" value="68%" icon={<PieChart />} />
 
-   
+account_card_section = html.Div([
+    AccountBalanceCard(balance=50_000.00,
+                       alltimeChange=12_345.00, dailyChange=1_200.00),
+    dashboardCard(title="Active Insights", value=8,
+                  icon="fa-thin fa-magnifying-glass-chart"),
+    dashboardCard(title="Win Rate", value="68%", icon="fa-thin fa-chart-pie"),
+    dashboardCard(title="Total Insights", value="69",
+                  icon="fa-thin fa-chart-pie"),
+
+
+
+
 ], className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6")
 
+balance_series = [{"time": time.strftime('%Y-%m-%d'), "value": value} for time, value in zip(
+    pd.date_range(start="2023-01-01", periods=100), np.random.randint(40_000, 60_000, 100))]
+
+
+def accountBalanceChart():
+    return Tvlwc(
+        id='account-balance-chart',
+        seriesTypes=[SeriesType.Baseline],
+        seriesData=[balance_series],
+        seriesOptions=[{
+            'baseValue': {'type': 'price', 'price': 50_000},
+            'topFillColor1': 'rgb(34, 197, 94)',
+            'topFillColor2': 'rgba(34, 197, 94, 0)',
+            'topLineColor': 'rgb(34, 197, 94)',
+            'crosshairMarkerRadius': 4,
+            'lineWidth': 2,
+            'priceScaleId': 'left',
+        }],
+        width='100%',
+        chartOptions={
+            'rightPriceScale': {'visible': False},
+            'leftPriceScale': {'visible': True, 'borderColor': '#be9e6b', },
+            'timeScale': {'visible': True},
+            'grid': {'vertLines': {'visible': False}, 'horzLines': {'style': 0, 'color': '#be9e6b80'}},
+            'layout': {'textColor': '#fffffa', 'background': {'type':  ColorType.Solid, 'color': '#0a0f1a'}}
+
+        }
+    )
+
+
+# Define the data
+names = ["Portfolio", "Cash", "BTC/USD", "BTC/USD-1", "BTC/USD-2", "ETH/USD"]
+parents = ["", "Portfolio", "Portfolio", "BTC/USD", "BTC/USD", "Portfolio"]
+values = [0, 30_000, 10_000, 5_000, 5_000, 2_000]
+
+fig = go.Figure(go.Sunburst(
+    labels=names,
+    parents=parents,
+    values=values,
+
+), layout=go.Layout(
+    plot_bgcolor='white',
+    paper_bgcolor='#0a0f1a',
+    font={"color": 'white'},
+))
+
+
+def assetAllocationChart():
+    return dcc.Graph(id="accet-allocation-chart", figure=fig, className="bg-primary-light"),
+
+
 account_porfolio_chart_section = html.Div([
-    PlaceholderChart(title="Portfolio Chart"),
-    PlaceholderChart(title="Asset Allocation"),
-    # dcc.Graph(
-    #     figure={
-    #         'data': [
-    #             {'x': [1, 2, 3, 4], 'y': [50000, 49980, 50030,  50680], 'type': 'line'},
-    #         ],
-    #         'layout': {
-    #             'title': 'Profit/Loss Chart'
-    #         }
-    #     },
-    # ), 
-    # dcc.Graph(
-    #     figure={
-    #         'data': [
-    #             {'x': [1], 'y': [10000], 'type': 'bar', 'name': 'BTC/USD'},
-    #             {'x': [1], 'y': [24500], 'type': 'bar', 'name': 'ETH/USD'},
-    #         ],
-    #         'layout': {
-    #             'title': 'Asset Allocation'
-    #         }
-    #     }
-    # )
+    PlaceholderChart(title="Portfolio Balance Chart",
+                     children=accountBalanceChart()),
+    PlaceholderChart(title="Portfolio Distribution",
+                     children=assetAllocationChart()),
+
 
 ], className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6")
 
-insight = {
-    "INSIGHT_ID": "12345",
-    "PARENT": None,
-    "order_id": "54321",
-    "side": "buy",
-    "symbol": "AAPL",
-    "quantity": 100,
-    "contracts": 10,
-    "type": "market",
-    "classType": "equity",
-    "limit_price": 150.0,
-    "TP": [155.0, 160.0],
-    "SL": 145.0,
-    "strategyType": "momentum",
-    "confidence": 0.85,
-    "tf": "1D",
-    "state": "new",
-    "createAt": "2023-10-01T12:00:00Z",
-    "updatedAt": "2023-10-02T12:00:00Z",
-    "filledAt": None,
-    "closedAt": None,
-    "close_price": None
-}
+insight = [
+    {
+        "INSIGHT_ID": "550e8400-e29b-41d4-a716-446655440000",
+        "PARENT": None,
+        "CHILDREN": {
+            "660e8400-e29b-41d4-a716-446655440001": {
+                "INSIGHT_ID": "660e8400-e29b-41d4-a716-446655440001",
+                "PARENT": "550e8400-e29b-41d4-a716-446655440000",
+                "CHILDREN": {},
+                "order_id": "ORD123457",
+                "side": "sell",
+                "symbol": "BTC/USD",
+                "quantity": 0.25,
+                "contracts": 1,
+                "type": "market",
+                "classType": "take_profit",
+                "strategyType": "trend_following",
+                "confidence": 0.75,
+                "tf": "1h",
+                "state": "FILLED",
+                "createAt": "2024-03-15T11:30:00Z",
+                "updatedAt": "2024-03-15T11:35:00Z",
+                "filledAt": "2024-03-15T11:40:00Z",
+                "closedAt": "2024-03-15T12:00:00Z",
+                "close_price": 36000,
+            }
+        },
+        "order_id": "ORD123456",
+        "side": "buy",
+        "symbol": "BTC/USD",
+        "quantity": 0.5,
+        "contracts": 1,
+        "type": "limit",
+        "classType": "bracket",
+        "limit_price": 35000,
+        "TP": [36000, 37000],
+        "SL": 34000,
+        "strategyType": "trend_following",
+        "confidence": 0.85,
+        "tf": "1h",
+        "state": "FILLED",
+        "createAt": "2024-03-15T10:30:00Z",
+        "updatedAt": "2024-03-15T10:35:00Z",
+        "filledAt": "2024-03-15T10:40:00Z",
+        "closedAt": None,
+        "close_price": None,
+    },
+    {
+        "INSIGHT_ID": "770e8400-e29b-41d4-a716-446655440002",
+        "PARENT": None,
+        "CHILDREN": {},
+        "order_id": "ORD123458",
+        "side": "sell",
+        "symbol": "ETH/USD",
+        "quantity": 2,
+        "contracts": 1,
+        "type": "market",
+        "classType": "single",
+        "strategyType": "mean_reversion",
+        "confidence": 0.7,
+        "tf": "4h",
+        "state": "FILLED",
+        "createAt": "2024-03-15T09:00:00Z",
+        "updatedAt": "2024-03-15T09:05:00Z",
+        "filledAt": "2024-03-15T09:10:00Z",
+        "closedAt": "2024-03-15T13:10:00Z",
+        "close_price": 2050,
+    }
+]
+
 
 insight_details_section = html.Div([
-            # <InsightDetails insight={mockInsight} />
-            InsightDetails(insight)
-
+    # InsightDetails(insight)
 ], className="mt-8")
 
 recent_trades_section = html.Div([
@@ -82,57 +174,38 @@ recent_trades_section = html.Div([
         html.Table([
             html.Thead([
                 html.Tr([
-                    html.Th("Asset", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
-                    html.Th("Type", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
-                    html.Th("Strategy", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
-                    html.Th("Entry", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
-                    html.Th("Exit", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
-                    html.Th("Profit/Loss", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                    html.Th(
+                        "Asset", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                    html.Th(
+                        "Type", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                    html.Th(
+                        "Strategy", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                    html.Th(
+                        "Entry", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                    html.Th(
+                        "Exit", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                    html.Th(
+                        "Profit/Loss", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
                 ])
             ], className="bg-primary-light"),
             html.Tbody([
-                html.Tr([
-                    html.Td("BTC/USD", className="px-6 py-3"),
-                    html.Td("Long", className="px-6 py-3"),
-                    html.Td("Trend Following", className="px-6 py-3"),
-                    html.Td("32,450", className="px-6 py-3"),
-                    html.Td("33,100", className="px-6 py-3"),
-                    html.Td("+$650", className="px-6 py-3"),
-                ]),
-                html.Tr([
-                    html.Td("ETH/USD", className="px-6 py-3"),
-                    html.Td("Short", className="px-6 py-3"),
-                    html.Td("Mean Reversion", className="px-6 py-3"),
-                    html.Td("2,100", className="px-6 py-3"),
-                    html.Td("2,050", className="px-6 py-3"),
-                    html.Td("+$50", className="px-6 py-3"),
-                ]),
-                html.Tr([
-                    html.Td("XRP/USD", className="px-6 py-3"),
-                    html.Td("Long", className="px-6 py-3"),
-                    html.Td("Breakout", className="px-6 py-3"),
-                    html.Td("0.45", className="px-6 py-3"),
-                    html.Td("0.43", className="px-6 py-3"),
-                    html.Td("-$20", className="px-6 py-3"),
-                ])
+                tradeRow("btc/usd", "long", "breakout", 50000, 51000, 650),
+                tradeRow("eth/usd", "short", "mean reversion", 2100, 2050, 50),
+                tradeRow("xrp/usd", "long", "breakout", 0.45, 0.43, -20)
+
             ], className="bg-primary-foreground divide-y divide-accent")
         ], className="w-full")
     ], className="bg-primary-foreground shadow rounded-lg overflow-hidden border border-accent")
 ], className="mt-8")
 
 layout = html.Div([
-    account_card_section,
-    account_porfolio_chart_section,
-    insight_details_section,
-    recent_trades_section
+    subnav(),
+    html.Div(
+        className="flex-grow container mx-auto py-8 text-white",
+        children=[
+            account_card_section,
+            account_porfolio_chart_section,
+            insight_details_section,
+            recent_trades_section
+        ])
 ])
-
-# Initialize the Dash app
-app = dash.Dash(__name__)
-
-# Define the layout
-app.layout = layout
-
-# Run the server
-if __name__ == '__main__':
-    app.run_server(debug=True)

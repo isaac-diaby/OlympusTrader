@@ -47,6 +47,7 @@ quantstats = "^0.0.62"
 ccxt = "^4.3.95"
 dash = "^2.18.1"
 lightweight-charts = "^2.1"
+dash-tvlwc = "^0.1.1"
 
 
 
