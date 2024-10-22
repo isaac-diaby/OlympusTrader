@@ -158,6 +158,8 @@ class BaseBroker(abc.ABC):
         """Format stream Trade Order data and event"""
         if isinstance(trade, ITradeUpdate):
             return trade.order, trade.event
-
+        
+    @property
     def get_current_time(self) -> datetime:
+        print("Get Current Time -", self.NAME)
         return datetime.now()

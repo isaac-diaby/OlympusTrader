@@ -908,11 +908,11 @@ class PaperBroker(BaseBroker):
                 [[symbol], pd.to_datetime(bar.index, utc=True)], names=['symbol', 'date'])
 
             bar = pd.DataFrame(data={
-                'open': bar['Open'].values,
-                'high': bar['High'].values,
-                'low': bar['Low'].values,
-                'close': bar['Close'].values,
-                'volume': bar['Volume'].values,
+                'open': np.array(bar['Open'].values).reshape(-1),
+                'high': np.array(bar['High'].values).reshape(-1),
+                'low': np.array(bar['Low'].values).reshape(-1),
+                'close': np.array(bar['Close'].values).reshape(-1),
+                'volume': np.array(bar['Volume'].values).reshape(-1),
             }, index=index, columns=['open', 'high', 'low', 'close', 'volume'])
             return bar
         else:
@@ -1218,12 +1218,17 @@ class PaperBroker(BaseBroker):
             # _MARKET_STREAMS may nee to be part of the parant class
             for asset in assetStreams:
                 streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
-                marketStream = self._MARKET_STREAMS.get(streamKey)
+                marketStream = self._MARKET_STREAMS.get(streamKey, None)
                 if marketStream:
-                    await marketStream.cancel()
+                    print("Closing Market Stream for: ", streamKey)
+                    if type(marketStream) == asyncio.Task:
+                        marketStream.cancel("Relenquishing Market Stream for: " +streamKey)
                     del self._MARKET_STREAMS[streamKey]
+                    return True
                 if len(self._MARKET_STREAMS) == 0:
                     self.RUNNING_MARKET_STREAM = False
+                return True
+        return False
 
     def close_position(self, symbol: str, qty=None, percent=None):
         position = self.get_position(symbol)
