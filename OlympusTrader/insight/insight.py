@@ -774,6 +774,8 @@ class Insight:
 
     @property
     def uses_contract_size(self):
+        if self.ASSET == None:
+            return False
         return self.ASSET.get("contract_size", None) != None
 
     @property

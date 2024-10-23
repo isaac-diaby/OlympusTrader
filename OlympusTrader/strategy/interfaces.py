@@ -35,9 +35,9 @@ class IStrategyMode(Enum):
 
 @dataclass
 class IStrategyMatrics:
-    start_date: datetime = datetime.now()
+    start_date: Optional[datetime] = None
     """ The start date """
-    end_date: datetime = None
+    end_date: Optional[datetime] = None
     starting_cash: float = 0.0
     """ The starting cash """
 

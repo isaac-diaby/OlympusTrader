@@ -43,7 +43,7 @@ def dashboardCardInsights (title: str, insights: dict[str, IInsight]):
     ], className="bg-primary-foreground p-6 rounded-lg shadow-lg border border-accent")
 
 
-def dashboardCardMode(title: str, value: float, connected: bool):
+def dashboardCardMode(title: str, mode: str, accountType: str, connected: bool):
     return html.Div([
         html.Div([
             html.H3(title, className="text-xl font-semibold mb-2 text-accent"),
@@ -56,5 +56,6 @@ def dashboardCardMode(title: str, value: float, connected: bool):
                 className="relative flex h-3 w-3"
             )
         ], className="flex items-center justify-between"),
-        html.P(value, className="text-2xl font-bold text-white")
+        html.P(accountType.replace('_', ' ').lower().capitalize(), className="text-2xl font-bold text-white"),
+        html.P(mode, className="text-2xl font-bold text-white")
     ], className="bg-primary-foreground p-6 rounded-lg shadow-lg border border-accent")

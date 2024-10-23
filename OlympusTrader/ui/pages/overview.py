@@ -32,7 +32,7 @@ def account_card_section_populate(account: IAccount, metrics: IStrategyMatrics, 
     return [AccountBalanceCard(balance=round(account["equity"], 2), alltimeChange=alltimeChange, dailyChange=alltimeChange),
             dashboardCardInsights(title="Insights", insights=insights),
             # dashboardCard(title="Win Rate", value=f"{metrics["win_rate"]*100}%", icon="fa-thin fa-chart-pie"),
-            dashboardCardMode(title="Mode", value=mode, connected=True)
+            dashboardCardMode(title="Mode", mode=mode, accountType=account['account_id'], connected=True)
             ]
 
 
@@ -133,7 +133,8 @@ def accountBalanceChart():
             'grid': {'vertLines': {'visible': False}, 'horzLines': {'style': 0, 'color': '#be9e6b80'}},
             'layout': {'textColor': '#fffffa', 'background': {'type':  ColorType.Solid, 'color': '#0a0f1a'}},
             'localization': {
-                    'timeFormatter': "businessDayOrTimestamp => {return Date(businessDayOrTimestamp);}",
+                    'timeFormatter': "(businessDayOrTimestamp) => {return Date(businessDayOrTimestamp);}",
+                    # 'timeFormatter': "(businessDayOrTimestamp) => {return Date(businessDayOrTimestamp/1000);}",
                  
                 #     'locale': 'en-US',
                 #     'priceFormatter': "(function(price) { return '$' + price.toFixed(2); })"
@@ -151,24 +152,33 @@ def accountBalanceChart():
 @callback(
     [Output("account-balance-chart", "seriesData"),
      Output("account-balance-chart", 'seriesOptions')],
-    [Input(STRATEGY_STORE_MAPPINGS.account.id, 'data'),
-     Input(STRATEGY_STORE_MAPPINGS.metrics.id, 'data')],
-    [State("account-balance-chart", 'seriesData'),  State("account-balance-chart",
-                                                          'seriesOptions'), State(STRATEGY_STORE_MAPPINGS.time.id, 'data')],
-    prevent_initial_call=True
+    [Input(STRATEGY_STORE_MAPPINGS.account.id, 'data')],
+    [
+         State(STRATEGY_STORE_MAPPINGS.metrics.id, 'data'),
+         State("account-balance-chart", 'seriesData'),
+         State("account-balance-chart",'seriesOptions'),
+         State(STRATEGY_STORE_MAPPINGS.time.id, 'data')
+    ],
+    # prevent_initial_call=True,
+    suppress_callback_exceptions=True
 )
 def update_account_balance_chart(account, metrics, balance_series, chart_options, time):
-    print(time)
     updateBaseline = False
-    if balance_series is None:
+
+    # Check if the balance series is empty and populate the starting balance
+    if balance_series == None:
         balance_series = [[]]
+        if metrics is None:
+            return no_update, no_update
         balance_series[0].append(
             {"time": metrics["start_date"], "value": metrics["starting_cash"]})
         chart_options[0]["baseValue"]["price"] = metrics["starting_cash"]
         updateBaseline = True
 
-    print(time)
-    print(balance_series[0][-1])
+    # Check if the balance has changed
+    if balance_series[0][-1]["value"] == account["equity"]:
+        return  balance_series if updateBaseline else no_update, chart_options if updateBaseline else no_update
+    
     # Add a new data point to the series
     new_datapoint = [{"time": time, "value": account["equity"]}]
     # if balance_series[0][-1]["time"]  < time:
@@ -186,7 +196,8 @@ def assetAllocationChart():
     [Output("asset-allocation-chart", "figure")],
     [Input(STRATEGY_STORE_MAPPINGS.account.id, 'data'),
      Input(STRATEGY_STORE_MAPPINGS.positions.id, 'data')],
-    prevent_initial_call=True
+    # prevent_initial_call=True,
+    suppress_callback_exceptions=True
 )
 def update_asset_allocation_chart(account: IAccount, positions: IPosition):
         names = ["Portfolio", "Cash"]
@@ -202,7 +213,7 @@ def update_asset_allocation_chart(account: IAccount, positions: IPosition):
                     continue
                 parents.append("Portfolio")
                 values.append(position["market_value"])
-
+        
         asset_allocation = go.Figure(go.Sunburst(
             labels=names,
             parents=parents,

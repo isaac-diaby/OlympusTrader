@@ -23,8 +23,17 @@ def subnav():
                         html.Li(
                             children=[
                                 dcc.Link(
-                                    "Strategy Overview",
-                                    href="/strategy",
+                                    "Assets",
+                                    href="/assets",
+                                    className="text-accent hover:text-white transition-colors"
+                                )
+                            ]
+                        ),
+                        html.Li(
+                            children=[
+                                dcc.Link(
+                                    "Settings",
+                                    href="/settings",
                                     className="text-accent hover:text-white transition-colors"
                                 )
                             ]

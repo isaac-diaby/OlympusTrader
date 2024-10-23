@@ -161,5 +161,5 @@ class BaseBroker(abc.ABC):
         
     @property
     def get_current_time(self) -> datetime:
-        print("Get Current Time -", self.NAME)
+        """Get the current broker time"""
         return datetime.now()

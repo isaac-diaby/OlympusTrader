@@ -69,7 +69,7 @@ class PaperBroker(BaseBroker):
         self.VERBOSE = verbose
         self.LEVERAGE = leverage
         self.STARTING_CASH = cash
-        self.ACCOUNT = IAccount(account_id='PAPER_ACCOUNT', equity=self.STARTING_CASH, cash=self.STARTING_CASH, currency=currency,
+        self.ACCOUNT = IAccount(account_id="PAPER_ACCOUNT", equity=self.STARTING_CASH, cash=self.STARTING_CASH, currency=currency,
                                 buying_power=cash*self.LEVERAGE, leverage=self.LEVERAGE, shorting_enabled=allow_short)
 
         # Set the backtest configuration
@@ -113,7 +113,7 @@ class PaperBroker(BaseBroker):
                     status="active",
                     tradable=True,
                     marginable=True,
-                    shortable=self.Account['shorting_enabled'],
+                    shortable=self.Account.shorting_enabled,
                     fractionable=True,
                     min_order_size=0.001,
                     min_price_increment=1 /
@@ -309,21 +309,7 @@ class PaperBroker(BaseBroker):
                 order['status'] = ITradeUpdateEvent.FILLED
                 order['filled_at'] = self.get_current_time
                 order['updated_at'] = self.get_current_time
-                # update buying power difference
-                # bp_change = abs((order['qty'] *
-                #              order['limit_price']) - (order['qty'] *
-                #                                       order['filled_price']))
-                # if (self.Account['buying_power'] - bp_change) < 0:
-                # cant afford the new price
-                # order['status'] = ITradeUpdateEvent.REJECTED
-                # order['status'] = ITradeUpdateEvent.CANCELED
-                # self._update_order(order)
-                # loop.run_until_complete(callback(ITradeUpdate(
-                #     order, order['status'])))
-                # continue
 
-                # self.Account['cash'] -= np.round(
-                #     bp_change/self.LEVERAGE, 2)
                 try:
                     self._update_order(order)
                     loop.run_until_complete(callback(ITradeUpdate(
@@ -483,10 +469,9 @@ class PaperBroker(BaseBroker):
                         # Clear buying power wwithheld by the order
                         entryPrince = order['filled_price'] if order[
                             'filled_price'] != None else self.Positions[symbol][orderId]['avg_entry_price']
-                        self.Account['cash'] += np.round(
+                        self.Account.cash += np.round(
                             (order['qty'] * entryPrince) / self.LEVERAGE, 2)
-                        # self.Account['cash'] += np.round(
-                        #     (order['qty'] * self.Positions[symbol][orderId]['avg_entry_price']) / self.LEVERAGE, 2)
+
                     else:
                         print("Order Close Without stop_price:", order)
 
@@ -507,7 +492,7 @@ class PaperBroker(BaseBroker):
                         unrealized_pl=0
                     )
                     marginRequired = order['qty'] * order['filled_price']
-                    if self.Account['cash'] < marginRequired/self.LEVERAGE:
+                    if self.Account.cash < marginRequired/self.LEVERAGE:
                         # Not enough buying power
                         order['status'] = ITradeUpdateEvent.CANCELED
                         self.CANCELED_ORDERS.append(order)
@@ -515,7 +500,7 @@ class PaperBroker(BaseBroker):
                             "code": "insufficient_funds",
                             "data": {"order_id": order['order_id']}
                         })
-                    self.Account['cash'] -= np.round(
+                    self.Account.cash -= np.round(
                         marginRequired/self.LEVERAGE, 2)
                     pass
                 case ITradeUpdateEvent.CANCELED:
@@ -544,8 +529,8 @@ class PaperBroker(BaseBroker):
                 # Update the account equity
                 changeInPL = round(self.Positions[symbol][orderId]['unrealized_pl'] -
                                    oldPosition['unrealized_pl'], 2)
-                self.Account['cash'] += changeInPL
-                self.Account['equity'] += changeInPL
+                self.Account.cash += changeInPL
+                self.Account.equity += changeInPL
 
             if self.Positions[symbol][orderId]['qty'] == 0:
                 # remove the position from the Positions dictionary
@@ -812,7 +797,7 @@ class PaperBroker(BaseBroker):
                 orderRequest['limit_price'] = currentBar.close
 
             marginRequired = orderRequest['qty'] * orderRequest['limit_price']
-            buying_power = self.Account["buying_power"]
+            buying_power = self.Account.buying_power
 
             # Account for the market value of the position if the order is in the opposite direction
             position_agg = self.get_position(orderRequest['symbol'])
@@ -826,7 +811,7 @@ class PaperBroker(BaseBroker):
                     "code": "insufficient_balance",
                     "data": {"symbol": orderRequest['symbol'],
                             "requires": marginRequired,
-                            "available": self.Account["buying_power"],
+                            "available": self.Account.buying_power,
                             "message": "Insufficient balance to place the order"}
                 })
             # check if the orderRequest is valid
@@ -878,13 +863,13 @@ class PaperBroker(BaseBroker):
 
             )
 
-            if self.Account['cash'] < marginRequired/self.LEVERAGE:
+            if self.Account.cash < marginRequired/self.LEVERAGE:
                 # Not enough buying power
                 raise BaseException({
                     "code": "insufficient_funds",
                     "data": {"order_id": order['order_id']}
                 })
-            # self.Account['cash'] -= np.round(marginRequired/self.LEVERAGE, 2)
+            # self.Account.cash -= np.round(marginRequired/self.LEVERAGE, 2)
             self._update_order(order)
             return order
         
@@ -898,8 +883,8 @@ class PaperBroker(BaseBroker):
         self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
 
     def update_account_balance(self):
-        self.ACCOUNT['buying_power'] = max(np.round(
-            self.ACCOUNT['cash'] * self.LEVERAGE, 2), 0)
+        self.ACCOUNT.buying_power = max(np.round(
+            self.ACCOUNT.cash * self.LEVERAGE, 2), 0)
 
     def format_on_bar(self, bar, symbol: str):
         if self.DataFeed == 'yf':
@@ -1478,15 +1463,15 @@ class PaperBroker(BaseBroker):
     @Account.setter
     def Account(self, account: IAccount):
         """ Sets the state of the strategy."""
-        cash = account.get('cash')
-        if cash and cash != self.ACCOUNT['cash']:
-            self.ACCOUNT['cash'] = max(cash, 0)
+        cash = account.cash
+        if cash and cash != self.ACCOUNT.cash:
+            self.ACCOUNT.cash = max(cash, 0)
         equity = account.get('equity')
-        if equity and equity != self.ACCOUNT['equity']:
-            self.ACCOUNT['equity'] = max(equity, 0)
+        if equity and equity != self.ACCOUNT.equity:
+            self.ACCOUNT.equity = max(equity, 0)
 
-        if account.get('leverage') and account.get('leverage') != self.ACCOUNT['leverage']:
-            self.ACCOUNT['leverage'] = account['leverage']
+        if account.get('leverage') and account.leverage != self.ACCOUNT.leverage:
+            self.ACCOUNT.leverage = account.leverage
 
         self.update_account_balance()
 

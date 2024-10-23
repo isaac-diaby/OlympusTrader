@@ -1,11 +1,12 @@
 import abc
 import asyncio
 from dataclasses import asdict
+import functools
 import os
 from pathlib import Path
-from threading import BrokenBarrierError, Thread
+from threading import BrokenBarrierError
 from time import sleep
-from typing import Any, List, Optional, override, Union, Literal
+from typing import Any, List, Optional, Literal
 from uuid import uuid4, UUID
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -16,10 +17,9 @@ from collections import deque
 import logging
 
 import pandas_ta as ta
+import pytz
 from tqdm import tqdm
 from vectorbt.portfolio import Portfolio
-
-from OlympusTrader.ui.helper.tradingViewHelper import history_to_trading_view_format
 
 from ..broker.base_broker import BaseBroker
 from ..broker.interfaces import IOrderSide, ISupportedBrokers, ITradeUpdateEvent, IAsset, IAccount, IPosition, IOrder
@@ -137,8 +137,9 @@ class BaseStrategy(abc.ABC):
             self.POSITIONS = self.BROKER.get_positions()
             self.ORDERS = self.BROKER.get_orders()
 
-            self.MATRICS.updateStart(pd.Timestamp(
-                self.BROKER.get_current_time, tz='UTC'), self.ACCOUNT['equity'])
+            # Initialise the strategy metrics
+            self.MATRICS.updateStart((pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)).total_seconds(), self.ACCOUNT.equity)
+
         except Exception as e:
             print(f'Failed to get account info from the broker {e}')
             pass
@@ -263,12 +264,32 @@ class BaseStrategy(abc.ABC):
 
         if self.WITHUI:
             server = self.SSM.get_server()
+            # Run the UI Shared Memory Server
             self.UI_SSM_STREAM = loop.run_in_executor(
                 pool, server.serve_forever)
-            # from OlympusTrader.ui import app
-            # log = logging.getLogger('werkzeug')
-            # log.setLevel(logging.ERROR)
-            # self.UI_STREAM = loop.run_in_executor(pool, app.run)
+            from OlympusTrader.ui.__main__ import app
+            # FIXME: Enabling dev tools is not working in a pool executor for some reason
+            # if self.VERBOSE > 0:
+            #     # Enable the dev tools
+            #     app.enable_dev_tools(
+            #         debug=True,
+            #         dev_tools_ui=True,
+            #         dev_tools_serve_dev_bundles=True,
+            #         dev_tools_hot_reload=True
+            #     )
+
+            #     # Run the UI Dashboard Server in debug mode
+            #     self.UI_STREAM = loop.run_in_executor(pool,  functools.partial(app.run, debug=True))
+            # else:
+            #     log = logging.getLogger('werkzeug')
+            #     log.setLevel(logging.ERROR)
+            #     # Run the UI Dashboard Server in production mode
+            #     self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
+                # Run the UI Dashboard Server in production mode
+            log = logging.getLogger('werkzeug')
+            log.setLevel(logging.ERROR)
+            
+            self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
             print('UI Shared Memory Server Started')
 
     def _run_strategy(self, loop, pool):
@@ -297,7 +318,7 @@ class BaseStrategy(abc.ABC):
             print('Backtest Completed:', timeit.default_timer() - start_time)
         # self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
         # self.saveBacktestResults()
-        # print("Simulation Account", self.BROKER.Account)
+
         raise KeyboardInterrupt("Backtest Completed")
 
     def _handle_close_streams(self, loop, pool):
@@ -388,7 +409,7 @@ class BaseStrategy(abc.ABC):
             SharedStrategyManager.register(
                 'get_strategy', callable=lambda: self)
             SharedStrategyManager.register(
-                'get_account', callable=lambda: self.account)
+                'get_account', callable=lambda: {str(key): v for key, v in asdict(self.account).items()})
             SharedStrategyManager.register(
                 'get_mode', callable=lambda: self.MODE.value)
             SharedStrategyManager.register(
@@ -405,8 +426,9 @@ class BaseStrategy(abc.ABC):
                 'get_metrics', callable=lambda: asdict(self.metrics))
             # SharedStrategyManager.register(
             #     'get_time', callable=lambda:  pd.Timestamp(self.BROKER.get_current_time, tz='UTC').timestamp())
+            
             SharedStrategyManager.register(
-                'get_time', callable=lambda:  pd.Timestamp(self.BROKER.get_current_time, tz='UTC'))
+                'get_time', callable=lambda:  (pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)).total_seconds())
 
             self.SSM = SharedStrategyManager(
                 address=('', 50000), authkey=os.getenv('SSM_PASSWORD').encode())
@@ -447,7 +469,7 @@ class BaseStrategy(abc.ABC):
                         elif not result.passed:
                             passed = False
                             break
-                        if self.VERBOSE > 0:
+                        if self.VERBOSE > 1:
                             print(
                                 f'Executor {result.executor}: {result.message}')
 
@@ -871,18 +893,6 @@ class BaseStrategy(abc.ABC):
     def close_position(self, symbol, qty=None, percent=None):
         """ Cancels an order to the broker."""
         return self.BROKER.close_position(symbol, qty, percent)
-
-    # dynamic function to get variables from the strategy class - used in the UI shared server.
-    # def get_variable(self, var='account'):
-    #     """ Get a variable from the strategy class."""
-    #     if not self.WITHUI:
-    #         print('UI is not enabled')
-    #         return None
-    #     try:
-    #         if getattr(self, var):
-    #             return getattr(self, var)
-    #     except AttributeError as e:
-    #         return None
 
     @property
     def account(self) -> Optional[IAccount]:

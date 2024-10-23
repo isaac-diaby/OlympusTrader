@@ -1,27 +1,42 @@
 import pandas as pd
+from datetime import datetime
+import pytz
+import numpy as np
 
+# TODO: we would want to make this function more performant by taking in candles that are already in the correct format and just convert the ones that are not
 def history_to_trading_view_format(data: pd.DataFrame):
     """
     Convert the history dataframe to a trading view format
     """
+
+    # IF the data is empty return an empty list
+    if data.empty:
+        return []
+    
     history = data[["open", "high", "low", "close", "volume"]].copy()
     # if we can not pass the TA indicators values to the trading view chart
-    # history = pd[["open", "high", "low", "close", "volume"]].copy()
+    # history = data.copy()
     history.reset_index(inplace=True)
     history.dropna(inplace=True)
     history.drop(columns=["symbol"], inplace=True)
-    history.rename(columns={"date": "time"}, inplace=True)
-    history["time"] = history["time"].dt.strftime('%Y-%m-%d %H:%M')
-    # history["time"] = history["time"].dt.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
-    # history["time"] = history["time"].astype(str)
-    # history["time"] = history["time"].astype(int) / 10**9 # Convert to seconds
-    # history["time"] = pd.to_datetime(history["time"].astype(int) / 1000000000, unit='s')
-    # history["time"] = history["time"].astype(int)
-    # history["time"] = history["time"].to_timestamp()
-    # history["time"].timestamp()
-    # history[["time"]] = history["time"].astype(int) / 1000000
-    # history["time"] = history["time"].dt.strftime('%Y-%m-%d')
-    print(history["time"].tail(5))
+
+    if "date" in history.columns:
+        history.rename(columns={"date": "time"}, inplace=True)
+    elif "timestamp" in history.columns:
+        history.rename(columns={"timestamp": "time"}, inplace=True)
+    else:
+        history.rename(columns={"level_1": "time"}, inplace=True)
+
+
+
+    # DEBUG: What the  date time looks like
+    # print(history.tail(5))
+
+    epoch = datetime(1970, 1, 1, tzinfo=pytz.UTC)
+    history["time"] = history["time"].apply(lambda x: int((x - epoch).total_seconds()))
+
+    # Sort the DataFrame by the timestamp column
+    history.sort_values(by="time", inplace=True)
 
     return history.to_dict(orient='records')
 

@@ -196,9 +196,9 @@ class QbitTB(Strategy):
 
                     if (insight.quantity == None):
 
-                        diluted_account_margin_size = self.account['buying_power'] * (
+                        diluted_account_margin_size = self.account.buying_power * (
                             insight.confidence)
-                        account_size_at_risk = self.account['cash'] * (
+                        account_size_at_risk = self.account.cash * (
                             insight.confidence*RISK)
 
                         riskPerShare = abs(

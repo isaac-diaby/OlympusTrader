@@ -157,7 +157,7 @@ class Mt5Broker(BaseBroker):
                 return None
 
             account = IAccount(
-                account_id=account_info.login,
+                account_id=str(account_info.login),
                 equity=account_info.equity,
                 cash=account_info.balance,
                 currency=account_info.currency,

@@ -131,7 +131,7 @@ class AlpacaBroker(BaseBroker):
     def get_account(self):
         res = self.trading_client.get_account()
         res.non_marginable_buying_power
-        account: IAccount = IAccount(account_id=res.id, equity=float(res.equity), cash=float(res.cash), currency=res.currency,
+        account: IAccount = IAccount(account_id=str(res.id), equity=float(res.equity), cash=float(res.cash), currency=res.currency,
                                      buying_power=float(res.buying_power), leverage=float(res.multiplier), shorting_enabled=res.shorting_enabled)
         return account
 
@@ -312,109 +312,6 @@ class AlpacaBroker(BaseBroker):
                 order = self.trading_client.submit_order(req)
                 return self.format_order(order)
 
-        # try:
-            # if asset['asset_type'] == 'stock':
-            #     match insight.type:
-            #         case 'MARKET':
-            #             if insight.quantity > 1:
-            #                 req = MarketOrderRequest(
-            #                     symbol=insight.symbol,
-            #                     qty=insight.quantity,
-            #                     side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
-            #                     time_in_force=TimeInForce.DAY,
-            #                     order_class=OrderClass.BRACKET if insight.TP and insight.SL else OrderClass.SIMPLE,
-            #                     take_profit=None if insight.TP == None else TakeProfitRequest(
-            #                         limit_price=insight.TP[-1]
-            #                     ),
-            #                     stop_loss=None if insight.SL == None else StopLossRequest(
-            #                         stop_price=insight.SL,
-            #                         # stop_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
-            #                     ))
-            #             else:
-            #                 # For small quantity use simple order
-            #                 req = MarketOrderRequest(
-            #                     symbol=insight.symbol,
-            #                     qty=insight.quantity,
-            #                     side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
-            #                     time_in_force=TimeInForce.DAY,
-            #                     order_class=OrderClass.SIMPLE,
-            #                 )
-            #                 # take_profit=TakeProfitRequest(
-            #                 #     limit_price=insight.TP[0]
-            #                 # ),
-            #                 # stop_loss=StopLossRequest(
-            #                 #     stop_price=insight.SL,
-            #                 #     # stop_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
-            #                 # ))
-
-            #         case 'LIMIT':
-            #             req = LimitOrderRequest(
-            #                 symbol=insight.symbol,
-            #                 qty=insight.quantity,
-            #                 side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
-            #                 time_in_force=TimeInForce.DAY,
-            #                 order_class=OrderClass.BRACKET,
-            #                 limit_price=insight.limit_price,
-            #                 take_profit=None if insight.TP == None else TakeProfitRequest(
-            #                     limit_price=insight.TP[-1]
-            #                 ),
-            #                 stop_loss=None if insight.SL == None else StopLossRequest(
-            #                     stop_price=insight.SL,
-            #                     # limit_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
-            #                 )
-            #             )
-            #         case _:
-            #             print(
-            #                 f"ALPACA: Order Type not supported {insight.type} {insight.symbol} ")
-            #             return
-            #     if req:
-            #         order = self.trading_client.submit_order(req)
-            #         return self.format_order(order)
-
-            # elif asset['asset_type'] == 'crypto':
-            #     # "crypto orders not allowed for advanced order_class: otoco"}
-            #     match insight.type:
-            #         case 'MARKET':
-            #             req = MarketOrderRequest(
-            #                 symbol=insight.symbol,
-            #                 qty=insight.quantity,
-            #                 side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
-            #                 time_in_force=TimeInForce.GTC,
-            #                 # order_class=OrderClass.SIMPLE,
-            #                 order_class=OrderClass.SIMPLE,
-            #                 take_profit=None if insight.TP == None else TakeProfitRequest(
-            #                     limit_price=insight.TP[-1]
-            #                 ),
-            #                 stop_loss=None if insight.SL == None else StopLossRequest(
-            #                     stop_price=insight.SL,
-            #                     limit_price=insight.SL*0.005
-            #                 )
-            #             )
-            #         case 'LIMIT':
-            #             req = LimitOrderRequest(
-            #                 symbol=insight.symbol,
-            #                 qty=insight.quantity,
-            #                 side=OrderSide.BUY if insight.side == 'long' else OrderSide.SELL,
-            #                 time_in_force=TimeInForce.GTC,
-            #                 # order_class=OrderClass.BRACKET,
-            #                 order_class=OrderClass.SIMPLE,
-            #                 limit_price=insight.limit_price,
-            #                 # take_profit=TakeProfitRequest(
-            #                 #     limit_price=insight.TP[0]
-            #                 # ),
-            #                 # stop_loss=StopLossRequest(
-            #                 #     stop_price=insight.SL,
-            #                 #     limit_price=insight.SL*0.005
-            #                 # )
-            #             )
-
-            #         case _:
-            #             print(
-            #                 f"ALPACA: Order Type not supported for crypto {insight.type} {insight.symbol} ")
-            #             return
-            # if req:
-            #     order = self.trading_client.submit_order(req)
-            #     return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
             # print ("ALPACA: Error submitting order", e)
             if e.code == 40310000:
@@ -424,13 +321,7 @@ class AlpacaBroker(BaseBroker):
                     "data": json.loads(e.args[0])
                 })
                 # TODO: make a strutured error
-                # BaseException({
-                #     "code": "insufficient_balance",
-                #     "data": {"symbol": orderRequest['symbol'],
-                #              "requires": marginRequired,
-                #              "available": self.Account["buying_power"],
-                #              "message": "Insufficient balance to place the order"}
-                # })
+
 
                 raise error
             raise e

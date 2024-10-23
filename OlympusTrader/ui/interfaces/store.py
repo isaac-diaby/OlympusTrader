@@ -14,3 +14,7 @@ class STRATEGY_STORE_MAPPINGS():
     history = STORE_MAP("strategy-data-store-history")
     metrics = STORE_MAP("strategy-data-store-metrics")
     time = STORE_MAP("strategy-data-store-time")
+
+@dataclass
+class STRATEGY_SYNC_MAPPING(STORE_MAP):
+    id = "strategy-sync-store"

@@ -13,7 +13,7 @@ from OlympusTrader.ui.components.tradesTable import tradeTable
 from OlympusTrader.ui.interfaces.store import STRATEGY_STORE_MAPPINGS
 
 
-dash.register_page(__name__, title="OlympusTrader - Strategy Overview")
+dash.register_page(__name__, title="OlympusTrader - Strategy Overview", )
 
 # assets = [
 #     {"symbol": "BTC/USD", "timeframe": "1h", "data": genMockDataFrame(365, 1.2000, 'BTC/USD', '19/3/2023', seed=41), "winrate": "78%", "profit_factor": "2.1",
@@ -99,7 +99,7 @@ def assetChart():
                     'vertLines': {'visible': True, 'style': 0, 'color': '#be9e6b40'},
                     'horzLines': {'visible': True, 'style': 0, 'color': '#be9e6b40'},
                 },
-                'timeScale': {'timeVisible': True, 'visible': True, 'secondsVisible': True},
+                'timeScale': {'timeVisible': True, 'visible': True},
 
                 'localization': {
                     'timeFormatter': "businessDayOrTimestamp => {return Date(businessDayOrTimestamp);}",
@@ -111,7 +111,6 @@ def assetChart():
             fullTimeScaleOptions={
                 'visible': True,
                 'timeVisible': True,
-                'secondsVisible': True,
             }
         )
     except Exception as e:
@@ -130,10 +129,14 @@ def assetChart():
 )
 def update_asset_chart(selected_asset, history, seriesData):
     if selected_asset is None or history is None:
-        return PreventUpdate
+        raise PreventUpdate
     
     if selected_asset not in history:
-        return PreventUpdate
+        raise PreventUpdate
+    
+    # No history data
+    if len(history[selected_asset]) == 0:
+        return no_update
     
     if seriesData == None:
         if selected_asset not in history:
@@ -143,7 +146,7 @@ def update_asset_chart(selected_asset, history, seriesData):
             seriesData[0].extend(history[selected_asset])
             return seriesData
             
-    if len(seriesData[0]) == len(history[selected_asset]):
+    if (len(seriesData[0]) == len(history[selected_asset])) or seriesData[0][-1]["time"] == history[selected_asset][-1]["time"]:
         return no_update
     
     indexdiff = len(history[selected_asset]) - len(seriesData[0])
@@ -166,7 +169,7 @@ def strategy_metrics_section(asset: IAsset):
                 children=[
                     MatricItem(label="Name", value=asset['name']),
                     MatricItem(label="Status",
-                               value=asset['status']),
+                               value=asset['status'].capitalize()),
                     MatricItem(label="Tadable",
                                value="True" if asset['tradable'] else "False"),
                     MatricItem(label="Shortable",
@@ -214,7 +217,7 @@ layout = html.Div([
     html.Div(
         className="flex-grow container mx-auto py-8 text-white",
         children=[
-            html.H1('Strategy Overview',
+            html.H1('Assets Overview',
                     className="text-3xl font-bold text-accent mb-6"),
             assets_in_play_section,
             html.Div(id='selected-asset-chart',
