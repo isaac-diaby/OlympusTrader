@@ -25,8 +25,15 @@ Feel free to fork the project if you want to add a new broker or anything you wa
 ## In Progress
 
 - [ ] Add more brokers support
-  - [ ] MT5 - MetaTrader5
-  - [ ] CCXT - hyper liquid
+  - [ ] Binance
+  - [ ] Trade Locker
+  - [ ] Interactive Brokers
+  - [ ] Hyper Liquid
+  - [x] MT5 - MetaTrader5
+
+- [x] Dashboard
+- [x] Multiple timeframe support
+- [x] Backtesting
 
 ## OlympusTrader
 
