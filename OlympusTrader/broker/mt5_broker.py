@@ -157,7 +157,7 @@ class Mt5Broker(BaseBroker):
                 return None
 
             account = IAccount(
-                account_id=account_info.login,
+                account_id=str(account_info.login),
                 equity=account_info.equity,
                 cash=account_info.balance,
                 currency=account_info.currency,
@@ -506,7 +506,6 @@ class Mt5Broker(BaseBroker):
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
         loop = asyncio.new_event_loop()
-        rate = 1
         for asset in assetStreams:
             try:
                 if asset['type'] == 'bar':

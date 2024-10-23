@@ -34,6 +34,7 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
 
 COPY pyproject.toml poetry.lock ./
 
+# If you want to use MT5, add the -E metatrader extra
 RUN --mount=type=cache,target=$POETRY_CACHE_DIR poetry install -E talib --no-root
 
 
@@ -90,6 +91,7 @@ ARG STRATEGY
 COPY strategies/$STRATEGY strategy
 
 ENV STRATEGY=$STRATEGY
-CMD ["python", "strategy/__init__.py"]
+CMD ["python", "strategy"]
+# CMD ["python", "strategy/__init__.py"]
 # CMD ["python", "-m", "strategy.$STRATEGY"]
 # ENTRYPOINT ["python", "-m", "strategy"]

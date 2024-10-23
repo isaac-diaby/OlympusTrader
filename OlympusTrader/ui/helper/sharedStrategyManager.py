@@ -1,28 +1,25 @@
 import os
-import streamlit as st
 from dotenv import load_dotenv
 
 from OlympusTrader.strategy.sharedmemory import SharedStrategyManager
 
-# Create a shared memory manager
-
-
 def get_shared_strategy_manager():
+    """Get the shared strategy manager instance"""
     try:
-
         load_dotenv()
         assert os.getenv('SSM_HOST') and os.getenv(
             'SSM_PASSWORD'), "Please set SSM_HOST and SSM_PASSWORD environment variables"
 
+        # print("Connecting to Shared Strategy Manager...")
+
         manager = SharedStrategyManager(address=(
             os.getenv("SSM_HOST"), 50000), authkey=os.getenv("SSM_PASSWORD").encode())
-        manager.connect()
 
+        manager.connect()
+        
         return manager
-        # yield manager
 
     except Exception as e:
-        st.error(f"Error connecting to shared memory: {e}")
         return None
 
 

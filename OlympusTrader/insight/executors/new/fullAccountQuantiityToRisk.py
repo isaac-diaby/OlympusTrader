@@ -29,7 +29,7 @@ class FullAccountQuantityToRiskExecutor(BaseExecutor):
         # Calculate the quantity to trade
         try:
             # Account size at to place order
-            account_size_at_risk = self.STRATEGY.account['buying_power'] if self.STRATEGY.assets[insight.symbol]['marginable'] else self.STRATEGY.account['cash']
+            account_size_at_risk = self.STRATEGY.account.buying_power if self.STRATEGY.assets[insight.symbol]['marginable'] else self.STRATEGY.account.cash
             if self.STRATEGY.broker.supportedFeatures.maxOrderValue is not None:
                 # Check if the account size at risk is greater than the maximum order value supported by the broker
                 account_size_at_risk = min(self.STRATEGY.broker.supportedFeatures.maxOrderValue, account_size_at_risk)

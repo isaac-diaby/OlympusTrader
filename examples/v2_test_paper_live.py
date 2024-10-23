@@ -37,7 +37,7 @@ class QbitTB(Strategy):
             ])
         self.warm_up = 36
         self.execution_risk = 0.04  # 4% of account per trade
-        self.minRewardRiskRatio = 2.0  # 2:1 Reward to Risk Ratio minimum
+        self.minRewardRiskRatio = 1.2  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.1
 
     def init(self, asset):
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     #     4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     
     strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-        1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
+        1, ITimeFrameUnit.Minute), verbose=1, ui=True, mode=IStrategyMode.LIVE)
 
     strategy.add_alphas([
         RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
