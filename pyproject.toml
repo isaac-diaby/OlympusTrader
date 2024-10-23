@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "olympustrader"
-version = "0.3.4"
+version = "0.3.5"
 description = "trading bot framework"
 authors = ["Moustapha Diaby <me@isaacdiaby.tech>"]
 license = "Apache 2.0"
