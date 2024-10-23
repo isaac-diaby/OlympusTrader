@@ -44,7 +44,7 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
         # Calculate the quantity to trade
         try:
             #Add a Check if margin is enabled for this asset. If margin is enabled, then use buying_power to calculate the quantity.
-            buying_power = self.STRATEGY.account['buying_power'] if self.STRATEGY.assets[insight.symbol]['marginable'] else self.STRATEGY.account['cash']
+            buying_power = self.STRATEGY.account.buying_power if self.STRATEGY.assets[insight.symbol]['marginable'] else self.STRATEGY.account.cash
             
             # Account size  to place order
             working_capital = buying_power * insight.confidence

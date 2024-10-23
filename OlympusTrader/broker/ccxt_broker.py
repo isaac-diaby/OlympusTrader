@@ -88,7 +88,7 @@ class CCXTBroker(BaseBroker):
         try:
             if self.exchange.has['fetch_balance']:
                 res = self.exchange.fetch_balance()
-                account: IAccount = IAccount(account_id=res.id, equity=float(res.equity), cash=float(res.cash), currency=res.currency,
+                account: IAccount = IAccount(account_id=str(res.id), equity=float(res.equity), cash=float(res.cash), currency=res.currency,
                                              buying_power=float(res.buying_power), leverage=float(res.multiplier), shorting_enabled=res.shorting_enabled)
             else:
                 # TODO: Implement this for alpaca etc

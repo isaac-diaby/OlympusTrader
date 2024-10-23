@@ -115,7 +115,8 @@ class IAsset(TypedDict):
     price_base: NotRequired[int]
     contract_size: NotRequired[int] # For futures and options contracts only (in the asset's base currency). else None
 
-class IAccount(TypedDict):
+@dataclass
+class IAccount():
     account_id: str
     equity: float
     cash: float

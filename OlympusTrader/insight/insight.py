@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from types import NoneType
@@ -72,13 +73,14 @@ class PartialCloseResult:
         else:
             return round((self.entry_price - self.filled_price) * self.quantity, 2)
 
+
 class Insight:
     INSIGHT_ID: UUID
     """Unique Insight ID"""
     PARANT: Optional[UUID] = None
     """Parent Insight ID"""
     CHILDREN: dict[UUID, Self]
-    
+
     order_id: str = None
     """Main Order ID for the Insight that entered the position"""
     side: IOrderSide = None  # buy or sell
@@ -127,15 +129,12 @@ class Insight:
     BROKER: get_BaseBroker = None
     ASSET: IAsset = None
 
-
-
     def __init__(self, side: IOrderSide, symbol: str,  strategyType: Union[StrategyTypes, str], tf: ITimeFrame, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None,  confidence: float = 0.1, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = 2, periodTillTp: int = 10,  parent: Optional[UUID] = None):
         assert side in IOrderSide, 'Invalid Order Side'
         self.INSIGHT_ID = uuid4()
         if parent:
             self.PARANT = parent  # Parent Insight ID
         self.CHILDREN = {}
-
 
         self.side = side  # buy or sell
         self.opposite_side = IOrderSide.BUY if (
@@ -189,10 +188,12 @@ class Insight:
                     if self.stopLossOrderLeg:
                         self.cancelStopLossLeg()
                     # close insight
-                    closeInsight = Insight(self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity)
+                    closeInsight = Insight(
+                        self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, self.quantity)
                     closeInsight.order_id = self.order_id
-                    # Submit the insight to close the position 
-                    order = self.BROKER.execute_insight_order(closeInsight, self.ASSET)
+                    # Submit the insight to close the position
+                    order = self.BROKER.execute_insight_order(
+                        closeInsight, self.ASSET)
 
                 else:
                     # Submit the insight to enter a position
@@ -276,15 +277,15 @@ class Insight:
         if self.state == InsightState.NEW:
             self.updateState(InsightState.REJECTED, 'Before Executed Canceled')
             return True
-
-        print("Insight is not in a valid state to be canceled", self.INSIGHT_ID)
+        if self._cancelling == False:
+            print("Insight is not in a valid state to be canceled",self.state, self.INSIGHT_ID)
         return False
 
     def close(self, quantity: Optional[float] = None, retry: bool = True, bypassStateCheck: bool = False):
         """
         Used to close a Insight (position) or to partially close a position (if you have multiple take profit levels)
         """
-        if (self.state == InsightState.FILLED or bypassStateCheck) and ( self._closing == False):
+        if (self.state == InsightState.FILLED or bypassStateCheck) and (self._closing == False):
             partialClose = False
             try:
                 if quantity != None and self.quantity:
@@ -300,10 +301,12 @@ class Insight:
                         self._closing = True
                         return True
                 else:
-                    partialCloseInsight = Insight(self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, quantity)
+                    partialCloseInsight = Insight(
+                        self.opposite_side, self.symbol, StrategyTypes.MANUAL, self.tf, quantity)
                     # This is needed for MT5 as you need to link the position ID to the order. We would also use this on the broker end to determain id the order is being closed (force close!)
                     partialCloseInsight.order_id = self.order_id
-                    closePartialOrder = self.submit(partialCloseInsight=partialCloseInsight)
+                    closePartialOrder = self.submit(
+                        partialCloseInsight=partialCloseInsight)
                     if closePartialOrder:
                         if self.TP:
                             self.TP.pop(0)  # Remove the first TP level
@@ -334,21 +337,21 @@ class Insight:
 
     def addChildInsight(self, side: IOrderSide, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = None, periodTillTp: int = None) -> Self:
         """Add a child insight to the parent insight. The child insight will be executed after the parent insight is filled."""
-        childInsight =  Insight(
-            parent=self.INSIGHT_ID, 
-                       symbol=self.symbol,
-                       strategyType=self.strategyType+'-CHILD',
-                       tf=self.tf,
-                       side=side,
-                       quantity=quantity,
-                       limit_price=limit_price,
-                       TP=TP,
-                       SL=SL,
-                       confidence=self.confidence,
-                       executionDepends=executionDepends,
-                       periodUnfilled=periodUnfilled,
-                       periodTillTp=periodTillTp,
-                       )
+        childInsight = Insight(
+            parent=self.INSIGHT_ID,
+            symbol=self.symbol,
+            strategyType=self.strategyType+'-CHILD',
+            tf=self.tf,
+            side=side,
+            quantity=quantity,
+            limit_price=limit_price,
+            TP=TP,
+            SL=SL,
+            confidence=self.confidence,
+            executionDepends=executionDepends,
+            periodUnfilled=periodUnfilled,
+            periodTillTp=periodTillTp,
+        )
         self.CHILDREN[childInsight.INSIGHT_ID] = childInsight
         return childInsight
 
@@ -374,19 +377,21 @@ class Insight:
         self.quantity = quantity
         if self.checkValidQuantity():
             print(f"Updated quantity: {old_quantity} -> {self.quantity}")
-            if self.ASSET.get("contract_size") and self.ASSET.get("contract_size") > 1:
-                self.contracts = round(self.quantity / self.ASSET["contract_size"], 2)
+            if self.uses_contract_size:
+                self.contracts = round(
+                    self.quantity / self.ASSET["contract_size"], 2)
             return True
         else:
             self.quantity = old_quantity
             return False
-        
+
     def update_contracts(self, contracts: float):
-        if self.ASSET.get("contract_size"):
+        if self.uses_contract_size:
             old_contracts = self.contracts
             self.contracts = contracts
             if self.checkValidQuantity():
-                print(f"Updated contracts: {old_contracts} -> {self.contracts}")
+                print(f"Updated contracts: {
+                      old_contracts} -> {self.contracts}")
                 self.quantity = self.contracts * self.ASSET["contract_size"]
                 return True
             else:
@@ -410,7 +415,7 @@ class Insight:
         # check if the price is within the take profit and stop loss
         if not self.checkValidEntryInsight(price):
             return False
-        
+
         self.limit_price = price
 
         self.updatedAt = datetime.now(
@@ -482,7 +487,7 @@ class Insight:
 
     def checkValidQuantity(self, shouldUpdateState: bool = False):
         # Check if quantity is invalid
-        if self.ASSET.get("contract_size") and self.contracts:
+        if self.uses_contract_size and self.contracts:
             if self.contracts == None or self.ASSET['min_order_size'] > self.contracts or isnan(self.contracts):
                 if shouldUpdateState:
                     self.updateState(
@@ -493,7 +498,7 @@ class Insight:
                 self.updateState(
                     InsightState.REJECTED, 'Invalid Quantity')
             return False
-        
+
         return True
 
     def checkIfCanShort(self, shouldUpdateState: bool = False):
@@ -623,7 +628,7 @@ class Insight:
 
     @property
     def takeProfitOrderLeg(self):
-        return self.legs.get('take_profit')
+        return self.legs.get('take_profit', None)
 
     def cancelTakeProfitLeg(self):
         if self.takeProfitOrderLeg:
@@ -645,11 +650,11 @@ class Insight:
 
     @property
     def stopLossOrderLeg(self):
-        return self.legs.get('stop_loss')
+        return self.legs.get('stop_loss', None)
 
     def cancelStopLossLeg(self):
         if self.stopLossOrderLeg:
-            if self.cancel_order_by_id(self.stopLossOrderLeg['order_id'] or  (self.stopLossOrderLeg['order_id'] == None or self.stopLossOrderLeg['order_id'] == "")):
+            if self.cancel_order_by_id(self.stopLossOrderLeg['order_id'] or (self.stopLossOrderLeg['order_id'] == None or self.stopLossOrderLeg['order_id'] == "")):
                 self.legs['stop_loss'] = None
                 self.updatedAt = datetime.now(
                 ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
@@ -670,21 +675,23 @@ class Insight:
         if self.order_id == None:
             self.updateOrderID(order_id)
 
-        assert self.order_id == order_id, f"Order ID: {order_id} does not match the insight's order ID: {self.order_id}"
+        assert self.order_id == order_id, f"Order ID: {
+            order_id} does not match the insight's order ID: {self.order_id}"
         # TODO: Some times for market orders the price is not set so we will need to run the TP and SL calculations based on the current filled price.
         # We may want to give the traders the option to set a new TP and SL based on the current price. or just move the TP and SL based on the current price to match the minumem RRR.
         self.limit_price = price
-        if self.ASSET.get("contract_size"):
+        if self.uses_contract_size:
             self.update_contracts(qty)
         else:
             self.update_quantity(qty)
         self.partialFilled(qty)
-        self.updateState(InsightState.FILLED, f"Trade Filled: {self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
-        
+        self.updateState(InsightState.FILLED, f"Trade Filled: {
+                         self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
+
         return self
 
     def partialFilled(self, qty: float):
-        if self.ASSET.get("contract_size"):
+        if self.uses_contract_size:
             qty = qty * self.ASSET["contract_size"]
         if self._partial_filled_quantity == None:
             self._partial_filled_quantity = 0
@@ -699,7 +706,8 @@ class Insight:
     def positionClosed(self, price: float, close_order_id: str, qty: float = None):
         if self.close_order_id == None:
             self.updateCloseOrderID(close_order_id)
-        assert ((self.close_order_id == close_order_id) or (self.order_id == close_order_id)), f"Close Order ID: {close_order_id} does not match the insight's close order ID: {self.close_order_id}"
+        assert ((self.close_order_id == close_order_id) or (self.order_id == close_order_id)), f"Close Order ID: {
+            close_order_id} does not match the insight's close order ID: {self.close_order_id}"
         if qty != None:
             self.update_quantity(qty)
         # Handle multiple Take Profit levels
@@ -719,7 +727,7 @@ class Insight:
                     childInsight.close()
                 elif childInsight.state == InsightState.EXECUTED:
                     childInsight.cancel()
-                else: # childInsight.state == InsightState.NEW, InsightState.REJECTED, InsightState.CANCELED
+                else:  # childInsight.state == InsightState.NEW, InsightState.REJECTED, InsightState.CANCELED
                     childInsight.updateState(
                         InsightState.CANCELED, 'Parent Insight Closed')
         return self
@@ -730,7 +738,7 @@ class Insight:
         if len(self.partial_closes) > 0:
             for partial in self.partial_closes:
                 partialPL += partial.getPL()
-
+        
         if self.side == IOrderSide.BUY:
             return round(((self.close_price - self.limit_price) * self.quantity) - partialPL, 2)
         else:
@@ -753,7 +761,8 @@ class Insight:
         self.BROKER = broker
         self.ASSET = asset
         # update the created at to the current time in the simulation
-        self.createAt = datetime.now() if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        self.createAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         self.updatedAt = self.createAt
 
         if self.checkValidEntryInsight():
@@ -762,3 +771,125 @@ class Insight:
             self.updateState(InsightState.REJECTED, 'Invalid Entry Insight')
 
         return self
+
+    @property
+    def uses_contract_size(self):
+        if self.ASSET == None:
+            return False
+        return self.ASSET.get("contract_size", None) != None
+
+    @property
+    def dataclass(self):
+        return IInsight(self)
+
+
+@dataclass
+class IInsight:
+    symbol: str
+    insight_id: str
+    parent: Optional[str]
+    children: dict[UUID, Self]
+    state: str
+    side: str
+    limit_price: float
+    type: str
+    take_profit: Optional[float]
+    stop_loss: Optional[float]
+    useContractSize: bool
+    quantity: float
+    contracts: Optional[float]
+    strategy: Optional[str]
+    execution_dependency: str
+    order_id: str
+    confidence: float
+    RRR: float
+    TTL_unfilled: float
+    TTL_filled: float
+    close_order_id: Optional[str]
+    close_price: Optional[float]
+    created_at: datetime
+    updated_at: datetime
+    filled_at: Optional[datetime]
+    closed_at: Optional[datetime]
+    legs: IOrderLegs
+    partial_filled_quantity: float
+    partial_closes: list[PartialCloseResult]
+    closing: bool
+    cancelling: bool
+    marketChanged: bool
+
+    def __init__(self, insight: Insight):
+        self.symbol = insight.symbol
+        self.insight_id = str(insight.INSIGHT_ID)
+        self.parent = str(
+            insight.PARANT) if insight.PARANT is not None else None
+        self.children = {key: IInsight(child)
+                         for key, child in insight.CHILDREN.items()}
+        self.state = insight.state.value
+        self.side = insight.side.value
+        self.limit_price = insight.limit_price
+        self.type = str(insight.type.value)
+        self.take_profit = insight.TP
+        self.stop_loss = insight.SL
+        self.useContractSize = insight.uses_contract_size
+        self.quantity = insight.quantity
+        self.contracts = insight.contracts if insight.uses_contract_size else None
+        
+        self.strategy = str(insight.strategyType) if type(
+            insight.strategyType) == str else insight.strategyType.value if insight.strategyType != None else None
+        self.execution_dependency = [
+            str(executionDepends.value) for executionDepends in insight.executionDepends]
+        self.order_id = str(insight.order_id)
+        self.confidence = insight.confidence
+        self.RRR = insight.getPnLRatio() or 0
+        self.TTL_unfilled = insight.periodUnfilled
+        self.TTL_filled = insight.periodTillTp
+        self.close_order_id = str(insight.close_order_id)
+        self.close_price = insight.close_price
+        self.created_at = insight.createAt
+        self.updated_at = insight.updatedAt
+        self.filled_at = insight.filledAt
+        self.closed_at = insight.closedAt
+        legs = {}
+        if insight.takeProfitOrderLeg:
+            legs['take_profit'] = {
+                'order_id': str(insight.takeProfitOrderLeg['order_id']),
+                'limit_price': insight.takeProfitOrderLeg['limit_price'],
+                'filled_price': insight.takeProfitOrderLeg.get('filled_price',None),
+                'type': str(insight.takeProfitOrderLeg.get('type', None)),
+                'status': str(insight.takeProfitOrderLeg['status']),
+                'order_class': str(insight.takeProfitOrderLeg.get('order_class', None)),
+                'created_at': insight.takeProfitOrderLeg['created_at'],
+                'updated_at': insight.takeProfitOrderLeg['updated_at'],
+                'submitted_at': insight.takeProfitOrderLeg['submitted_at'],
+                'filled_at': insight.takeProfitOrderLeg['filled_at'],
+            }
+        if insight.stopLossOrderLeg:
+            legs['stop_loss'] = {
+                'order_id': str(insight.stopLossOrderLeg['order_id']),
+                'limit_price': insight.stopLossOrderLeg['limit_price'],
+                'filled_price': insight.stopLossOrderLeg['filled_price'],
+                'type': str(insight.stopLossOrderLeg.get('type')),
+                'status': str(insight.stopLossOrderLeg['status']),
+                'order_class': str(insight.stopLossOrderLeg.get('order_class', None)),
+                'created_at': insight.stopLossOrderLeg['created_at'],
+                'updated_at': insight.stopLossOrderLeg['updated_at'],
+                'submitted_at': insight.stopLossOrderLeg['submitted_at'],
+                'filled_at': insight.stopLossOrderLeg['filled_at'],
+            }
+
+        self.legs = legs if legs else None
+        self.partial_filled_quantity = insight._partial_filled_quantity
+        partialCloses = [{"order_id": str(partialclose.order_id),
+                          "side": str(partialclose.side),
+                          "quantity": partialclose.quantity,
+                          "entry_price": partialclose.entry_price,
+                          "filled_price": partialclose.filled_price,
+                          } for partialclose in insight.partial_closes]
+        self.partial_closes = partialCloses
+        self.closing = insight._closing
+        self.cancelling = insight._cancelling
+        self.marketChanged = insight.marketChanged
+        
+
+
