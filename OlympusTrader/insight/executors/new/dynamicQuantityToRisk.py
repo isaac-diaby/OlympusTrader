@@ -90,11 +90,20 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
 
             # Check if the quantity is greater than the minimum order size
             minimum_order_size = self.STRATEGY.assets[insight.symbol]['min_order_size']
+
+            # Check to see if we need to convert the to number of contracts
+            if insight.uses_contract_size:
+                size_should_buy = round(size_should_buy / self.STRATEGY.assets[insight.symbol]["contract_size"], 2)
+                
             if size_should_buy < minimum_order_size:
                 response = self.returnResults(False, True, f"Quantity is less than the minimum order size: {minimum_order_size} : Suggested: {size_should_buy}")
                 self.changeState(
                     insight, InsightState.REJECTED, response.message)
                 return response
+            
+            # Cap to max order size if it is set
+            if self.STRATEGY.assets[insight.symbol].get('max_order_size', None) is not None:
+                size_should_buy = min(size_should_buy, self.STRATEGY.assets[insight.symbol]['max_order_size'])
 
 
             # Update the quantity in the insight
