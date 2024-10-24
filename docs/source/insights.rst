@@ -13,6 +13,7 @@ Creating an Insight
 To create an insight, you need to instantiate the `Insight` class with the required parameters. Here's an example:
 
 .. code-block:: python
+    
     from OlympusTrader.insight.insight import Insight
     from OlympusTrader.insight.insight import Insight
     from OlympusTrader.broker.interfaces import IOrderSide
@@ -48,10 +49,10 @@ To register the parent insight, you must use the `add_insight` function. This fu
 
     from OlympusTrader.strategy import Strategy
     # Assuming you have a broker instance
-    broker = Strategy()
+    Strategy = Strategy()
 
     # Register the parent insight
-    broker.add_insight(parent_insight)
+    Strategy.add_insight(parent_insight)
 
 Adding Child Insights
 =====================
