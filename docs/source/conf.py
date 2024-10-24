@@ -9,7 +9,7 @@
 project = 'OlympusTrader'
 copyright = '2024, M.Isaac Diaby'
 author = 'M.Isaac Diaby'
-release = '0.3.4'
+release = '0.3.5'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
