@@ -373,17 +373,17 @@ class Insight:
         return self
 
     def update_quantity(self, quantity: float):
-        old_quantity = self.quantity
-        self.quantity = quantity
-        if self.checkValidQuantity():
-            print(f"Updated quantity: {old_quantity} -> {self.quantity}")
-            if self.uses_contract_size:
-                self.contracts = round(
-                    self.quantity / self.ASSET["contract_size"], 2)
-            return True
+        if not  self.uses_contract_size:
+            old_quantity = self.quantity
+            self.quantity = quantity
+            if self.checkValidQuantity():
+                print(f"Updated quantity: {old_quantity} -> {self.quantity}")
+                return True
+            else:
+                self.quantity = old_quantity
+                return False
         else:
-            self.quantity = old_quantity
-            return False
+            return self.update_contracts(quantity)
 
     def update_contracts(self, contracts: float):
         if self.uses_contract_size:
@@ -859,10 +859,10 @@ class IInsight:
                 'type': str(insight.takeProfitOrderLeg.get('type', None)),
                 'status': str(insight.takeProfitOrderLeg['status']),
                 'order_class': str(insight.takeProfitOrderLeg.get('order_class', None)),
-                'created_at': insight.takeProfitOrderLeg['created_at'],
-                'updated_at': insight.takeProfitOrderLeg['updated_at'],
-                'submitted_at': insight.takeProfitOrderLeg['submitted_at'],
-                'filled_at': insight.takeProfitOrderLeg['filled_at'],
+                'created_at': insight.takeProfitOrderLeg.get('created_at', None),
+                'updated_at': insight.takeProfitOrderLeg.get('updated_at', None),
+                'submitted_at': insight.takeProfitOrderLeg.get('submitted_at', None),
+                'filled_at': insight.takeProfitOrderLeg.get('filled_at', None),
             }
         if insight.stopLossOrderLeg:
             legs['stop_loss'] = {
@@ -872,10 +872,10 @@ class IInsight:
                 'type': str(insight.stopLossOrderLeg.get('type')),
                 'status': str(insight.stopLossOrderLeg['status']),
                 'order_class': str(insight.stopLossOrderLeg.get('order_class', None)),
-                'created_at': insight.stopLossOrderLeg['created_at'],
-                'updated_at': insight.stopLossOrderLeg['updated_at'],
-                'submitted_at': insight.stopLossOrderLeg['submitted_at'],
-                'filled_at': insight.stopLossOrderLeg['filled_at'],
+                'created_at': insight.stopLossOrderLeg.get('created_at', None),
+                'updated_at': insight.stopLossOrderLeg.get('updated_at', None),
+                'submitted_at': insight.stopLossOrderLeg.get('submitted_at', None),
+                'filled_at': insight.stopLossOrderLeg.get('filled_at', None),
             }
 
         self.legs = legs if legs else None

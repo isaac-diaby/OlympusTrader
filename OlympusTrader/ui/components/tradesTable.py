@@ -128,4 +128,4 @@ def update_trade_table_body(insights, positions, filter, children):
         return no_update
 
     # If there are entries, return the trade rows and update the table
-    return [tradeRow(insight, positions.get(insight["symbol"], None)) for insight in entries]
+    return [tradeRow(insight, (positions.get(insight["symbol"], None) if insight["symbol"] in positions else positions.get(insight["order_id"], None) )) for insight in entries]
