@@ -9,8 +9,13 @@ To install OlympusTrader, run the following command:
 
    pip install olympustrader
 
+   pip install olympustrader[talib]  # If you want to use TA-Lib
+
+   pip install olympustrader[metatrader]  # If you want to use MetaTrader5 as a broker
+
+
 .. note::
-   OlympusTrader requires Python 3.12 or higher and TA-Lib. You can install TA-Lib using the following instrustions on the `TA-Lib website <https://ta-lib.org/install/>`_.
+   OlympusTrader requires Python 3.12 or higher. if your using TA-Lib you can install the package with talib option You can install TA-Lib using the following instrustions on the `TA-Lib website <https://ta-lib.org/install/>`_.
 
 Usage
 -----
@@ -79,19 +84,18 @@ Here is an example of a simple strategy:
 
 
       def  executeInsight(self,  insight):
-         for i, insight in  enumerate(self.insights[symbol]):
-            match insight.state:
-               case InsightState.NEW:
-                  # How to execution new insights that are generated
-                  pass
+         match insight.state:
+            case InsightState.NEW:
+               # How to execution new insights that are generated
+               pass
 
-               case InsightState.FILLED:
-                  # How to manage open insights
-                  pass
+            case InsightState.FILLED:
+               # How to manage open insights
+               pass
 
-               # ... other cases
-               case _:
-                  pass
+            # ... other cases
+            case _:
+               pass
 
 
 

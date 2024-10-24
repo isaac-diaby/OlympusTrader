@@ -20,13 +20,6 @@ OlympusTrader.broker.base\_broker module
    :undoc-members:
    :show-inheritance:
 
-OlympusTrader.broker.ccxt\_broker module
-----------------------------------------
-
-.. automodule:: OlympusTrader.broker.ccxt_broker
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 OlympusTrader.broker.interfaces module
 --------------------------------------

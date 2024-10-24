@@ -10,9 +10,10 @@ repository = "https://github.com/isaac-diaby/OlympusTrader"
 documentation = "https://olympustrader.readthedocs.io/en/latest/"
 keywords = ["Trading bot", "Framework", "backtesting", "trading", "HFT"]
 classifiers = [
-    'Office/Business :: Financial',
+    'Development Status :: 3 - Alpha',
+    'Topic :: Office/Business :: Financial',
+    'Topic :: Office/Business :: Financial :: Investment',
     'Topic :: Software Development :: Libraries :: Application Frameworks',
-    'Development Status :: 2 - Pre-Alpha',
     'Intended Audience :: Developers',
     'Intended Audience :: Financial and Insurance Industry',
     'Typing :: Typed',

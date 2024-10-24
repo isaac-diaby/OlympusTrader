@@ -18,5 +18,6 @@ OlympusTrader is a open-source Python library that allows you to create, backtes
    :caption: Contents:
 
    getting_started
+   insights
    modules
 

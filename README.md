@@ -84,22 +84,19 @@ class  QbitTB(Strategy):
 
 
  def  executeInsight(self,  insight: Insight):
-
-
-
-  for i, insight in  enumerate(self.insights[symbol]):
-   match insight.state:
+  
+  match insight.state:
     case InsightState.NEW:
     # How to execution new insights that are generated
-     pass
+      pass
 
     case InsightState.FILLED:
     # How to manage open insights
-     pass
+      pass
 
     # ... other cases
     case _:
-     pass
+      pass
 
 
 

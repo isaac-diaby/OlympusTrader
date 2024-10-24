@@ -11,8 +11,6 @@ Subpackages
    OlympusTrader.broker
    OlympusTrader.insight
    OlympusTrader.strategy
-   OlympusTrader.ui
-   OlympusTrader.universe
    OlympusTrader.utils
 
 Module contents
