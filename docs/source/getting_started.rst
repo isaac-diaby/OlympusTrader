@@ -21,7 +21,7 @@ Usage
 -----
 To use OlympusTrader, you need to have the following configured:
 
--  Create a strategy class that inherits from the `OlympusTrader.strategy.strategy` class.
+-  Create a strategy class that inherits from the `Strategy` class.
 - Implement the following methods in your strategy class:
    -  start: This is the first method that runs when your strategy starts. You can use it to load models or set base variables for your strategy.
    -  init: This is the method that runs for each asset in the universe. You can use it to set asset-specific variables and load historical data for each asset.
