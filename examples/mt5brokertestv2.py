@@ -127,13 +127,13 @@ if __name__ == "__main__":
         # broker = CCXTBroker(exchange=exchange, paper=True)
 
         # Strategy
-        strategy = MT5_test(broker, variables={}, resolution=tf, verbose=0, ui=False, mode=IStrategyMode.LIVE)
+        strategy = MT5_test(broker, variables={}, resolution=tf, verbose=0, ui=True, mode=IStrategyMode.LIVE)
 
         # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
         strategy.add_events('bar')
     else:
         broker = PaperBroker(cash=100_000, start_date=datetime(
-            2024, 9, 1), end_date=datetime(2024, 9, 23))  # all
+            2024, 10, 19), end_date=datetime(2024, 10, 20))  # all
         
         strategy = MT5_test(broker, variables={}, resolution=tf, verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 
