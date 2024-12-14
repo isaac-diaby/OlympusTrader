@@ -28,24 +28,6 @@ services:
       interval: "5s"
       retries: 300
 
-  # Add a UI service here (OLD NOT NEEDED )
-  # ui:
-  #   restart: always
-  #   build:
-  #     context: ./
-  #     dockerfile: Docker/Dockerfile.ui
-  #   ports:
-  #     - 8501:8501
-  #   env_file:
-  #     - stack.env
-  #   healthcheck:
-  #     # test: ["CMD-SHELL", "nc -vz ui 8501"]
-  #     test: ["CMD-SHELL", "wget -q --spider ui:8501 -O /dev/null"]
-  #     interval: "5s"
-  #     retries: 30
-  #   depends_on:
-  #     trader:
-  #       condition: service_healthy
 
   
 # TODO: Add Timescale Postgres or MongoDB database service here.
