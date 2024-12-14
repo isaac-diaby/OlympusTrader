@@ -1,5 +1,6 @@
 from datetime import datetime
 from dash import dcc, html, register_page, callback, no_update
+from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
 from dash_tvlwc import Tvlwc
 from dash_tvlwc.types import SeriesType, ColorType
@@ -133,7 +134,7 @@ def accountBalanceChart():
             'grid': {'vertLines': {'visible': False}, 'horzLines': {'style': 0, 'color': '#be9e6b80'}},
             'layout': {'textColor': '#fffffa', 'background': {'type':  ColorType.Solid, 'color': '#0a0f1a'}},
             'localization': {
-                    'timeFormatter': "(businessDayOrTimestamp) => {return Date(businessDayOrTimestamp);}",
+                    # 'timeFormatter': "(businessDayOrTimestamp) => {return Date(businessDayOrTimestamp);}",
                     # 'timeFormatter': "(businessDayOrTimestamp) => {return Date(businessDayOrTimestamp/1000);}",
                  
                 #     'locale': 'en-US',
@@ -150,43 +151,60 @@ def accountBalanceChart():
 
 
 @callback(
-    [Output("account-balance-chart", "seriesData"),
-     Output("account-balance-chart", 'seriesOptions')],
+    [
+     Output("account-balance-chart-store", 'data'),
+     ],
     [Input(STRATEGY_STORE_MAPPINGS.account.id, 'data')],
     [
+         State("account-balance-chart-store", 'data'),
          State(STRATEGY_STORE_MAPPINGS.metrics.id, 'data'),
-         State("account-balance-chart", 'seriesData'),
-         State("account-balance-chart",'seriesOptions'),
-         State(STRATEGY_STORE_MAPPINGS.time.id, 'data')
+         State(STRATEGY_STORE_MAPPINGS.time.id, 'data'),
     ],
     # prevent_initial_call=True,
     suppress_callback_exceptions=True
 )
-def update_account_balance_chart(account, metrics, balance_series, chart_options, time):
-    updateBaseline = False
-
+def update_account_balance_store(account: IAccount, balance_series_store, metrics, time):
     # Check if the balance series is empty and populate the starting balance
-    if balance_series == None:
-        balance_series = [[]]
+    if balance_series_store == None:
+        balance_series_store = []
         if metrics is None:
-            return no_update, no_update
-        balance_series[0].append(
+            return no_update
+        balance_series_store.append(
             {"time": metrics["start_date"], "value": metrics["starting_cash"]})
-        chart_options[0]["baseValue"]["price"] = metrics["starting_cash"]
-        updateBaseline = True
 
-    # Check if the balance has changed
-    if balance_series[0][-1]["value"] == account["equity"]:
-        return  balance_series if updateBaseline else no_update, chart_options if updateBaseline else no_update
-    
+    if account is None:
+        return no_update
+    # check if there is a new data point
+    if len(balance_series_store) > 1 and balance_series_store[-1]["value"] == account["equity"]:
+        return no_update
     # Add a new data point to the series
+    
     new_datapoint = [{"time": time, "value": account["equity"]}]
     # if balance_series[0][-1]["time"]  < time:
     #     balance_series[0].extend(new_datapoint)
-    balance_series[0].extend(new_datapoint)
+    balance_series_store.extend(new_datapoint)
 
-    return balance_series, chart_options if updateBaseline else no_update
+    return [balance_series_store]
 
+@callback(
+    [Output("account-balance-chart", "seriesData"),
+     Output("account-balance-chart", 'seriesOptions')],
+    [Input("account-balance-chart-store", 'data')],
+    [ State("account-balance-chart",'seriesOptions')],
+    # prevent_initial_call=True
+)
+def update_account_balance_chart(balance_series_store, chart_options):
+    if balance_series_store is None:
+        return [[]], no_update
+    
+    updateBaseline = False
+    # Check if the base value is the same as the starting balance
+    if chart_options[0]["baseValue"]["price"] != balance_series_store[0]["value"]:
+        chart_options[0]["baseValue"]["price"] = balance_series_store[0]["value"]
+        updateBaseline = True
+
+
+    return [balance_series_store], chart_options if updateBaseline else no_update
 
 
 def assetAllocationChart():
@@ -202,7 +220,7 @@ def assetAllocationChart():
 def update_asset_allocation_chart(account: IAccount, positions: IPosition):
         names = ["Portfolio", "Cash"]
         parents = ["", "Portfolio"]
-        values = [0, account["cash"]]
+        values = [0, account["cash"] if account is not None else 0]
 
         # print(positions)
         # Populate the names, parents and values lists
@@ -227,6 +245,7 @@ def update_asset_allocation_chart(account: IAccount, positions: IPosition):
         return [asset_allocation]
 
 account_porfolio_chart_section = html.Div([
+    dcc.Store(id="account-balance-chart-store", storage_type="local"),
     PlaceholderChart(title="Portfolio Balance Chart",
                      children=accountBalanceChart()),
     PlaceholderChart(title="Portfolio Distribution",

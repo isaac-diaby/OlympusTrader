@@ -10,7 +10,7 @@ from OlympusTrader.ui.interfaces.store import STRATEGY_STORE_MAPPINGS
 
 
 def tradeRow(insight: IInsight, position: Optional[IPosition]):
-    # TODO: change this to use the currency symbol from the account
+    # use the currency symbol from the account
     currencySymbol = "£"
 
     def calculateProfitLoss(insight):
@@ -20,18 +20,18 @@ def tradeRow(insight: IInsight, position: Optional[IPosition]):
         # Check if the insight has been filled
         if insight["state"] != InsightState.FILLED.value:
             return 0
-
-        currentPrice = insight["close_price"] if insight["close_price"] != None else position["current_price"]
+        currentPrice = position["current_price"] if insight["close_price"] == None  else insight["close_price"]
+        quantity = insight.get("contracts", 0) if insight["useContractSize"] else insight.get("quantity", 0)
         match insight["side"]:
             case IOrderSide.BUY.value:
-                return (currentPrice - insight["limit_price"]) * insight.get("quantity", 0)
+                return (currentPrice - insight["limit_price"]) * quantity
             case IOrderSide.SELL.value:
-                return (insight["limit_price"] - currentPrice) * insight.get("quantity", 0)
+                return (insight["limit_price"] - currentPrice) * quantity
             case _:
                 print("Invalid side value - tradeRow()")
                 return 0
 
-    profitLoss = calculateProfitLoss(insight)
+    profitLoss = round(calculateProfitLoss(insight), 2)
     return html.Tr([
         html.Td(
             insight["insight_id"], className="px-6 py-4 whitespace-nowrap text-sm text-white"),
@@ -48,7 +48,7 @@ def tradeRow(insight: IInsight, position: Optional[IPosition]):
         html.Td(
             insight["limit_price"], className="px-6 py-4 whitespace-nowrap text-sm text-white"),
         html.Td(
-            insight["close_price"], className="px-6 py-4 whitespace-nowrap text-sm text-white"),
+            insight["close_price"] if insight["close_price"] else f"TP: {insight["take_profit"]} - SL: {insight["stop_loss"]}", className="px-6 py-4 whitespace-nowrap text-sm text-white"),
         html.Td(f"{currencySymbol}{profitLoss}",
                 className=f"px-6 py-4  whitespace-nowrap text-sm {'text-green-500' if (profitLoss > 0) else 'text-red-500' if (profitLoss < 0) else 'text-white'}")
     ], className="hover:bg-primary-light cursor-pointer")
@@ -126,6 +126,5 @@ def update_trade_table_body(insights, positions, filter, children):
     # If there are no entries and no children, return no update
     if len(entries) == 0:
         return no_update
-
     # If there are entries, return the trade rows and update the table
     return [tradeRow(insight, (positions.get(insight["symbol"], None) if insight["symbol"] in positions else positions.get(insight["order_id"], None) )) for insight in entries]

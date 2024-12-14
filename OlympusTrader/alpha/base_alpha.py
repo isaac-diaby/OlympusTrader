@@ -8,14 +8,14 @@ import numpy as np
 from OlympusTrader.broker.interfaces import IAsset, IQuote
 from OlympusTrader.insight.insight import Insight
 
+if TYPE_CHECKING:
+    from ..strategy.base_strategy import BaseStrategy
 
-def get_BaseStrategy():
+@staticmethod
+def get_BaseStrategy() -> 'BaseStrategy':
     from ..strategy.base_strategy import BaseStrategy
     return BaseStrategy
 
-
-if TYPE_CHECKING:
-    from ..strategy.base_strategy import BaseStrategy
 
 class AlphaResults():
     """
@@ -42,6 +42,8 @@ class AlphaResults():
             self.insight = None
         self.message = message
         self.alpha = alpha
+
+       
 class BaseAlpha(abc.ABC):
     """
     ### Abstract class for alpha implementations.
@@ -52,7 +54,7 @@ class BaseAlpha(abc.ABC):
     VERSION: str
     """Version of the alpha model."""
 
-    STRATEGY: get_BaseStrategy
+    STRATEGY: get_BaseStrategy 
     """Reference to the strategy instance."""
 
     TA: List[dict] = []
@@ -60,8 +62,12 @@ class BaseAlpha(abc.ABC):
 
     baseConfidenceModifierField: Optional[str] = None
     """Field to modify base confidence."""
+
+    ALLOWED_ASSETS: Optional[set[str]] = set()
+    """Set of allowed assets for the executor"""
+    
     @abc.abstractmethod
-    def __init__(self, strategy: get_BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None) -> None:
+    def __init__(self, strategy: get_BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None,  allowed_assets:  Optional[set[str]] = None) -> None:
         self.NAME = name
         self.VERSION = version
 
@@ -69,6 +75,10 @@ class BaseAlpha(abc.ABC):
         self.STRATEGY = strategy
         if baseConfidenceModifierField:
             self.baseConfidenceModifierField = baseConfidenceModifierField
+
+        if allowed_assets is not None:
+            assert isinstance(allowed_assets, set), "Allowed assets must be a set"
+            self.ALLOWED_ASSETS = allowed_assets
 
 
     @abc.abstractmethod
@@ -105,6 +115,12 @@ class BaseAlpha(abc.ABC):
     
     def get_latest_quote(self, insight: Insight) -> IQuote:
         return self.STRATEGY.broker.get_latest_quote(insight.ASSET)
+    
+    def isAllowedAsset(self, symbol: str) -> bool:
+        """Check if the asset is allowed"""
+        if self.ALLOWED_ASSETS is None or len(self.ALLOWED_ASSETS) == 0:
+            return True
+        return symbol in self.ALLOWED_ASSETS
 
     def get_baseConfidenceModifier(self, symbol: str):
         if self.baseConfidenceModifierField:

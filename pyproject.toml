@@ -30,22 +30,22 @@ packages = [{include="OlympusTrader"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-alpaca-py = "^0.28.1"
+alpaca-py = "^0.34.0"
 MetaTrader5 = {version = "^5.0", optional = true}
-yfinance = "^0.2.41"
-ta-lib = {version = "^0.4.32", optional = true}
-pandas-ta = "^0.3.14b0"
+yfinance = "^0.2.50"
+ta-lib = {version = "^0.5.1", optional = true}
+pandas-ta = "^0.3.14b"
 scipy = "^1.14.0"
-numpy = "1.26.4"
-pandas = "^2.2.2"
+numpy = "^1.16.5 || ^2.2"
+pandas = "^2.2.3"
 python-dotenv = "^1.0.1"
 nest-asyncio = "^1.6.0"
-tables = "^3.9.2"
+tables = "^3.10.1"
 setuptools = "^72.1.0"
 vectorbt = "^0.26.2"
 quantstats = "^0.0.62"
-ccxt = "^4.3.95"
-dash = "^2.18.1"
+ccxt = "^4.4.38"
+dash = "^2.18.2"
 dash-tvlwc = "^0.1.1"
 
 

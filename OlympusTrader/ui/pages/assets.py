@@ -102,10 +102,10 @@ def assetChart():
                 'timeScale': {'timeVisible': True, 'visible': True},
 
                 'localization': {
-                    'timeFormatter': "businessDayOrTimestamp => {return Date(businessDayOrTimestamp);}",
-                 
-                #     'locale': 'en-US',
-                #     'priceFormatter': "(function(price) { return '$' + price.toFixed(2); })"
+                    # 'timeFormatter': "businessDayOrTimestamp => {return Date(businessDayOrTimestamp);}",
+
+                    #     'locale': 'en-US',
+                    #     'priceFormatter': "(function(price) { return '$' + price.toFixed(2); })"
                 }
             },
             fullTimeScaleOptions={
@@ -116,28 +116,28 @@ def assetChart():
     except Exception as e:
         print(e)
         return None
-    
+
+
 @callback(
     Output("asset-chart", "seriesData"),
-    [ 
+    [
         Input('selected-asset-store', 'data'),
         Input(STRATEGY_STORE_MAPPINGS.history.id, 'data')
     ],
     State("asset-chart", "seriesData"),
     prevent_initial_call=True,
-    suppress_callback_exceptions=True
-)
+    suppress_callback_exceptions=True)
 def update_asset_chart(selected_asset, history, seriesData):
     if selected_asset is None or history is None:
         raise PreventUpdate
-    
+
     if selected_asset not in history:
         raise PreventUpdate
-    
+
     # No history data
     if len(history[selected_asset]) == 0:
         return no_update
-    
+
     if seriesData == None:
         if selected_asset not in history:
             return no_update
@@ -145,15 +145,15 @@ def update_asset_chart(selected_asset, history, seriesData):
             seriesData = [[]]
             seriesData[0].extend(history[selected_asset])
             return seriesData
-            
+
     if (len(seriesData[0]) == len(history[selected_asset])) or seriesData[0][-1]["time"] == history[selected_asset][-1]["time"]:
         return no_update
-    
+
     indexdiff = len(history[selected_asset]) - len(seriesData[0])
     seriesData[0].extend(history[selected_asset][-indexdiff:])
 
-    print(history[selected_asset][-1])
-    print(seriesData[0][-1])
+    # print(history[selected_asset][-1])
+    # print(seriesData[0][-1])
 
     return seriesData
 
@@ -198,13 +198,13 @@ def chart_section(asset: IAsset):
                 className="relative min-h-64 bg-primary-light rounded flex items-center justify-center",
                 children=assetChart()
                 # [
-                    # assetChart(assets[idx]['data'])
-                    # (html.P(
-                    #     className="text-accent",
-                    #     children="Chart Placeholder"
-                    # ) if asset is None else assetChart(),
-                    # ) if asset is None else assetChart(assets(['data'])),
-                    # strategy_metrics_section(idx)
+                # assetChart(assets[idx]['data'])
+                # (html.P(
+                #     className="text-accent",
+                #     children="Chart Placeholder"
+                # ) if asset is None else assetChart(),
+                # ) if asset is None else assetChart(assets(['data'])),
+                # strategy_metrics_section(idx)
                 # ]
             )
         ]
@@ -278,7 +278,7 @@ def update_class_names(selected_asset_data, assets):
     # default class names for the asset cards
     class_names = [
         "p-4 bg-primary-light rounded-lg shadow-md cursor-pointer bg-primary-light text-white hover:bg-accent hover:text-primary"] * len(assets)
-    
+
     if selected_asset_data is None:
         # Return the default class names
         return class_names

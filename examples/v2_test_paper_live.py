@@ -28,7 +28,7 @@ from OlympusTrader.insight.executors.canceled.defaultOnCancelled import DefaultO
 from OlympusTrader.insight.executors.rejected.defaultOnReject import DefaultOnRejectExecutor
 
 
-class QbitTB(Strategy):
+class V2_test_paper(Strategy):
     def start(self):
         self.add_ta([
             {"kind": 'macd', "fast": 16, "slow": 36, "signal": 9},
@@ -39,6 +39,47 @@ class QbitTB(Strategy):
         self.execution_risk = 0.04  # 4% of account per trade
         self.minRewardRiskRatio = 1.2  # 2:1 Reward to Risk Ratio minimum
         self.baseConfidence = 0.1
+
+        self.add_alphas([
+        RSIDiverganceAlpha(self, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
+        EMAPriceCrossoverAlpha(self, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+        TestEntryAlpha(self, atrPeriod=14, maxSpawn=1)
+    ])
+        # New Executors
+        self.add_executors([
+            RejectExpiredInsightExecutor(self),
+            MarketOrderEntryPriceExecutor(self),
+            MinimumRiskToRewardExecutor(self),
+            DynamicQuantityToRiskExecutor(self),
+            CancelAllOppositeSidetExecutor(self)
+        ])
+        # Executed Executors
+        RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(self)
+        RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
+        self.add_executors([
+            RejectExpiredExecutedExecutor,
+        ])
+        # Cancelled Executors
+        self.add_executors([
+            DefaultOnCancelledExecutor(self),
+        ])
+        # Filled Executors
+        self.add_executors([
+            CloseExhaustedInsightExecutor(self),
+            CloseMarketChangedExecutor(self),
+            BasicStopLossExecutor(self),
+            BasicTakeProfitExecutor(self)
+        ])
+        # Closed Executors
+        self.add_executors([
+            DefaultOnClosedExecutor(self),
+        ])
+        # Rejected Executors
+        self.add_executors([
+            DefaultOnRejectExecutor(self)
+        ])
+
+        
 
     def init(self, asset):
         state = self.state
@@ -132,63 +173,11 @@ if __name__ == "__main__":
     # broker = PaperBroker(cash=1_000_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
     broker = PaperBroker(cash=100_000, mode=IStrategyMode.LIVE, feedDelay=60*8) # 8 hours
 
-
-    # Strategy live paper trading on the paper broker 
-    # 1 Minute
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
-    # 5 Minute
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
-    # 1 Hour
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.LIVE)
-    # 4 Hours
-    # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
-    #     4, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    strategy = V2_test_paper(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Minute), verbose=1, ui=True, mode=IStrategyMode.LIVE)
 
-    strategy.add_alphas([
-        RSIDiverganceAlpha(strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField='market_state'),
-        EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
-        TestEntryAlpha(strategy, atrPeriod=14)
-    ])
-    # New Executors
-    strategy.add_executors([
-        RejectExpiredInsightExecutor(strategy),
-        MarketOrderEntryPriceExecutor(strategy),
-        MinimumRiskToRewardExecutor(strategy),
-        DynamicQuantityToRiskExecutor(strategy),
-        CancelAllOppositeSidetExecutor(strategy)
-    ])
-    # Executed Executors
-    RejectExpiredExecutedExecutor = RejectExpiredInsightExecutor(strategy)
-    RejectExpiredExecutedExecutor._override_state(InsightState.EXECUTED)
-    strategy.add_executors([
-        RejectExpiredExecutedExecutor,
-    ])
-    # Cancelled Executors
-    strategy.add_executors([
-        DefaultOnCancelledExecutor(strategy),
-    ])
-    # Filled Executors
-    strategy.add_executors([
-        CloseExhaustedInsightExecutor(strategy),
-        CloseMarketChangedExecutor(strategy),
-        BasicStopLossExecutor(strategy),
-        BasicTakeProfitExecutor(strategy)
-    ])
-    # Closed Executors
-    strategy.add_executors([
-        DefaultOnClosedExecutor(strategy),
-    ])
-    # Rejected Executors
-    strategy.add_executors([
-        DefaultOnRejectExecutor(strategy)
-    ])
-
+   
     # Feeds into a IMarketDataStream TypedDict that lets you save the data to a file or load it from a file
     strategy.add_events('bar', stored=True, stored_path='data',
                         start=broker.START_DATE, end=broker.END_DATE)

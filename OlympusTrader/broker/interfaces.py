@@ -110,6 +110,7 @@ class IAsset(TypedDict):
     shortable: bool
     fractionable: bool
     min_order_size: float
+    quantity_base: NotRequired[int]
     max_order_size: NotRequired[float]
     min_price_increment: float
     price_base: NotRequired[int]

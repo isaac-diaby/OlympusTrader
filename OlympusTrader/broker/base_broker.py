@@ -87,6 +87,10 @@ class BaseBroker(abc.ABC):
     def cancel_order(self, order_id: str) -> Optional[str]:
         pass
 
+    @abc.abstractmethod
+    def update_order(self, order_id: str, price: float,  qty: float) -> Optional[IOrder]:
+        pass
+
 
     @abc.abstractmethod
     def get_history(self, asset: IAsset, start=(datetime.now() - timedelta(days=7)), end=datetime.now(), resolution=ITimeFrame(5, ITimeFrameUnit.Minute)) -> pd.DataFrame:
@@ -139,7 +143,7 @@ class BaseBroker(abc.ABC):
     def format_on_bar(self, bar: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         """
         Format stream bar data to { symbol: str, bar: -> open, high, low, close, volume}
-        -  (data={}, index=MultiIndex[(str, pd.Timestamp)], columns=['open', 'high', 'low', 'close', 'volume']):
+        -  (data={}, index=MultiIndex[(str, pd.Timestamp), names=['symbol', 'timestamp']], columns=['open', 'high', 'low', 'close', 'volume']):
         """
         pass
 

@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, Optional, Self, override
 from pandas import DataFrame
 
 from ...broker.interfaces import IQuote
@@ -57,13 +57,20 @@ class BaseExecutor(abc.ABC):
     state: InsightState
     """Reference to the working state of the executor"""
 
+    ALLOWED_ASSETS: Optional[set[str]] = set()
+    """Set of allowed assets for the executor"""
+
+
     @abc.abstractmethod
-    def __init__(self, strategy: get_BaseStrategy, state: InsightState, version: float = "1.0") -> None:
+    def __init__(self, strategy: get_BaseStrategy, state: InsightState, version: float = "1.0", allowed_assets:  Optional[set[str]] = None) -> None:
         self.NAME = self.__class__.__name__
         self.VERSION = version
         # Reference to the strategy instance
         self.STRATEGY = strategy
         self.state = state
+        if allowed_assets is not None:
+            assert isinstance(allowed_assets, set), "Allowed assets must be a set"
+            self.ALLOWED_ASSETS = allowed_assets
 
     @override
     @abc.abstractmethod
@@ -79,21 +86,46 @@ class BaseExecutor(abc.ABC):
     #     return self.STRATEGY.insights[insight.INSIGHT_ID]
 
     def changeState(self, insight: Insight, state: InsightState, message: str = None) -> None:
-        self.STRATEGY.insights[insight.INSIGHT_ID].updateState(state, message)
+        """Change the state of the insight"""
+        self.STRATEGY.insights[insight.INSIGHT_ID].updateState(state, f"{self.NAME:^20} : {message}")
 
     def get_history(self, symbol: str) -> DataFrame:
+        """Get the history of a symbol"""
         return self.STRATEGY.history[symbol].loc[symbol]
 
     def get_latest_bar(self, symbol: str) -> DataFrame:
+        """Get the latest bar of a symbol"""
         return self.get_history(symbol).iloc[-1]
 
     def get_previos_bar(self, symbol: str) -> DataFrame:
-        return self.get_history(symbol).iloc[-2]
+        """Get the previous bar of a symbol"""
+        return self.get_history(symbol).iloc[-2] 
 
     def get_latest_quote(self, insight: Insight) -> IQuote:
+        """Get the latest quote of an insight"""
         return self.STRATEGY.broker.get_latest_quote(insight.ASSET)
+    
+    def isAllowedAsset(self, symbol: str) -> bool:
+        """Check if the asset is allowed"""
+        if self.ALLOWED_ASSETS is None or len(self.ALLOWED_ASSETS) == 0:
+            return True
+        return symbol in self.ALLOWED_ASSETS
 
-    def _override_state(self, state: InsightState) -> None:
+    def _override_state(self, state: InsightState) -> Self:
+        """Override the state of the executor"""
         assert isinstance(
             state, InsightState), "State must be an instance of InsightState"
         self.state = state
+        return self
+    
+    def _add_allowed_asset(self, asset: str) -> Self:
+        """Add an asset to the allowed assets"""
+        self.ALLOWED_ASSETS.add(asset)
+        return self
+    
+    def _remove_allowed_asset(self, asset: str) -> Self:
+        """Remove an asset from the allowed assets"""
+        self.ALLOWED_ASSETS.remove(asset)
+        return self
+
+     

@@ -40,6 +40,8 @@ class IStrategyMatrics:
     end_date: Optional[datetime] = None
     starting_cash: float = 0.0
     """ The starting cash """
+    ending_cash: float = 0.0
+    """ The ending cash """
 
     total_open: int = 0
     """ The total number of open trades """
@@ -80,6 +82,12 @@ class IStrategyMatrics:
         """ Update the start date and starting cash """
         self.start_date = start_date
         self.starting_cash = starting_cash
+    
+    def updateEnd(self, end_date: datetime, ending_cash: float):
+        """ Update the end date """
+        self.end_date = end_date
+        self.ending_cash = ending_cash
+
 
     def updateDerivedMetrics(self):
         """ Update the derived metrics """

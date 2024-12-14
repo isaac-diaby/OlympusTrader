@@ -312,7 +312,33 @@ class Mt5Broker(BaseBroker):
         except Exception as e:
             print(f"Error: {e}")
             return None
-
+        
+    def update_order(self, order_id: str, price: float,  qty: float) -> Optional[IOrder]:
+        try:
+            order = self.get_order(order_id)
+            if not order:
+                return None
+            # Check if the order is a limit order
+            if order.type == IOrderType.LIMIT:
+                request = {
+                    "action": mt5.TRADE_ACTION_MODIFY,
+                    "order": order_id,
+                    "price": price,
+                    "volume": qty,
+                    "comment": "OlympusTrader Update",
+                }
+                result = mt5.order_send(request)
+                if result.retcode != mt5.TRADE_RETCODE_DONE:
+                    print(f"Order to update failed, retcode={
+                          result.retcode}, comment={result.comment}")
+                    return None
+                return self.format_order(result)
+            else:
+                return None
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
+        
     def get_history(self, asset: IAsset, start, end, resolution) -> pd.DataFrame:
         # TF_MAPPING
         try:
@@ -577,7 +603,7 @@ class Mt5Broker(BaseBroker):
     def format_on_bar(self, bar: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         if isinstance(bar, np.ndarray):
             index = pd.MultiIndex.from_product(
-                [[symbol], pd.to_datetime(bar['time'], utc=True, unit='s')], names=['symbol', 'date'])
+                [[symbol], pd.to_datetime(bar['time'], utc=True, unit='s')], names=['symbol', 'timestamp'])
 
             res = pd.DataFrame(data={
                 'open': bar['open'],

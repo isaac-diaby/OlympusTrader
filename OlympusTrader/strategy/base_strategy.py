@@ -104,6 +104,9 @@ class BaseStrategy(abc.ABC):
         self.NAME = self.__class__.__name__
         self.MODE = mode
         self.WITHUI = ui
+        
+        if type(variables) is not AttributeDict:
+            variables = AttributeDict(variables)
         self.VARIABLES = variables
         self.BROKER = broker
         self.TOOLS = ITradingTools(self)
@@ -207,7 +210,6 @@ class BaseStrategy(abc.ABC):
 
         for alpha in self.ALPHA_MODELS:
             alpha.start()
-        # self.start()
 
     def _init(self, asset: IAsset):
         """ Initialize the strategy. """
@@ -221,6 +223,8 @@ class BaseStrategy(abc.ABC):
         assert callable(
             self.generateInsights), 'generateInsights must be a callable function'
         for alpha in self.ALPHA_MODELS:
+            if not alpha.isAllowedAsset(symbol):
+                continue
             result = alpha.generateInsights(symbol)
             if result.success:
                 if result.insight is not None:
@@ -372,7 +376,9 @@ class BaseStrategy(abc.ABC):
             self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(
                 self.resolution)
             self.saveBacktestResults()
-            print("Simulation Account", self.BROKER.Account)
+        print("Simulation Account", self.BROKER.Account)
+        self.MATRICS.updateEnd((pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)).total_seconds(), self.BROKER.Account.equity)
+        print("Trade Matrics: ", self.MATRICS)
 
         exit(0)
 
@@ -458,6 +464,8 @@ class BaseStrategy(abc.ABC):
                     # Execute the insight Executors
                     passed = True
                     for executor in self.INSIGHT_EXECUTORS[insight.state]:
+                        if not executor.isAllowedAsset(insight.symbol):
+                            continue
                         result = executor.run(
                             self.INSIGHTS[insight.INSIGHT_ID])
                         # Executor manage the insight state and mutates the insight
@@ -481,6 +489,10 @@ class BaseStrategy(abc.ABC):
                     #     self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
 
                     self.executeInsight(insight)
+
+                    # Change the flag to indicate that the insight has been ran once against the executor list 
+                    if insight.state == InsightState.FILLED and insight._first_on_fill:
+                        insight._first_on_fill = False
 
                     # if self.VERBOSE > 0:
                     # print('Time taken executeInsight:', symbol,
@@ -523,12 +535,49 @@ class BaseStrategy(abc.ABC):
                 continue
 
             match insight.state:
+                case InsightState.NEW:
+                    if orderdata['order_id'] == insight.order_id:
+                        match event:
+                            case ITradeUpdateEvent.PENDING_NEW:
+                                if orderdata['legs']:
+                                    insight.updateLegs(
+                                        legs=orderdata['legs'])
+                                insight.updateState(
+                                    InsightState.EXECUTED, 'Order Pending')
+                                return
+                            case ITradeUpdateEvent.NEW:
+                                if orderdata['legs']:
+                                    insight.updateLegs(
+                                        legs=orderdata['legs'])
+                                insight.updateState(
+                                    InsightState.EXECUTED, 'Order Accepted')
+                                return
+                            case ITradeUpdateEvent.REJECTED:
+                                insight.updateState(
+                                    InsightState.REJECTED, 'Order Rejected')
+                                return
+                            case _:
+                                pass
                 case InsightState.EXECUTED:
                     # We aleady know that the order has been executed because it will never be in the insights list as executed if it was not accepted by the broker
                     if insight.order_id == orderdata['order_id']:
                         match event:
                             # case ITradeUpdateEvent.PENDING_NEW:
-                            case ITradeUpdateEvent.NEW | ITradeUpdateEvent.PENDING_NEW:
+                            # case ITradeUpdateEvent.NEW | ITradeUpdateEvent.PENDING_NEW:
+                            #     if orderdata['legs']:
+                            #         insight.updateLegs(
+                            #             legs=orderdata['legs'])
+                            #     return
+                            
+                            case ITradeUpdateEvent.REPLACED:
+                                """Check if the order has been replaced and update the insight with the new order data"""
+                                if orderdata["limit_price"] != insight.limit_price:
+                                    insight.limit_price = orderdata["limit_price"]
+                                if (insight.uses_contract_size and orderdata["qty"] != insight.contracts) or (not insight.uses_contract_size and orderdata["qty"] != insight.quantity):
+                                    if insight.uses_contract_size:
+                                        insight.update_contracts(orderdata["qty"])
+                                    else:
+                                        insight.update_quantity(orderdata["qty"])
                                 if orderdata['legs']:
                                     insight.updateLegs(
                                         legs=orderdata['legs'])
@@ -754,19 +803,21 @@ class BaseStrategy(abc.ABC):
         for alpha in alphas:
             self.add_alpha(alpha)
 
-    def add_executor(self, executor: BaseExecutor):
+    def add_executor(self, executor: BaseExecutor, state: InsightState = None):
         """ Adds an executor to the strategy."""
         assert isinstance(
             executor, BaseExecutor), 'executor must be of type BaseExecutor object'
+        if state is not None:
+            executor._override_state(state)
 
         self.INSIGHT_EXECUTORS[executor.state].append(executor)
 
-    def add_executors(self, executors: List[BaseExecutor]):
+    def add_executors(self, executors: List[BaseExecutor], state: InsightState = None):
         """ Adds a list of executors to the strategy."""
         assert isinstance(
             executors, List), 'executors must be of type List[BaseExecutor] object'
         for executor in executors:
-            self.add_executor(executor)
+            self.add_executor(executor, state)
 
     def add_ta(self, ta: List[dict]):
         """ Adds a technical analysis to the strategy."""
@@ -815,6 +866,9 @@ class BaseStrategy(abc.ABC):
             if not data.empty:
                 symbol = data.index[0][0]
                 timestamp = data.index[0][1]
+                # ensure that the dataframe index names are set to ['symbol', 'date']
+                if data.index.names != ['symbol', 'timestamp']:
+                    data.index.set_names(['symbol', 'timestamp'])
                 if symbol == None:
                     if self.VERBOSE > 0:
                         print('Symbol is None - ignoring BaseStrategy_on_bar')
@@ -883,6 +937,12 @@ class BaseStrategy(abc.ABC):
         assert isinstance(
             insight, Insight), 'insight must be of type Insight object'
         try:
+            if self.INSIGHTS.get(insight.INSIGHT_ID) == None:
+                # Make sure the insight is added to the strategy
+                self.add_insight(insight)
+            
+            insight.submit()
+
             order = self.BROKER.execute_insight_order(
                 insight, self.assets[insight.symbol])
             return order
@@ -974,3 +1034,9 @@ class BaseStrategy(abc.ABC):
             # print('Warm up period cannot be reduced')
             return
         self.WARM_UP = warm_up
+
+    @property
+    def current_datetime(self) -> datetime:
+        """ Returns the current time of the strategy."""
+        return self.BROKER.get_current_time.replace(tzinfo=datetime.UTC)
+

@@ -119,11 +119,17 @@ class Insight:
     close_price: Optional[float] = None  # price to close at
 
     marketChanged: bool = False
+
+    _submitted: bool = False
+    """Flag to check if the insight has been submitted"""
     _cancelling: bool = False
     """Flag to check if the insight is being canceled"""
     _closing: bool = False
     """Flag to check if the insight is being closed"""
+    _first_on_fill: bool = False
+    """Flag to check if the insight is the first to be filled for the execution - executor meta data"""
     _partial_filled_quantity: Optional[float] = None
+    """Quantity patial filled for the insight"""
 
     MODE: IStrategyMode = IStrategyMode.LIVE
     BROKER: get_BaseBroker = None
@@ -145,6 +151,7 @@ class Insight:
         self.strategyType = strategyType  # strategy type
         # confidence in insight clamp between 0.01 and 1
         self.confidence = min(max(confidence, 0.01), 1)
+        assert (isinstance(TP, list) and len(TP) > 0) or TP == None, 'Invalid Take Profit'
         self.TP = TP  # take profit levels
         self.SL = SL  # stop loss
         self.tf = tf  # timeframe
@@ -169,7 +176,7 @@ class Insight:
     def __str__(self):
         if self.strategyType == StrategyTypes.MANUAL:
             return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ MARKET"
-        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price if self.limit_price else "MARKET"):^5} - TP: {str(self.TP):^5} - SL: {self.SL:^5} - Ratio: {str(self.getPnLRatio()):^10} - TTLUF/TTL: {str(self.periodUnfilled):^5}/{str(self.periodTillTp):^5} - UDA: {self.updatedAt}"
+        return f"Insight - {self.state:<5} : {self.strategyType:^16} - {self.symbol:^8} :: {self.side:^5}: {str(self.quantity)} @ {str(self.limit_price if self.limit_price else "MARKET"):^5} - TP: {str(self.TP):^5} - SL: {str(self.SL):^5} - Ratio: {str(self.getPnLRatio()):^10} - TTLUF/TTL: {str(self.periodUnfilled):^5}/{str(self.periodTillTp):^5} - UDA: {self.updatedAt}"
 
     def submit(self, rejectInvalid: bool = True, partialCloseInsight=None, closeInsight=False):
 
@@ -196,6 +203,8 @@ class Insight:
                         closeInsight, self.ASSET)
 
                 else:
+                    if self._submitted == True:
+                        return True
                     # Submit the insight to enter a position
                     order = self.BROKER.execute_insight_order(self, self.ASSET)
 
@@ -205,8 +214,11 @@ class Insight:
                             order['order_id'])
                         if order["legs"]:
                             self.updateLegs(order["legs"])
-                        self.updateState(
-                            InsightState.EXECUTED, f"Order ID: {order['order_id']}")
+                        self.updateSubmited(True)
+
+                        # We should only update the state if the insight was successfully executed via the trade event
+                        # self.updateState(
+                        #     InsightState.EXECUTED, f"Order ID: {order['order_id']}")
 
                     elif self.state == InsightState.FILLED:
                         # Add To Patial Close
@@ -278,7 +290,8 @@ class Insight:
             self.updateState(InsightState.REJECTED, 'Before Executed Canceled')
             return True
         if self._cancelling == False:
-            print("Insight is not in a valid state to be canceled",self.state, self.INSIGHT_ID)
+            print("Insight is not in a valid state to be canceled",
+                  self.state, self.INSIGHT_ID)
         return False
 
     def close(self, quantity: Optional[float] = None, retry: bool = True, bypassStateCheck: bool = False):
@@ -309,7 +322,9 @@ class Insight:
                         partialCloseInsight=partialCloseInsight)
                     if closePartialOrder:
                         if self.TP:
-                            self.TP.pop(0)  # Remove the first TP level
+                            if len(self.TP) > 1:
+                                # Remove the first TP level
+                                self.TP.pop(0)
                         return True
 
             except BaseException as e:
@@ -335,12 +350,12 @@ class Insight:
 
         return False
 
-    def addChildInsight(self, side: IOrderSide, quantity: Optional[float] = 1, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = None, periodTillTp: int = None) -> Self:
+    def addChildInsight(self, side: IOrderSide, quantity: Optional[float] = None, limit_price: Optional[float] = None, TP: Optional[List[float]] = None, SL: Optional[float] = None, executionDepends: List[StrategyDependantConfirmation] = [StrategyDependantConfirmation.NONE], periodUnfilled: int = None, periodTillTp: int = None) -> Self:
         """Add a child insight to the parent insight. The child insight will be executed after the parent insight is filled."""
         childInsight = Insight(
             parent=self.INSIGHT_ID,
             symbol=self.symbol,
-            strategyType=self.strategyType+'-CHILD',
+            strategyType=str(self.strategyType)+'-CHILD',
             tf=self.tf,
             side=side,
             quantity=quantity,
@@ -373,7 +388,7 @@ class Insight:
         return self
 
     def update_quantity(self, quantity: float):
-        if not  self.uses_contract_size:
+        if not self.uses_contract_size:
             old_quantity = self.quantity
             self.quantity = quantity
             if self.checkValidQuantity():
@@ -416,29 +431,20 @@ class Insight:
         if not self.checkValidEntryInsight(price):
             return False
 
-        self.limit_price = price
-
-        self.updatedAt = datetime.now(
-        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        # check if the insight is already executed
+        if self.state == InsightState.EXECUTED:
+            # update the order
+            self.BROKER.update_order(self.order_id, self.limit_price)
+        else: # update the limit price
+            self.limit_price = price
+            self.updatedAt = datetime.now(
+            ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
 
         if updateToLimit:
             self.type = IOrderType.LIMIT
 
-        # check if the insight is already executed
-        if self.state == InsightState.EXECUTED:
-
-            # TODO: update the broker order if the insight is already placed
-            # TODO: Need to check if the order is already placed
-            #  self.BROKER ....
-            pass
         return True
 
-    # TODO: def update_take_profit(self, price: float):
-    #     if self.state == InsightState.FILLED:
-    #         pass
-    # TODO: def update_stop_loss(self, price: float):
-    #     if self.state == InsightState.FILLED:
-    #         pass
     def update_market_changed(self, marketChanged: bool, shouldCloseOrCancel: bool = False):
         self.marketChanged = marketChanged
         self.updatedAt = datetime.now(
@@ -545,9 +551,6 @@ class Insight:
                         print(
                             "invalid entry insight: limit price is above the take profit")
                         return False
-        else:
-            print("invalid entry insight: quantity is not set")
-            return False
 
         return True
 
@@ -597,6 +600,11 @@ class Insight:
                 pass
 
         return hasExpired
+    def updateSubmited(self, submited: bool):
+        self._submitted = submited
+        self.updatedAt = datetime.now(
+        ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+        return self
 
     def updateOrderID(self, order_id: str):
         self.order_id = order_id
@@ -617,11 +625,44 @@ class Insight:
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
 
+    def updateTakeProfit(self, takeProfitLevels: Union[list[float], float]):
+
+        TP = takeProfitLevels if isinstance(
+            takeProfitLevels, list) else [takeProfitLevels]
+        
+        assert (isinstance(TP, list) and len(TP) > 0) or TP == None, 'Invalid Take Profit'
+        # Check if the order is not managed by the broker
+        if self.takeProfitOrderLeg != None:  # Update the take profit order leg
+            try:
+                if self.takeProfitOrderLeg['limit_price'] != TP[-1]:
+                    self.BROKER.update_order(
+                        self.takeProfitOrderLeg['order_id'], TP[-1], self.contracts if self.uses_contract_size else self.quantity)
+                    print(f"Updated Take Profit for order: {
+                            self.takeProfitOrderLeg['order_id']} -> {TP[-1]}")
+                    return True
+            except BaseException as e:
+                print(f"Failed to update take profit: {e}")
+                return False
+        else:
+            oldTP = self.TP
+            self.TP = TP
+            if self.checkValidEntryInsight():
+                print(f"Updated Take Profit: {oldTP} -> {self.TP}")
+                self.updatedAt = datetime.now(
+                ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+                return True
+            else:
+                self.TP = oldTP
+                print("Failed to update take profit")
+                return False
+
+
     def updateTakeProfitLegs(self, leg: IOrderLeg):
         # TODO: Check if there is a take profit order leg already set if so update the limit price
 
         self.legs['take_profit'] = leg
-        self.TP[-1] = leg['limit_price']
+        if leg.get('limit_price'):
+            self.TP[-1] = leg['limit_price']
         self.updatedAt = datetime.now(
         ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
         return self
@@ -633,12 +674,37 @@ class Insight:
     def cancelTakeProfitLeg(self):
         if self.takeProfitOrderLeg:
             if self.cancel_order_by_id(self.takeProfitOrderLeg['order_id']) or (self.takeProfitOrderLeg['order_id'] == None or self.takeProfitOrderLeg['order_id'] == ""):
-
                 self.legs['take_profit'] = None
                 self.updatedAt = datetime.now(
                 ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
                 return True
         return False
+
+    def updateStopLoss(self, SL: float):
+        # Check if the order is not managed by the broker
+        if self.stopLossOrderLeg != None:
+            try:
+                if self.stopLossOrderLeg['limit_price'] != SL:
+                    self.BROKER.update_order(
+                        self.stopLossOrderLeg['order_id'], SL, self.contracts if self.uses_contract_size else self.quantity)
+                    print(f"Updated Stop Loss for order: {
+                          self.stopLossOrderLeg['order_id']} -> {SL}")
+                    return True
+            except BaseException as e:
+                print(f"Failed to update stop loss: {e}")
+                return False
+        else:
+            oldSL = self.SL
+            self.SL = SL
+            if self.checkValidEntryInsight():
+                print(f"Updated Stop Loss: {oldSL} -> {self.SL}")
+                self.updatedAt = datetime.now(
+                ) if self.MODE == IStrategyMode.LIVE else self.BROKER.get_current_time
+                return True
+            else:
+                self.SL = oldSL
+                print("Failed to update stop loss")
+                return False
 
     def updateStopLossLegs(self, leg: IOrderLeg):
         # TODO: Check if there is a stop loss order leg already set if so update the limit price
@@ -685,6 +751,7 @@ class Insight:
         else:
             self.update_quantity(qty)
         self.partialFilled(qty)
+        self._first_on_fill = True
         self.updateState(InsightState.FILLED, f"Trade Filled: {
                          self.symbol} - {self.side} - {self.quantity} @ {self.limit_price}")
 
@@ -738,17 +805,22 @@ class Insight:
         if len(self.partial_closes) > 0:
             for partial in self.partial_closes:
                 partialPL += partial.getPL()
-        
+
         if self.side == IOrderSide.BUY:
             return round(((self.close_price - self.limit_price) * self.quantity) - partialPL, 2)
         else:
             return round(((self.limit_price - self.close_price) * self.quantity) - partialPL, 2)
 
     def getPnLRatio(self):
-        if self.TP and self.SL and self.limit_price != None:
-            return round((abs(self.TP[-1] - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
-        else:
-            return 0
+        try:
+            if self.TP and self.SL:
+                maxTP = self.TP[-1]
+                return round((abs(maxTP - self.limit_price)) / (abs(self.limit_price - self.SL)), 2)
+        except ZeroDivisionError:
+            pass
+        except BaseException as e:
+            print(f"Failed to calculate PnL Ratio: {e}")
+        return 0
 
     def logPnL(self):
         PL = self.getPL()
@@ -814,8 +886,10 @@ class IInsight:
     legs: IOrderLegs
     partial_filled_quantity: float
     partial_closes: list[PartialCloseResult]
+    submited: bool
     closing: bool
     cancelling: bool
+    first_on_fill: bool
     marketChanged: bool
 
     def __init__(self, insight: Insight):
@@ -823,7 +897,7 @@ class IInsight:
         self.insight_id = str(insight.INSIGHT_ID)
         self.parent = str(
             insight.PARANT) if insight.PARANT is not None else None
-        self.children = {key: IInsight(child)
+        self.children = {str(key): IInsight(child)
                          for key, child in insight.CHILDREN.items()}
         self.state = insight.state.value
         self.side = insight.side.value
@@ -834,7 +908,7 @@ class IInsight:
         self.useContractSize = insight.uses_contract_size
         self.quantity = insight.quantity
         self.contracts = insight.contracts if insight.uses_contract_size else None
-        
+
         self.strategy = str(insight.strategyType) if type(
             insight.strategyType) == str else insight.strategyType.value if insight.strategyType != None else None
         self.execution_dependency = [
@@ -855,7 +929,7 @@ class IInsight:
             legs['take_profit'] = {
                 'order_id': str(insight.takeProfitOrderLeg['order_id']),
                 'limit_price': insight.takeProfitOrderLeg['limit_price'],
-                'filled_price': insight.takeProfitOrderLeg.get('filled_price',None),
+                'filled_price': insight.takeProfitOrderLeg.get('filled_price', None),
                 'type': str(insight.takeProfitOrderLeg.get('type', None)),
                 'status': str(insight.takeProfitOrderLeg['status']),
                 'order_class': str(insight.takeProfitOrderLeg.get('order_class', None)),
@@ -888,8 +962,7 @@ class IInsight:
                           } for partialclose in insight.partial_closes]
         self.partial_closes = partialCloses
         self.closing = insight._closing
+        self.submited = insight._submitted
         self.cancelling = insight._cancelling
+        self.first_on_fill = insight._first_on_fill
         self.marketChanged = insight.marketChanged
-        
-
-

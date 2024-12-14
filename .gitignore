@@ -15,3 +15,5 @@ strategies/*
 strategy/*
 
 docs/build/*
+
+deploy.sh

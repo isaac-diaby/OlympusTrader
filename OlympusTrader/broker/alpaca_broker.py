@@ -1,5 +1,5 @@
 import datetime
-from typing import Awaitable, Callable, List, Literal, Union
+from typing import Awaitable, Callable, List, Literal, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import os
@@ -17,13 +17,13 @@ from alpaca.data.enums import DataFeed, CryptoFeed
 from alpaca.common.enums import BaseURL
 from alpaca.trading.models import Position, Order, TradeUpdate
 from alpaca.data.models import Bar, Quote
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest, ReplaceOrderRequest
 from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
 from .base_broker import BaseBroker
 from .interfaces import ISupportedBrokerFeatures, ISupportedBrokers, IAsset, IAccount, IOrder, IPosition, IOrderSide, IOrderType, ITradeUpdateEvent, IQuote, IOrderLegs, IOrderLeg
-from ..utils.timeframe import ITimeFrame as tf
+from ..utils.timeframe import ITimeFrame as tf, ITimeFrameUnit
 from ..insight.insight import Insight
 
 
@@ -34,6 +34,8 @@ class AlpacaBroker(BaseBroker):
     stock_stream_client: StockDataStream = None
     crypto_client: CryptoHistoricalDataClient = None
     crypto_stream_client: CryptoDataStream = None
+    HISTORICAL_DATA: dict[str, dict[Literal['trade',
+                                            'quote', 'bar', 'news', 'signals'], pd.DataFrame]] = {}
 
     def __init__(self, paper: bool, feed: DataFeed = DataFeed.IEX):
         super().__init__(ISupportedBrokers.ALPACA, paper, feed)
@@ -145,7 +147,8 @@ class AlpacaBroker(BaseBroker):
 
         positions: dict[str, IPosition] = {}
         for position in res:
-            positions[position.symbol] = self.format_position(position)
+            fmt_position = self.format_position(position)
+            positions[fmt_position['asset']['symbol']] = fmt_position
         return positions
 
     def format_position(self, position: Position) -> IPosition:
@@ -357,6 +360,17 @@ class AlpacaBroker(BaseBroker):
                 })
                 raise error
             raise e
+        
+    def update_order(self, order_id: str, price: float,  qty: float) -> Optional[IOrder]:
+        try:
+            # order = self.trading_client.get_order_by_id(order_id)
+            replaceOrderRequest = ReplaceOrderRequest(qty=qty, limit_price=price)
+            updated_order = self.trading_client.replace_order_by_id(order_id, replaceOrderRequest)
+            return self.format_order(updated_order)
+        except alpaca.common.exceptions.APIError as e:
+            print("Error updating order", e)
+            raise e
+        
 
     def startTradeStream(self, callback: Awaitable):
         super().startTradeStream(callback)
@@ -377,6 +391,7 @@ class AlpacaBroker(BaseBroker):
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
         loop = asyncio.new_event_loop()
+        baseTimeFrame =tf(1, ITimeFrameUnit.Minute)
 
         for assetStream in assetStreams:
 
@@ -387,17 +402,32 @@ class AlpacaBroker(BaseBroker):
                     """
                     barData = self.format_on_bar(data)
                     timestamp = barData.index[0][1]
+                    symbol = barData.index[0][0]
                     # TODO: WE may be able to skip this if python still hass access to the local scope variables assetStream during the loop. 
                     # We may be able to use the assetStream variable directly in the callback instead of looping over it as we are passing by ref to the alpace callback.
+                    self.HISTORICAL_DATA[symbol]['bar'] =  pd.concat([self.HISTORICAL_DATA[symbol]['bar'], barData])
+                    # self.HISTORICAL_DATA[assetStream['symbol']]['bar'] =  pd.concat([self.HISTORICAL_DATA[assetStream['symbol']]['bar'], barData])
+
                     for asset in assetStreams:
-                        if asset['symbol'] == assetStream['symbol'] and asset['time_frame'].is_time_increment(timestamp):
-                            # FIXME:Since this is one min candle we need to get the agreg of all of the previous candles if TF is greater than 1 min
-                            await callback(barData, timeframe=asset['time_frame'])
+                        # if asset['symbol'] == assetStream['symbol'] and asset['time_frame'].is_time_increment(timestamp):
+                        if asset['symbol'] == symbol and asset['time_frame'].is_time_increment(timestamp):
+                            # Since this is one min candle we need to get the agreg of all of the previous candles if TF is greater than 1 min
+                            passed, sampleBarData = asset['time_frame'].resample_bars_from_timeframe(
+                                self.HISTORICAL_DATA[asset['symbol']]['bar'], baseTimeFrame)
+                            if passed:
+                                await callback(sampleBarData.iloc[-1:].copy(), timeframe=asset['time_frame'])
+                                # await callback(sampleBarData.tail(1), timeframe=asset['time_frame'])
 
                 if assetStream.get('feature') != None:
                     # We dont want to add multiple streams for the same asset
-                    
                     continue
+                if self.HISTORICAL_DATA.get(assetStream['symbol']) == None:
+                    self.HISTORICAL_DATA[assetStream['symbol']] = {
+                        'bar': pd.DataFrame()}
+                elif self.HISTORICAL_DATA[assetStream['symbol']].get('bar') == None:
+                    self.HISTORICAL_DATA[assetStream['symbol']]['bar'] = pd.DataFrame()
+                
+
                 if assetStream['asset_type'] == 'stock':
                     StockStreamCount += 1
                     self.stock_stream_client.subscribe_bars(
@@ -485,7 +515,7 @@ class AlpacaBroker(BaseBroker):
             return bar
         elif isinstance(bar, Bar):
             index = pd.MultiIndex.from_product(
-                [[bar.symbol], [bar.timestamp]], names=['symbol', 'date'])
+                [[bar.symbol], [bar.timestamp]], names=['symbol', 'timestamp'])
             data = pd.DataFrame(data={
                 'open': bar.open,
                 'high': bar.high,

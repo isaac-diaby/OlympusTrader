@@ -4,6 +4,7 @@ if TYPE_CHECKING:
     from OlympusTrader.strategy.base_strategy import BaseStrategy
 
 from ..insight.insight import InsightState
+from ..broker.interfaces import IOrderSide
 
 
 class ITradingTools():
@@ -20,7 +21,16 @@ class ITradingTools():
             self.STRATEGY.UNIVERSE[symbol]["price_base"] = dynamic_precision
 
         return round(v, self.STRATEGY.UNIVERSE[symbol]["price_base"])
-    # TODO: movethis into strategy tools
+
+    def quantity_round(self, v: float, symbol: str) -> float:
+        """Round float depending on log10 decimal places"""
+        if "quantity_base" not in self.STRATEGY.assets[symbol] or self.STRATEGY.assets[symbol]["quantity_base"] == None:
+            dynamic_precision = np.abs(
+                int(np.log10(self.STRATEGY.assets[symbol]["min_order_size"])))
+            self.STRATEGY.UNIVERSE[symbol]["quantity_base"] = dynamic_precision
+
+        return round(v, self.STRATEGY.UNIVERSE[symbol]["quantity_base"])
+    
     def calculateTimeToLive(self, price: float, entry: float, ATR: float, additional: int = 2) -> int:
         """Calculate the time to live for a given price and entry based on the ATR"""
         return np.ceil((np.abs(price - entry)) / ATR)+additional
@@ -30,7 +40,7 @@ class ITradingTools():
         if symbol not in self.STRATEGY.positions:
             return 0
         position = self.STRATEGY.positions[symbol]
-        if position["side"] == "long":
+        if position["side"] == IOrderSide.BUY:
             return (position["current_price"] - position["avg_entry_price"]) * position["qty"]
         else:
             return (position["avg_entry_price"] - position["current_price"]) * position["qty"]

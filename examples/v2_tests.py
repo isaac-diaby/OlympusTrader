@@ -29,7 +29,7 @@ from OlympusTrader.insight.executors.rejected.defaultOnReject import DefaultOnRe
 from OlympusTrader.insight.executors.closed.defaultOnClosed import DefaultOnClosedExecutor
 
 
-class QbitTB(Strategy):
+class V2_test(Strategy):
     def start(self):
         self.add_ta([
             {"kind": 'macd', "fast": 16, "slow": 36, "signal": 9},
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     # 1 Hour
     # strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
     #     1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
-    strategy = QbitTB(broker, variables={}, resolution=ITimeFrame(
+    strategy = V2_test(broker, variables={}, resolution=ITimeFrame(
         5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 
     

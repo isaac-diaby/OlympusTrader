@@ -12,10 +12,15 @@ from threading import Barrier, BrokenBarrierError
 from concurrent.futures import as_completed
 from pathlib import Path
 
+import logging
+# Configure logging
+# logging.basicConfig(level=logging.WARN, format='%(asctime)s - %(levelname)s - %(message)s')
+
 import vectorbt as vbt
 
 import pandas as pd
 from tqdm import tqdm
+from tqdm.notebook import tqdm_notebook
 
 from .base_broker import BaseBroker
 from .interfaces import IQuote, ISupportedBrokerFeatures, ITimeInForce, ISupportedBrokers, IOrderClass, IOrderRequest, IOrderSide, IOrderType, ITimeInForce, ITradeUpdate, ITradeUpdateEvent
@@ -48,6 +53,7 @@ class PaperBroker(BaseBroker):
     RUNNING_MARKET_STREAM: bool = False
     BACKTEST_FlOW_CONTROL_BARRIER: Barrier = None
 
+    UPDATE_ORDERS: deque[IOrder] = deque()
     PENDING_ORDERS: deque[IOrder] = deque()
     ACTIVE_ORDERS: deque[IOrder] = deque()
     CLOSE_ORDERS: deque[IOrder] = deque()
@@ -241,6 +247,52 @@ class PaperBroker(BaseBroker):
             "data": {"order_id": order_id}
         })
 
+    def update_order(self, order_id: str, qty: float, price: float):
+        order = self.Orders.get(order_id)
+        if order:
+            if order['status'] == ITradeUpdateEvent.FILLED:
+                raise BaseException({
+                    "code": "already_filled",
+                    "data": {"order_id": order_id}
+                })
+            elif order['status'] == ITradeUpdateEvent.CANCELED or order in self.CANCELED_ORDERS:
+                raise BaseException({
+                    "code": "already_canceled",
+                    "data": {"order_id": order_id}
+                })
+            else:
+                order['updated_at'] = self.get_current_time
+                order['qty'] = qty
+                order['limit_price'] = price
+                self.UPDATE_ORDERS.append(order)
+                return order
+        else:
+            # check legs
+            for i, leg_order in self.Orders.items():
+                if leg_order['legs'] != None and leg_order not in self.CANCELED_ORDERS and (leg_order['status'] != ITradeUpdateEvent.CANCELED and leg_order['status'] != ITradeUpdateEvent.CLOSED):
+                    if leg_order['legs'].get('take_profit'):
+                        if leg_order['legs']['take_profit']['order_id'] == order_id:
+                            # remove the take profit leg
+                            self.Orders[i]['legs']['take_profit']['limit_price'] = price
+                            self.Orders[i]['legs']['take_profit']['qty'] = qty
+                            self.Orders[i]['legs']['take_profit']["updated_at"] = self.get_current_time
+                            self.UPDATE_ORDERS.append(self.Orders[i])
+                            return self.Orders[i]
+
+                    if leg_order['legs'].get('stop_loss'):
+                        if leg_order['legs']['stop_loss']['order_id'] == order_id:
+                            self.Orders[i]['legs']['stop_loss']['limit_price'] = price
+                            self.Orders[i]['legs']['stop_loss']['qty'] = qty
+                            self.Orders[i]['legs']['stop_loss']["updated_at"] = self.get_current_time
+                            self.UPDATE_ORDERS.append(self.Orders[i])
+                            return self.Orders[i]
+
+        # Order Id not found
+        raise BaseException({
+            "code": "order_not_found",
+            "data": {"order_id": order_id}
+        })
+
     def get_latest_quote(self, asset: IAsset) -> IQuote:
         # FIXME: Temp: Get the latest quote at bar close and bid ask spread at is high and low
         if self.DataFeed == 'yf':
@@ -268,6 +320,7 @@ class PaperBroker(BaseBroker):
                     self.processCanceledOrders(callback, loop)
                     self.processActiveOrders(callback, loop)
                     self.processClosedOrders(callback, loop)
+                    self.processUpdateOrders(callback, loop)
 
                 except BrokenBarrierError:
                     continue
@@ -280,13 +333,22 @@ class PaperBroker(BaseBroker):
             # live paper trade stream
             try:
                 while self.RUNNING_TRADE_STREAM:
+                    
                     self.processPendingOrders(callback, loop)
                     self.processCanceledOrders(callback, loop)
                     self.processActiveOrders(callback, loop)
                     self.processClosedOrders(callback, loop)
+                    self.processUpdateOrders(callback, loop)
                     sleep(1)
             except Exception as e:
                 print("Error: ", e)
+
+    def processUpdateOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
+        for i, order in enumerate(list(self.UPDATE_ORDERS)):
+            updateOrder = order.copy()
+            updateOrder['status'] = ITradeUpdateEvent.REPLACED
+            loop.run_until_complete(
+                    callback(ITradeUpdate(updateOrder, updateOrder['status'])))
 
     def processPendingOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
         for i, order in enumerate(list(self.PENDING_ORDERS)):
@@ -296,11 +358,13 @@ class PaperBroker(BaseBroker):
                 continue
             currentBar = currentBar.iloc[0]
 
-            if order['created_at'] == self.get_current_time:
+            if ((order['status'] == ITradeUpdateEvent.NEW) or (order['created_at'] == self.get_current_time)):
                 order['status'] = ITradeUpdateEvent.NEW
                 self._update_order(order)
                 loop.run_until_complete(
                     callback(ITradeUpdate(order, order['status'])))
+                # Now move the order to being PENDING
+                order['status'] = ITradeUpdateEvent.PENDING_NEW
 
             if order['type'] == IOrderType.MARKET:
                 # Market order - FILLED at the current close price
@@ -455,11 +519,9 @@ class PaperBroker(BaseBroker):
                 case ITradeUpdateEvent.FILLED:
                     # watch changes in the position - order filled
                     pass
-
                 case ITradeUpdateEvent.CLOSED:
                     if order['stop_price']:
                         if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY:
-                            # if order['side'] == IOrderSide.BUY:
                             assert order['side'] == IOrderSide.SELL, "Order side must be SELL for closing a BUY position"
                             self.Positions[symbol][orderId]['qty'] -= order['qty']
                         elif self.Positions[symbol][orderId]['side'] == IOrderSide.SELL:
@@ -467,10 +529,17 @@ class PaperBroker(BaseBroker):
                             self.Positions[symbol][orderId]['qty'] += order['qty']
 
                         # Clear buying power wwithheld by the order
-                        entryPrince = order['filled_price'] if order[
-                            'filled_price'] != None else self.Positions[symbol][orderId]['avg_entry_price']
-                        self.Account.cash += np.round(
-                            (order['qty'] * entryPrince) / self.LEVERAGE, 2)
+                        entryPrince = order['filled_price'] if order['filled_price'] != None else self.Positions[symbol][orderId]['avg_entry_price']
+                        self.Account.cash += max(np.round((order['qty'] * entryPrince) / self.LEVERAGE, 2), 0)
+                        if self.Account.cash == 0:
+                            # No buying power left close the positiopn 
+                            order['status'] = ITradeUpdateEvent.CANCELED
+                            self.CANCELED_ORDERS.append(order)
+                            raise BaseException({
+                                "code": "insufficient_funds",
+                                "data": {"order_id": order['order_id']}
+                            })
+                        
 
                     else:
                         print("Order Close Without stop_price:", order)
@@ -479,6 +548,22 @@ class PaperBroker(BaseBroker):
             match order['status']:
                 case ITradeUpdateEvent.FILLED:
                     # add positions dictionary
+                    marginRequired = order['qty'] * order['filled_price']
+                    if self.Account.cash < marginRequired/self.LEVERAGE:
+                        # Not enough buying power
+                        try:
+                            self.cancel_order(order['order_id'])
+                        except BaseException as e:
+                            logging.error("Not enough BP - Position Update Init:", e)
+                        
+                        return 
+                        # order['status'] = ITradeUpdateEvent.CANCELED
+                        # self.CANCELED_ORDERS.append(order)
+                        # raise BaseException({
+                        #     "code": "insufficient_funds",
+                        #     "data": {"order_id": order['order_id']}
+                        # })
+
                     entryPrince = order['filled_price'] if order['filled_price'] != None else currentBar.close
                     market_value = entryPrince * order['qty']
                     self.Positions[symbol][orderId] = IPosition(
@@ -491,24 +576,26 @@ class PaperBroker(BaseBroker):
                         current_price=entryPrince,
                         unrealized_pl=0
                     )
-                    marginRequired = order['qty'] * order['filled_price']
-                    if self.Account.cash < marginRequired/self.LEVERAGE:
-                        # Not enough buying power
-                        order['status'] = ITradeUpdateEvent.CANCELED
-                        self.CANCELED_ORDERS.append(order)
-                        raise BaseException({
-                            "code": "insufficient_funds",
-                            "data": {"order_id": order['order_id']}
-                        })
+
+                    # Credit the account on the new opened position
                     self.Account.cash -= np.round(
                         marginRequired/self.LEVERAGE, 2)
-                    pass
+                
+                    # logging.info(f"Filled a New Position: {self.Positions[symbol][orderId]}")
+                    
                 case ITradeUpdateEvent.CANCELED:
                     # ORder will just be canclled
                     pass
 
         if oldPosition:
             self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order['stop_price'] else order['stop_price']
+
+            if order['status'] == ITradeUpdateEvent.CLOSED:
+                if self.Positions[symbol][orderId]['qty'] == 0:
+                    # remove the position from the Positions dictionary
+                    del self.Positions[symbol][orderId] 
+
+                return 
 
             if self.Positions[symbol][orderId]['current_price'] == oldPosition['current_price'] and order['status'] != ITradeUpdateEvent.CLOSED:
                 # No price change in the position since the last update
@@ -517,24 +604,20 @@ class PaperBroker(BaseBroker):
             # or order['status'] != ITradeUpdateEvent.CLOSED or not order['stop_price']:
             if oldPosition != 0:
                 # Update the position market value
-                self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
-                    np.abs(
+                self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * np.abs(oldPosition['qty'])
                         # qunaity can be negative for short positions
-                        oldPosition['qty'])
 
                 # Update the unrealized PnL
                 self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
                                                                     ) if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY else (self.Positions[symbol][orderId]['cost_basis'] - self.Positions[symbol][orderId]['market_value'])
 
-                # Update the account equity
+                # Update the account equity and cash
                 changeInPL = round(self.Positions[symbol][orderId]['unrealized_pl'] -
                                    oldPosition['unrealized_pl'], 2)
-                self.Account.cash += changeInPL
-                self.Account.equity += changeInPL
+                self.Account.cash = max( self.Account.cash + changeInPL, 0) 
+                self.Account.equity = max( self.Account.equity + changeInPL, 0) 
 
-            if self.Positions[symbol][orderId]['qty'] == 0:
-                # remove the position from the Positions dictionary
-                del self.Positions[symbol][orderId]
+            
 
         else:
             return
@@ -869,28 +952,17 @@ class PaperBroker(BaseBroker):
                     "code": "insufficient_funds",
                     "data": {"order_id": order['order_id']}
                 })
-            # self.Account.cash -= np.round(marginRequired/self.LEVERAGE, 2)
             self._update_order(order)
             return order
         
         except BaseException as e:
             raise  e
 
-    def update_account_history(self):
-        if self.VERBOSE >= 2:
-            print("Updating Account History")
-            print("Account: ", self.Account)
-        self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
-
-    def update_account_balance(self):
-        self.ACCOUNT.buying_power = max(np.round(
-            self.ACCOUNT.cash * self.LEVERAGE, 2), 0)
-
     def format_on_bar(self, bar, symbol: str):
         if self.DataFeed == 'yf':
             assert symbol, 'Symbol must be provided when using yf data feed - format_on_bar()'
             index = pd.MultiIndex.from_product(
-                [[symbol], pd.to_datetime(bar.index, utc=True)], names=['symbol', 'date'])
+                [[symbol], pd.to_datetime(bar.index, utc=True)], names=['symbol', 'timestamp'])
 
             bar = pd.DataFrame(data={
                 'open': np.array(bar['Open'].values).reshape(-1),
@@ -1017,7 +1089,9 @@ class PaperBroker(BaseBroker):
             # Load Market data from yfinance for all assets
             self.HISTORICAL_DATA = {}
 
-            for asset in tqdm(assetStreams, desc="Loading Historical Data"):
+            progress_bar = tqdm_notebook(assetStreams, desc="Loading Historical Data")
+            
+            for asset in assetStreams:
                 symbol = asset['symbol'] if asset.get(
                     'feature') == None else asset['feature']
                 if asset['type'] == 'bar':
@@ -1025,41 +1099,53 @@ class PaperBroker(BaseBroker):
                     # populate HISTORICAL_DATA
                     try:
                         if self._load_historical_bar_data(asset):
-                            if self.MODE == IStrategyMode.BACKTEST:
 
-                                if asset.get('feature') == None:
-                                    # Create signals dataframe
-                                    size = self.HISTORICAL_DATA[symbol
-                                                                ]['bar'].shape[0]
-                                    self.HISTORICAL_DATA[symbol]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
-                                        size), "short_exits": np.zeros(size), "price": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "price", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
-                                    # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
-                                    self.HISTORICAL_DATA[symbol]['signals'][[
-                                        'entries', 'exits', 'short_entries', 'short_exits']] = False
-                                    self.HISTORICAL_DATA[symbol]['signals'][[
-                                        'qty']] = 0
-                                    self.HISTORICAL_DATA[symbol]['signals'][[
-                                        'price']] = np.nan
-                                    if not TF:
-                                        # set the Main time frame to the first asset time frame
-                                        TF = asset['time_frame']
-                                else:
-                                    # change the symbol to the feature symbol in the multi index
-                                    self.HISTORICAL_DATA[symbol]['bar'].rename(
-                                        index={asset['symbol']: symbol}, inplace=True)
-                                    if hasFeature == False:
-                                        # signal for the backtest to use dynamic time resoltion
-                                        hasFeature = True
+                            if asset.get('feature') == None:
+                                # Create signals dataframe
+                                size = self.HISTORICAL_DATA[symbol
+                                                            ]['bar'].shape[0]
+                                self.HISTORICAL_DATA[symbol]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
+                                    size), "short_exits": np.zeros(size), "price": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "price", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
+                                # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
+                                self.HISTORICAL_DATA[symbol]['signals'][[
+                                    'entries', 'exits', 'short_entries', 'short_exits']] = False
+                                self.HISTORICAL_DATA[symbol]['signals'][[
+                                    'qty']] = 0
+                                self.HISTORICAL_DATA[symbol]['signals'][[
+                                    'price']] = np.nan
+                                if not TF:
+                                    # set the Main time frame to the first asset time frame
+                                    TF = asset['time_frame']
+                            else:
+                                # change the symbol to the feature symbol in the multi index
+                                self.HISTORICAL_DATA[symbol]['bar'].rename(
+                                    index={asset['symbol']: symbol}, inplace=True)
+                                if hasFeature == False:
+                                    # signal for the backtest to use dynamic time resoltion
+                                    hasFeature = True
+                            progress_bar.update(1)
+                            continue
 
                     except Exception as e:
                         print("Removing Bar Stream",
-                              asset['symbol'],  "\nError: ", e)
+                            asset['symbol'],  "\nError: ", e)
                         assetStreams.remove(asset)
+                        progress_bar.update(1)
                         continue
-
+            
                 else:
-                    raise NotImplementedError(
-                        f'Stream type not {self.DataFeed}supported')
+                    progress_bar.update(1)
+                    continue
+                    # raise NotImplementedError(
+                    #     f'Stream type not {self.DataFeed}supported')
+
+            progress_bar.close()    
+            # check if we have any data loaded for the backtest
+            if self.HISTORICAL_DATA == {}:
+                print("Error: ", e)
+                self.RUNNING_MARKET_STREAM = False
+                return
+                
 
             # Stream data to callback one by one for each IAsset
 
@@ -1068,47 +1154,52 @@ class PaperBroker(BaseBroker):
                     if self.VERBOSE > 0:
                         print("\nstreaming data for:",
                               self.get_current_time, "\n")
-                    for asset in assetStreams:
-                        isFeature = False
-                        if asset['type'] == 'bar':
-                            if asset.get('feature') == None:
-                                symbol = asset['symbol']
-                            else:
-                                symbol = asset['feature']
-                                isFeature = True
-
-                            try:
-                                if isFeature:
-                                    if self.PreviousTime == None:
-                                        barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') >= self.get_current_time.replace(
-                                            tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
-                                    else:
-                                        barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') > self.PreviousTime.replace(
-                                            tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
-                                    if type(barDatas) == NoneType:
-                                        continue
-                                    elif barDatas.empty:
-                                        continue
-                                    else:
-                                        for index in barDatas.index:
-                                            loop.run_until_complete(
-                                                callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                    try:
+                        for asset in assetStreams:
+                            isFeature = False
+                            if asset['type'] == 'bar':
+                                if asset.get('feature') == None:
+                                    symbol = asset['symbol']
                                 else:
-                                    # Get the current bar data with the index
-                                    barData = self._get_current_bar(symbol)
-                                    if type(barData) == NoneType:
-                                        continue
-                                    elif barData.empty:
-                                        continue
-                                    else:
-                                        loop.run_until_complete(
-                                            callback(barData, timeframe=asset['time_frame']))
+                                    symbol = asset['feature']
+                                    isFeature = True
 
-                            except BaseException as e:
-                                print("Error: ", e)
-                                continue
-                        else:
-                            print('DataFeed not supported')
+                                try:
+                                    if isFeature:
+                                        if self.PreviousTime == None:
+                                            barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') >= self.get_current_time.replace(
+                                                tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
+                                        else:
+                                            barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') > self.PreviousTime.replace(
+                                                tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('date') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
+                                        if type(barDatas) == NoneType:
+                                            continue
+                                        elif barDatas.empty:
+                                            continue
+                                        else:
+                                            for index in barDatas.index:
+                                                loop.run_until_complete(
+                                                    callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                                    else:
+                                        # Get the current bar data with the index
+                                        barData = self._get_current_bar(symbol)
+                                        if type(barData) == NoneType:
+                                            continue
+                                        elif barData.empty:
+                                            continue
+                                        else:
+                                            loop.run_until_complete(
+                                                callback(barData, timeframe=asset['time_frame']))
+                                            continue
+
+                                except BaseException as e:
+                                    print("Error: ", e)
+                                    continue
+                            else:
+                                print('DataFeed not supported')
+                    except BaseException as e:
+                        print("Error: ins StreamMarket Date ", e)
+                        
 
                     # Wait for all assets to be streamed and processed
                         # for future in as_completed(futures):
@@ -1123,7 +1214,7 @@ class PaperBroker(BaseBroker):
                     # FIXME: Implement time frame increment
                     self.setCurrentTime(TF.get_next_time_increment(
                         self.get_current_time))
-                    if self.get_current_time > self.END_DATE:
+                    if (self.get_current_time > self.END_DATE):
                         self.update_account_history()
                         self.BACKTEST_FlOW_CONTROL_BARRIER.abort()
                         break
@@ -1454,6 +1545,16 @@ class PaperBroker(BaseBroker):
             raise NotImplementedError(f'Mode {self.MODE} not supported')
         return results
 
+    def update_account_history(self):
+        if self.VERBOSE >= 2:
+            print("Updating Account History")
+            print("Account: ", self.Account)
+        self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
+
+    def update_account_balance(self):
+        self.ACCOUNT.buying_power = max(np.round(
+            self.ACCOUNT.cash * self.LEVERAGE, 2), 0)
+        
     @property
     def Account(self) -> IAccount:
         """ Returns the state of the strategy."""
@@ -1464,9 +1565,10 @@ class PaperBroker(BaseBroker):
     def Account(self, account: IAccount):
         """ Sets the state of the strategy."""
         cash = account.cash
+        print("updated account cash from:",  self.Account.cash, "->", account.cash)
         if cash and cash != self.ACCOUNT.cash:
             self.ACCOUNT.cash = max(cash, 0)
-        equity = account.get('equity')
+        equity = account.equity
         if equity and equity != self.ACCOUNT.equity:
             self.ACCOUNT.equity = max(equity, 0)
 

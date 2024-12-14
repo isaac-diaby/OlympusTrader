@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import Self
+
+import pandas as pd
 
 
 """FROM ALPACA TIMEFRAME.PY but modified to be used for OlympusTrader framework"""
@@ -193,6 +196,39 @@ class ITimeFrame:
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
+    
+    def resample_bars_from_timeframe(self, df: pd.DataFrame, base_timeframe: Self) -> tuple[bool, pd.DataFrame]:
+        """
+        Resample the bars from a dataframe to the specified timeframe
+        """
+        assert isinstance(df, pd.DataFrame), "df must be a pandas dataframe"
+        assert isinstance(base_timeframe, ITimeFrame), "base_timeframe must be an instance of ITimeFrame"
+        if base_timeframe == self:
+            # if the base timeframe is the same as the current timeframe, return the dataframe
+            return True, df
+        # check if we have enough data to resample
+        if len(df) < round(int(self) / int(base_timeframe), 0):
+            # Not enough data to resample
+            return False, df
+        # resample the data
+        return True, df.groupby(level=0).resample(self.to_timeDelta(), level="timestamp").agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
+        
+    def to_timeDelta(self) -> timedelta:
+        """Return the TimeDelta object of the TimeFrame"""
+        return timedelta(minutes=int(self))
+    def __eq__(self, other):
+        if not isinstance(other, ITimeFrame):
+            return False
+        return self.amount_value == other.amount_value and self.unit_value == other.unit_value
+    
     def __int__(self):
         match self.unit_value:
             case ITimeFrameUnit.Minute:
