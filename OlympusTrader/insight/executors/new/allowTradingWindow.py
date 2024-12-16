@@ -33,8 +33,8 @@ class AllowedTradingWindow(BaseExecutor):
             "sunday": 6
         }
 
-    def __init__(self, strategy, start: str, end: str, days: list[str] = ["monday", "tuesday", "wednesday", "thursday", 4]):
-        super().__init__(strategy, InsightState.NEW, "1.0")
+    def __init__(self, strategy, start: str, end: str, days: list[Union[str, int]] = ["monday", "tuesday", "wednesday", "thursday", 4], **kwargs):
+        super().__init__(strategy, InsightState.NEW, "1.0", **kwargs)
         self.start = self.format_time(start)
         self.end = self.format_time(end)
         self.days = self.format_days(days)
@@ -95,7 +95,8 @@ class AllowedTradingWindow(BaseExecutor):
         Returns:
             List[str]: Formatted list of days
         """
-       
+        assert isinstance(days, list), "Days must be a list."
+
         for i, day in enumerate(days):
             if isinstance(day, int):
                 days[i] = list(self.daysOfTheWeek.keys())[list(self.daysOfTheWeek.values()).index(day)]

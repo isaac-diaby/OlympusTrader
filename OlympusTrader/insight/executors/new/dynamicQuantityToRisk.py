@@ -23,8 +23,8 @@ class DynamicQuantityToRiskExecutor(BaseExecutor):
     """
     maximum_costbasis: float
     minimum_costbasis: float
-    def __init__(self, strategy, maximum_costbasis: float = 200_000.0, minimum_costbasis: float = 1_000.0):
-        super().__init__(strategy, InsightState.NEW, "1.1")
+    def __init__(self, strategy, maximum_costbasis: float = 200_000.0, minimum_costbasis: float = 1_000.0, **kwargs):
+        super().__init__(strategy, InsightState.NEW, "1.1", **kwargs)
         if self.STRATEGY.broker.supportedFeatures.maxOrderValue is not None:
             self.maximum_costbasis = min(self.STRATEGY.broker.supportedFeatures.maxOrderValue, maximum_costbasis)
         else:

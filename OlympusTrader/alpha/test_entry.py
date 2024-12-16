@@ -22,8 +22,8 @@ class TestEntryAlpha(BaseAlpha):
     limitEntry: bool
     maxSpawn: int
 
-    def __init__(self, strategy,  atrPeriod=14, limitEntries=False, maxSpawn=1, baseConfidenceModifierField=None):
-        super().__init__(strategy, "TEST_ENTRY", "1.0", baseConfidenceModifierField)
+    def __init__(self, strategy,  atrPeriod=14, limitEntries=False, maxSpawn=1, baseConfidenceModifierField=None, **kwargs):
+        super().__init__(strategy, "TEST_ENTRY", "1.0", baseConfidenceModifierField, **kwargs)
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
         ]

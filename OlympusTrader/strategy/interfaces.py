@@ -82,19 +82,19 @@ class IStrategyMatrics:
         """ Update the start date and starting cash """
         self.start_date = start_date
         self.starting_cash = starting_cash
-    
+
     def updateEnd(self, end_date: datetime, ending_cash: float):
         """ Update the end date """
         self.end_date = end_date
         self.ending_cash = ending_cash
-
 
     def updateDerivedMetrics(self):
         """ Update the derived metrics """
         if self.total_wins == 0 or self.total_closed == 0:
             self.win_rate = 0.0
         else:
-            self.win_rate = round(divide(self.total_wins,  self.total_closed),2)
+            self.win_rate = round(
+                divide(self.total_wins,  self.total_closed), 2)
 
         if self.total_profit == 0 or self.total_wins == 0:
             self.avg_win = 0.0

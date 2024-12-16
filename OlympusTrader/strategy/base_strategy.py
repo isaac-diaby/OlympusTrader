@@ -15,6 +15,7 @@ import nest_asyncio
 import timeit
 from collections import deque
 import logging
+from typing import TYPE_CHECKING
 
 import pandas_ta as ta
 import pytz
@@ -32,7 +33,9 @@ from ..utils.types import AttributeDict
 from ..utils.tools import ITradingTools
 
 from ..alpha.base_alpha import BaseAlpha
-from ..insight.executors.base_executor import BaseExecutor
+
+from OlympusTrader.insight.executors import BaseExecutor
+# from ..insight.executors.base_executor import BaseExecutor
 # from ..ui.base_ui import Dashboard
 import warnings
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -104,7 +107,7 @@ class BaseStrategy(abc.ABC):
         self.NAME = self.__class__.__name__
         self.MODE = mode
         self.WITHUI = ui
-        
+
         if type(variables) is not AttributeDict:
             variables = AttributeDict(variables)
         self.VARIABLES = variables
@@ -141,7 +144,8 @@ class BaseStrategy(abc.ABC):
             self.ORDERS = self.BROKER.get_orders()
 
             # Initialise the strategy metrics
-            self.MATRICS.updateStart((pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)).total_seconds(), self.ACCOUNT.equity)
+            self.MATRICS.updateStart((pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(
+                1970, 1, 1, tzinfo=pytz.UTC)).total_seconds(), self.ACCOUNT.equity)
 
         except Exception as e:
             print(f'Failed to get account info from the broker {e}')
@@ -289,11 +293,12 @@ class BaseStrategy(abc.ABC):
             #     log.setLevel(logging.ERROR)
             #     # Run the UI Dashboard Server in production mode
             #     self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
-                # Run the UI Dashboard Server in production mode
+            # Run the UI Dashboard Server in production mode
             log = logging.getLogger('werkzeug')
             log.setLevel(logging.ERROR)
-            
-            self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
+
+            self.UI_STREAM = loop.run_in_executor(
+                pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
             print('UI Shared Memory Server Started')
 
     def _run_strategy(self, loop, pool):
@@ -377,7 +382,8 @@ class BaseStrategy(abc.ABC):
                 self.resolution)
             self.saveBacktestResults()
         print("Simulation Account", self.BROKER.Account)
-        self.MATRICS.updateEnd((pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)).total_seconds(), self.BROKER.Account.equity)
+        self.MATRICS.updateEnd((pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(
+            1970, 1, 1, tzinfo=pytz.UTC)).total_seconds(), self.BROKER.Account.equity)
         print("Trade Matrics: ", self.MATRICS)
 
         exit(0)
@@ -432,7 +438,7 @@ class BaseStrategy(abc.ABC):
                 'get_metrics', callable=lambda: asdict(self.metrics))
             # SharedStrategyManager.register(
             #     'get_time', callable=lambda:  pd.Timestamp(self.BROKER.get_current_time, tz='UTC').timestamp())
-            
+
             SharedStrategyManager.register(
                 'get_time', callable=lambda:  (pd.Timestamp(self.BROKER.get_current_time, tz='UTC')-datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)).total_seconds())
 
@@ -464,7 +470,7 @@ class BaseStrategy(abc.ABC):
                     # Execute the insight Executors
                     passed = True
                     for executor in self.INSIGHT_EXECUTORS[insight.state]:
-                        if not executor.isAllowedAsset(insight.symbol):
+                        if not executor.should_run(insight):
                             continue
                         result = executor.run(
                             self.INSIGHTS[insight.INSIGHT_ID])
@@ -490,7 +496,7 @@ class BaseStrategy(abc.ABC):
 
                     self.executeInsight(insight)
 
-                    # Change the flag to indicate that the insight has been ran once against the executor list 
+                    # Change the flag to indicate that the insight has been ran once against the executor list
                     if insight.state == InsightState.FILLED and insight._first_on_fill:
                         insight._first_on_fill = False
 
@@ -568,16 +574,18 @@ class BaseStrategy(abc.ABC):
                             #         insight.updateLegs(
                             #             legs=orderdata['legs'])
                             #     return
-                            
+
                             case ITradeUpdateEvent.REPLACED:
                                 """Check if the order has been replaced and update the insight with the new order data"""
                                 if orderdata["limit_price"] != insight.limit_price:
                                     insight.limit_price = orderdata["limit_price"]
                                 if (insight.uses_contract_size and orderdata["qty"] != insight.contracts) or (not insight.uses_contract_size and orderdata["qty"] != insight.quantity):
                                     if insight.uses_contract_size:
-                                        insight.update_contracts(orderdata["qty"])
+                                        insight.update_contracts(
+                                            orderdata["qty"])
                                     else:
-                                        insight.update_quantity(orderdata["qty"])
+                                        insight.update_quantity(
+                                            orderdata["qty"])
                                 if orderdata['legs']:
                                     insight.updateLegs(
                                         legs=orderdata['legs'])
@@ -940,7 +948,7 @@ class BaseStrategy(abc.ABC):
             if self.INSIGHTS.get(insight.INSIGHT_ID) == None:
                 # Make sure the insight is added to the strategy
                 self.add_insight(insight)
-            
+
             insight.submit()
 
             order = self.BROKER.execute_insight_order(
@@ -1039,4 +1047,3 @@ class BaseStrategy(abc.ABC):
     def current_datetime(self) -> datetime:
         """ Returns the current time of the strategy."""
         return self.BROKER.get_current_time.replace(tzinfo=datetime.UTC)
-

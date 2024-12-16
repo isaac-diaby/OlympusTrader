@@ -19,8 +19,8 @@ class FullAccountQuantityToRiskExecutor(BaseExecutor):
         @isaac-diaby
     """
 
-    def __init__(self, strategy):
-        super().__init__(strategy, InsightState.NEW, "1.0")
+    def __init__(self, strategy, **kwargs):
+        super().__init__(strategy, InsightState.NEW, "1.0", **kwargs)
 
     def run(self, insight):
         if insight.limit_price is None or insight.SL is None:

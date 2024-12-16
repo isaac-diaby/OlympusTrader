@@ -13,17 +13,19 @@ class DefaultOnCancelledExecutor(BaseExecutor):
         @isaac-diaby
     """
 
-    def __init__(self, strategy):
-        super().__init__(strategy, InsightState.CANCELED, "1.0")
+    def __init__(self, strategy, **kwargs):
+        super().__init__(strategy, InsightState.CANCELED, "1.1", **kwargs)
 
     def run(self, insight):
         # Set the default state of the insight
         try:
-            for i, order in self.STRATEGY.orders.items():
-                if i == insight.order_id:
-                    # Check if the insight is already filled
-                    if (self.STRATEGY.insights[insight.INSIGHT_ID].state == InsightState.FILLED):
-                        return self.returnResults(True, True, "Insight already filled. Not deleting.")
+            # for i, order in self.STRATEGY.orders.items():
+            #     if i == insight.order_id:
+            #         # Check if the insight is already filled
+            #         if (self.STRATEGY.insights[insight.INSIGHT_ID].state == InsightState.FILLED):
+            #             return self.returnResults(True, True, "Insight already filled. Not deleting.")
+            if (insight.state == InsightState.FILLED):
+                return self.returnResults(True, True, "Insight already filled. Not deleting.")
 
             del self.STRATEGY.insights[insight.INSIGHT_ID]
             return self.returnResults(True, True, "Insight Cancelled Successfully.")

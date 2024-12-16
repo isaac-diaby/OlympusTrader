@@ -21,8 +21,8 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
     atrColumn: str
     emaColumn: str
 
-    def __init__(self, strategy, atrPeriod: int = 14, emaPeriod: int = 14, baseConfidenceModifierField = None):
-        super().__init__(strategy, "EMA_PRICE_CROSSOVER", "0.1", baseConfidenceModifierField)
+    def __init__(self, strategy, atrPeriod: int = 14, emaPeriod: int = 14, baseConfidenceModifierField = None, **kwargs):
+        super().__init__(strategy, "EMA_PRICE_CROSSOVER", "0.1", baseConfidenceModifierField, **kwargs)
         # Check if atrPeriod and emaPeriod are above 0
         if atrPeriod <= 0 or emaPeriod <= 0:
             raise ValueError("ATR Period and EMA Period must be positive integers")

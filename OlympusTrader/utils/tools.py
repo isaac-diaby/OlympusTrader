@@ -30,11 +30,11 @@ class ITradingTools():
             self.STRATEGY.UNIVERSE[symbol]["quantity_base"] = dynamic_precision
 
         return round(v, self.STRATEGY.UNIVERSE[symbol]["quantity_base"])
-    
+
     def calculateTimeToLive(self, price: float, entry: float, ATR: float, additional: int = 2) -> int:
         """Calculate the time to live for a given price and entry based on the ATR"""
         return np.ceil((np.abs(price - entry)) / ATR)+additional
-    
+
     def get_unrealized_pnl(self, symbol: str) -> float:
         """Calculate unrealized PnL for a given symbol"""
         if symbol not in self.STRATEGY.positions:
@@ -44,22 +44,23 @@ class ITradingTools():
             return (position["current_price"] - position["avg_entry_price"]) * position["qty"]
         else:
             return (position["avg_entry_price"] - position["current_price"]) * position["qty"]
-    
+
     def get_all_unrealized_pnl(self) -> float:
         """Calculate unrealized PnL for a given symbol"""
         unrealized_pnl = 0
         for symbol in self.STRATEGY.positions:
             unrealized_pnl += self.get_unrealized_pnl(symbol)
         return unrealized_pnl
-    
+
     def get_filled_insights(self) -> list:
         """Get all filled insights"""
         filled_insights = []
         for symbol in self.STRATEGY.insights:
-           for insight in self.STRATEGY.insights[symbol]:
-               if insight["status"] == InsightState.FILLED:
-                   filled_insights.append(insight)
+            for insight in self.STRATEGY.insights[symbol]:
+                if insight["status"] == InsightState.FILLED:
+                    filled_insights.append(insight)
         return filled_insights
+
 
 def dynamic_round(v: float) -> float:
     """Round float depending on log10 decimal places"""

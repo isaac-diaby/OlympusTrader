@@ -19,8 +19,8 @@ class BasicStopLossExecutor(BaseExecutor):
         @isaac-diaby
     """
 
-    def __init__(self, strategy):
-        super().__init__(strategy, InsightState.FILLED, "1.0")
+    def __init__(self, strategy, **kwargs):
+        super().__init__(strategy, InsightState.FILLED, "1.0", **kwargs)
 
     def run(self, insight):
         #  Check if the insight already has a stop loss order leg
@@ -37,15 +37,18 @@ class BasicStopLossExecutor(BaseExecutor):
             latestBar = self.get_latest_bar(insight.symbol)
             latestQuote = self.get_latest_quote(insight)
             shouldClose = False
+            atPrice = None
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.low < insight.SL) or (latestQuote['bid'] < insight.SL):
+                    if (latestBar.low <= insight.SL) or (latestQuote['bid'] <= insight.SL):
                         shouldClose = True
+                        atPrice = latestQuote['bid']
                 case IOrderSide.SELL:
-                    if (latestBar.high > insight.SL) or (latestQuote['ask'] > insight.SL):
+                    if (latestBar.high >= insight.SL) or (latestQuote['ask'] >= insight.SL):
                         shouldClose = True
+                        atPrice = latestQuote['ask']
             if shouldClose:
-                if self.STRATEGY.insights[insight.INSIGHT_ID].close():
+                if self.STRATEGY.insights[insight.INSIGHT_ID].close(price=atPrice):
                     return self.returnResults(False, True, f"Price broke the stop loss level: {insight.symbol} : {insight.SL}. Closing position.")
                 return self.returnResults(False, False, f"Error closing position.")
 

@@ -16,8 +16,8 @@ class BasicTakeProfitExecutor(BaseExecutor):
         @isaac-diaby
     """
 
-    def __init__(self, strategy):
-        super().__init__(strategy, InsightState.FILLED, "1.0")
+    def __init__(self, strategy, **kwargs):
+        super().__init__(strategy, InsightState.FILLED, "1.0", **kwargs)
 
     def run(self, insight):
         # check if the insight already has a take profit order leg
@@ -35,25 +35,28 @@ class BasicTakeProfitExecutor(BaseExecutor):
             latestBar = self.get_latest_bar(insight.symbol)
             latestQuote = self.get_latest_quote(insight)
             shouldClose = False
+            atPrice = None
 
             currentTP = insight.TP[0]
             match insight.side:
                 case IOrderSide.BUY:
-                    if (latestBar.high > currentTP) or (latestQuote["bid"] > currentTP):
+                    if (latestBar.high >= currentTP) or (latestQuote["bid"] >= currentTP):
                         shouldClose = True
+                        atPrice = latestQuote["bid"]
                 case IOrderSide.SELL:
-                    if (latestBar.low < currentTP) or (latestQuote["ask"] < currentTP):
+                    if (latestBar.low <= currentTP) or (latestQuote["ask"] <= currentTP):
                         shouldClose = True
+                        atPrice = latestQuote["ask"]
             if shouldClose:
                 if len(insight.TP) > 1:
                     quantityToClose = dynamic_round(
                         insight.quantity/2)
 
-                    if self.STRATEGY.insights[insight.INSIGHT_ID].close(quantity=quantityToClose):
+                    if self.STRATEGY.insights[insight.INSIGHT_ID].close(price=atPrice, quantity=quantityToClose):
                         return self.returnResults(False, True, f"Price broke the take profit level: {insight.symbol} : {currentTP}. Closing half position.")
                 else:
                     # Close the position if the last TP level is reached
-                    if self.STRATEGY.insights[insight.INSIGHT_ID].close():
+                    if self.STRATEGY.insights[insight.INSIGHT_ID].close(price=atPrice):
                         return self.returnResults(False, True, f"Price broke the take profit level: {insight.symbol} : {currentTP}. Closing position.")
             return self.returnResults(True, True, f"Take profit price has not been reached yet: {insight.symbol} : {currentTP}")
         except Exception as e:

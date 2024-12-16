@@ -36,7 +36,7 @@ yfinance = "^0.2.50"
 ta-lib = {version = "^0.5.1", optional = true}
 pandas-ta = "^0.3.14b"
 scipy = "^1.14.0"
-numpy = "^1.16.5 || ^2.2"
+numpy = "^1.16.5"
 pandas = "^2.2.3"
 python-dotenv = "^1.0.1"
 nest-asyncio = "^1.6.0"

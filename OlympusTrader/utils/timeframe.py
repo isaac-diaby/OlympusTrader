@@ -96,7 +96,7 @@ class ITimeFrame:
                 "Month units can only be used with amount 1, 2, 3, 6 and 12"
             )
         return True
-    
+
     def is_time_increment(self, time: datetime) -> bool:
         """ return true if the current date time is in the frequency of the time of X min increments
         Args:
@@ -140,7 +140,7 @@ class ITimeFrame:
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
-            
+
     def add_time_increment(self, time: datetime, periods: int) -> datetime:
         """ 
         Add the time increment to the current time
@@ -159,7 +159,7 @@ class ITimeFrame:
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
-            
+
     def get_time_increment(self, time: datetime) -> datetime:
         """ 
         Get the current time frame 
@@ -178,6 +178,7 @@ class ITimeFrame:
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
+
     def get_next_time_increment(self, time: datetime) -> datetime:
         """ 
         Get the next time frame increment
@@ -196,13 +197,14 @@ class ITimeFrame:
             case _:
                 print("resolution Error: ITimeFrameUnit not implemented")
                 return False
-    
+
     def resample_bars_from_timeframe(self, df: pd.DataFrame, base_timeframe: Self) -> tuple[bool, pd.DataFrame]:
         """
         Resample the bars from a dataframe to the specified timeframe
         """
         assert isinstance(df, pd.DataFrame), "df must be a pandas dataframe"
-        assert isinstance(base_timeframe, ITimeFrame), "base_timeframe must be an instance of ITimeFrame"
+        assert isinstance(
+            base_timeframe, ITimeFrame), "base_timeframe must be an instance of ITimeFrame"
         if base_timeframe == self:
             # if the base timeframe is the same as the current timeframe, return the dataframe
             return True, df
@@ -220,15 +222,16 @@ class ITimeFrame:
                 "volume": "sum",
             }
         )
-        
+
     def to_timeDelta(self) -> timedelta:
         """Return the TimeDelta object of the TimeFrame"""
         return timedelta(minutes=int(self))
+
     def __eq__(self, other):
         if not isinstance(other, ITimeFrame):
             return False
         return self.amount_value == other.amount_value and self.unit_value == other.unit_value
-    
+
     def __int__(self):
         match self.unit_value:
             case ITimeFrameUnit.Minute:
@@ -243,8 +246,6 @@ class ITimeFrame:
                 return self.amount_value * (60 * 24 * 7 * 30)
             case _:
                 return self.amount_value
+
     def __str__(self):
         return self.value
-
-
-

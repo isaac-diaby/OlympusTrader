@@ -1,3 +1,4 @@
+from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING, List, Optional, override
 
@@ -10,11 +11,6 @@ from OlympusTrader.insight.insight import Insight
 
 if TYPE_CHECKING:
     from ..strategy.base_strategy import BaseStrategy
-
-@staticmethod
-def get_BaseStrategy() -> 'BaseStrategy':
-    from ..strategy.base_strategy import BaseStrategy
-    return BaseStrategy
 
 
 class AlphaResults():
@@ -43,7 +39,7 @@ class AlphaResults():
         self.message = message
         self.alpha = alpha
 
-       
+
 class BaseAlpha(abc.ABC):
     """
     ### Abstract class for alpha implementations.
@@ -54,7 +50,7 @@ class BaseAlpha(abc.ABC):
     VERSION: str
     """Version of the alpha model."""
 
-    STRATEGY: get_BaseStrategy 
+    STRATEGY: BaseStrategy
     """Reference to the strategy instance."""
 
     TA: List[dict] = []
@@ -65,21 +61,23 @@ class BaseAlpha(abc.ABC):
 
     ALLOWED_ASSETS: Optional[set[str]] = set()
     """Set of allowed assets for the executor"""
-    
+
     @abc.abstractmethod
-    def __init__(self, strategy: get_BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None,  allowed_assets:  Optional[set[str]] = None) -> None:
+    def __init__(self, strategy: BaseStrategy, name: str, version: str = "1.0", baseConfidenceModifierField: Optional[str] = None,  allowed_assets:  Optional[set[str]] = None) -> None:
         self.NAME = name
         self.VERSION = version
 
+        # assert isinstance(strategy, BaseStrategy), "strategy must be of type BaseStrategy."
         # Reference to the strategy instance
         self.STRATEGY = strategy
         if baseConfidenceModifierField:
             self.baseConfidenceModifierField = baseConfidenceModifierField
 
         if allowed_assets is not None:
-            assert isinstance(allowed_assets, set), "Allowed assets must be a set"
+            assert isinstance(
+                allowed_assets, set), "Allowed assets must be a set"
             self.ALLOWED_ASSETS = allowed_assets
-
+        
 
     @abc.abstractmethod
     def start(self):
@@ -112,10 +110,10 @@ class BaseAlpha(abc.ABC):
 
     def get_previos_bar(self, symbol: str) -> DataFrame:
         return self.get_history(symbol).iloc[-2]
-    
+
     def get_latest_quote(self, insight: Insight) -> IQuote:
         return self.STRATEGY.broker.get_latest_quote(insight.ASSET)
-    
+
     def isAllowedAsset(self, symbol: str) -> bool:
         """Check if the asset is allowed"""
         if self.ALLOWED_ASSETS is None or len(self.ALLOWED_ASSETS) == 0:
@@ -129,6 +127,7 @@ class BaseAlpha(abc.ABC):
                 return baseConfidenceModifier
 
         return 1
+
     def _loadTa(self):
         if self.TA:
             self.STRATEGY.add_ta(self.TA)

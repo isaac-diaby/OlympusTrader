@@ -18,8 +18,8 @@ class MinimumRiskToRewardExecutor(BaseExecutor):
         @isaac-diaby
     """
 
-    def __init__(self, strategy, minimumRR=None):
-        super().__init__(strategy, InsightState.NEW, "1.0")
+    def __init__(self, strategy, minimumRR=None, **kwargs):
+        super().__init__(strategy, InsightState.NEW, "1.0", **kwargs)
 
         # Set the minimum risk to reward ratio required for the strategy if provided
         if minimumRR is not None:

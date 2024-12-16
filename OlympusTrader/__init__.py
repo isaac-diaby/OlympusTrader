@@ -1,5 +1,5 @@
 # Strategy
-from OlympusTrader.strategy.strategy import Strategy
+from OlympusTrader.strategy import Strategy
 
 # Account
 from OlympusTrader.broker.interfaces import IAsset, IAccount, IPosition

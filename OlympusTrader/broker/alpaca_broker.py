@@ -114,9 +114,9 @@ class AlpacaBroker(BaseBroker):
                 id=tickerInfo.id,
                 name=tickerInfo.name,
                 asset_type='stock' if tickerInfo.asset_class == 'us_equity' else 'crypto',
-                exchange=tickerInfo.exchange,
+                exchange=tickerInfo.exchange.name,
                 symbol=tickerInfo.symbol,
-                status=tickerInfo.status,
+                status=tickerInfo.status.name.lower() if tickerInfo.status else 'inactive',
                 tradable=tickerInfo.tradable,
                 marginable=tickerInfo.marginable,
                 shortable=tickerInfo.shortable,
@@ -325,7 +325,6 @@ class AlpacaBroker(BaseBroker):
                 })
                 # TODO: make a strutured error
 
-
                 raise error
             raise e
 
@@ -360,17 +359,18 @@ class AlpacaBroker(BaseBroker):
                 })
                 raise error
             raise e
-        
-    def update_order(self, order_id: str, price: float,  qty: float) -> Optional[IOrder]:
+
+    def update_order(self, order_id: str, price: float, qty: float) -> Optional[IOrder]:
         try:
             # order = self.trading_client.get_order_by_id(order_id)
-            replaceOrderRequest = ReplaceOrderRequest(qty=qty, limit_price=price)
-            updated_order = self.trading_client.replace_order_by_id(order_id, replaceOrderRequest)
+            replaceOrderRequest = ReplaceOrderRequest(
+                qty=qty, limit_price=price)
+            updated_order = self.trading_client.replace_order_by_id(
+                order_id, replaceOrderRequest)
             return self.format_order(updated_order)
         except alpaca.common.exceptions.APIError as e:
             print("Error updating order", e)
             raise e
-        
 
     def startTradeStream(self, callback: Awaitable):
         super().startTradeStream(callback)
@@ -391,7 +391,7 @@ class AlpacaBroker(BaseBroker):
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
         loop = asyncio.new_event_loop()
-        baseTimeFrame =tf(1, ITimeFrameUnit.Minute)
+        baseTimeFrame = tf(1, ITimeFrameUnit.Minute)
 
         for assetStream in assetStreams:
 
@@ -403,9 +403,10 @@ class AlpacaBroker(BaseBroker):
                     barData = self.format_on_bar(data)
                     timestamp = barData.index[0][1]
                     symbol = barData.index[0][0]
-                    # TODO: WE may be able to skip this if python still hass access to the local scope variables assetStream during the loop. 
+                    # TODO: WE may be able to skip this if python still hass access to the local scope variables assetStream during the loop.
                     # We may be able to use the assetStream variable directly in the callback instead of looping over it as we are passing by ref to the alpace callback.
-                    self.HISTORICAL_DATA[symbol]['bar'] =  pd.concat([self.HISTORICAL_DATA[symbol]['bar'], barData])
+                    self.HISTORICAL_DATA[symbol]['bar'] = pd.concat(
+                        [self.HISTORICAL_DATA[symbol]['bar'], barData])
                     # self.HISTORICAL_DATA[assetStream['symbol']]['bar'] =  pd.concat([self.HISTORICAL_DATA[assetStream['symbol']]['bar'], barData])
 
                     for asset in assetStreams:
@@ -425,8 +426,8 @@ class AlpacaBroker(BaseBroker):
                     self.HISTORICAL_DATA[assetStream['symbol']] = {
                         'bar': pd.DataFrame()}
                 elif self.HISTORICAL_DATA[assetStream['symbol']].get('bar') == None:
-                    self.HISTORICAL_DATA[assetStream['symbol']]['bar'] = pd.DataFrame()
-                
+                    self.HISTORICAL_DATA[assetStream['symbol']
+                                         ]['bar'] = pd.DataFrame()
 
                 if assetStream['asset_type'] == 'stock':
                     StockStreamCount += 1

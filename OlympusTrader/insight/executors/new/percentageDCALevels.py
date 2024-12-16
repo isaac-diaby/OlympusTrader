@@ -24,8 +24,8 @@ class PercentageDCALevels(BaseExecutor):
     dcalevels: int
 
 
-    def __init__(self, strategy, includes: list[str], dcaPercentage: float = 0.01, dcalevels: int = 5):
-        super().__init__(strategy, InsightState.NEW, "1.0")
+    def __init__(self, strategy, includes: list[str], dcaPercentage: float = 0.01, dcalevels: int = 5, **kwargs):
+        super().__init__(strategy, InsightState.NEW, "1.0", **kwargs)
         assert dcaPercentage > 0, "DCA percentage must be greater than 0."
         assert dcalevels > 0, "DCA levels must be greater than 0."
         self.includes = includes

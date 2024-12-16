@@ -30,8 +30,8 @@ class RSIDiverganceAlpha(BaseAlpha):
     atrColumn: str
     rsiColumn: str
 
-    def __init__(self, strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField=None):
-        super().__init__(strategy, "RSI_DIVERGANCE", "0.2", baseConfidenceModifierField)
+    def __init__(self, strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField=None, **kwargs):
+        super().__init__(strategy, "RSI_DIVERGANCE", "0.2", baseConfidenceModifierField, **kwargs)
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
             {"kind": 'rsi', "length": rsiPeriod, "scalar": 10}
