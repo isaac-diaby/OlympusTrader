@@ -121,41 +121,47 @@ def assetChart():
 @callback(
     Output("asset-chart", "seriesData"),
     [
-        Input('selected-asset-store', 'data'),
+        Input('active-chart-timeframes', 'data'),
         Input(STRATEGY_STORE_MAPPINGS.history.id, 'data')
     ],
     State("asset-chart", "seriesData"),
-    prevent_initial_call=True,
-    suppress_callback_exceptions=True)
-def update_asset_chart(selected_asset, history, seriesData):
-    if selected_asset is None or history is None:
+    suppress_callback_exceptions=True,
+    prevent_initial_call=True
+    )
+def update_asset_chart(selected_asset_timeframe: str, history, seriesData):
+    if selected_asset_timeframe is None or history is None:
         raise PreventUpdate
 
-    if selected_asset not in history:
+    if selected_asset_timeframe not in history:
         raise PreventUpdate
 
     # No history data
-    if len(history[selected_asset]) == 0:
+    if len(history[selected_asset_timeframe]) == 0:
         return no_update
 
-    if seriesData == None:
-        if selected_asset not in history:
+    ctx = dash.callback_context
+    if seriesData == None or ctx.triggered_id == 'active-chart-timeframes':
+        if selected_asset_timeframe not in history:
             return no_update
         else:
             seriesData = [[]]
-            seriesData[0].extend(history[selected_asset])
+            seriesData[0].extend(history[selected_asset_timeframe])
             return seriesData
 
-    if (len(seriesData[0]) == len(history[selected_asset])) or seriesData[0][-1]["time"] == history[selected_asset][-1]["time"]:
+    if (len(seriesData[0]) == len(history[selected_asset_timeframe])) or seriesData[0][-1]["time"] == history[selected_asset_timeframe][-1]["time"]:
         return no_update
 
-    indexdiff = len(history[selected_asset]) - len(seriesData[0])
-    seriesData[0].extend(history[selected_asset][-indexdiff:])
+    indexdiff = len(history[selected_asset_timeframe]) - len(seriesData[0])
+    seriesData[0].extend(history[selected_asset_timeframe][-indexdiff:])
 
     # print(history[selected_asset][-1])
     # print(seriesData[0][-1])
 
     return seriesData
+
+# @callback(
+#     Output('active-chart-timeframes', 'children'),
+#     [Input('asset-chart', 'timeframe')]
 
 
 def strategy_metrics_section(asset: IAsset):
@@ -194,6 +200,13 @@ def chart_section(asset: IAsset):
         children=[
             html.H2(f"{asset['symbol']} - Chart",
                     className="text-2xl font-semibold text-accent mb-4"),
+            html.H3("Timeframes",
+                    className="text-xl font-semibold text-accent mb-4 justify-self-center"),
+            dcc.Store(id='active-chart-timeframes'),
+            html.Div(
+                id='available-chart-timeframes',
+                className="flex gap-4 mb-4",
+            ),
             html.Div(
                 className="relative min-h-64 bg-primary-light rounded flex items-center justify-center",
                 children=assetChart()
@@ -240,9 +253,11 @@ layout = html.Div([
         Input({'type': 'asset-card', 'index': dash.dependencies.ALL}, 'n_clicks'),
     ],
     [State(STRATEGY_STORE_MAPPINGS.assets.id, 'data'),
-     State('selected-asset-store', 'data')]
+     State('selected-asset-store', 'data')],
+    suppress_callback_exceptions=True,
+    prevent_initial_call=True
 )
-def update_selected_asset_store(n_clicks, assets: IAsset, selected_asset_data):
+def update_selected_asset_store(n_clicks, assets: list[IAsset], selected_asset_data):
     ctx = dash.callback_context
 
     if not ctx.triggered or not n_clicks or all(click is None for click in n_clicks):
@@ -267,14 +282,13 @@ def update_selected_asset_store(n_clicks, assets: IAsset, selected_asset_data):
     return selected_asset_data, display_chart, [strategy_metrics_section(assets[clicked_index]), tradeTable("strategy", FILTERS={"symbol": assets[clicked_index]['symbol']})]
 
 # Callback to update the class names of all asset cards
-
-
 @callback(
     Output({'type': 'asset-card', 'index': dash.dependencies.ALL}, 'className'),
     [Input('selected-asset-store', 'data')],
     [State(STRATEGY_STORE_MAPPINGS.assets.id, 'data')]
+
 )
-def update_class_names(selected_asset_data, assets):
+def update_asset_card_class_names(selected_asset_data, assets):
     # default class names for the asset cards
     class_names = [
         "p-4 bg-primary-light rounded-lg shadow-md cursor-pointer bg-primary-light text-white hover:bg-accent hover:text-primary"] * len(assets)
@@ -288,3 +302,76 @@ def update_class_names(selected_asset_data, assets):
                 ] = "p-4 bg-primary-light rounded-lg shadow-md cursor-pointer border border-accent"
 
     return class_names
+
+# update active chart timeframe class names
+@callback(
+    Output({'type': 'timeframe-button', 'index': dash.dependencies.ALL}, 'className'),
+    [Input('active-chart-timeframes', 'data')],
+    [State({'type': 'timeframe-button', 'index': dash.dependencies.ALL}, 'id')],
+    suppress_callback_exceptions=True,
+    prevent_initial_call=True
+)
+def update_active_chart_timeframe_class_names(active_timeframes, timeframes):
+    if active_timeframes is None:
+        raise PreventUpdate
+    if timeframes is None:
+        raise PreventUpdate
+
+    # default class names for the asset cards
+    class_names = [
+        "bg-primary-light text-white text-sm rounded-lg px-2 py-2 hover:bg-accent hover:text-primary"] * len(timeframes)
+
+    # Update the class name of the selected timeframe card
+    for idx, frame in enumerate(timeframes):
+        if frame["index"] == active_timeframes:
+            class_names[idx] = "bg-accent text-primary text-sm rounded-lg px-2 py-2"
+    
+
+    return class_names 
+
+# Callback to populate the available timeframes once the chart is loaded
+@callback(
+    [Output('available-chart-timeframes', 'children')],
+    [Input('selected-asset-store', 'data')],
+    [State(STRATEGY_STORE_MAPPINGS.history.id, 'data')],
+    suppress_callback_exceptions=True,
+    prevent_initial_call=True
+)
+def update_active_chart_timeframes(selected_asset_data, history):
+    if selected_asset_data is None or history is None:
+        raise PreventUpdate
+
+    if selected_asset_data not in history:
+        raise PreventUpdate
+
+    timeframes =[tf for tf in history.keys() if tf.split('.')[0] == selected_asset_data]
+
+    return [[
+            html.Button(
+                # className="bg-primary-light text-white rounded-lg px-4 py-2 hover:bg-accent hover:text-primary",
+                children=frame,
+                id={'type': 'timeframe-button', 'index': frame}
+            ) for frame in timeframes
+    ]]
+# Callback to update the active chart timeframe
+@callback(
+    Output('active-chart-timeframes', 'data'),
+    [Input({'type': 'timeframe-button', 'index': dash.dependencies.ALL}, 'n_clicks')],
+    [
+        State('active-chart-timeframes', 'data')
+    ],
+    suppress_callback_exceptions=True,
+    prevent_initial_call=True
+)
+def update_active_chart_timeframes(n_clicks, current_timeframes):
+    ctx = dash.callback_context
+
+    if not ctx.triggered:
+        raise PreventUpdate
+    
+    # Get the id of the clicked timeframe card
+    active_timeframe = ctx.triggered_id.get('index', None)
+    if active_timeframe is None:
+        raise PreventUpdate
+    
+    return active_timeframe if current_timeframes != active_timeframe else no_update
