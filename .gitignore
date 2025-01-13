@@ -16,4 +16,6 @@ strategy/*
 
 docs/build/*
 
+standaloneMt5config/
+
 deploy.sh

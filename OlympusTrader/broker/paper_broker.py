@@ -140,8 +140,7 @@ class PaperBroker(BaseBroker):
 
         if self.DataFeed == 'yf':
             symbol = asset['symbol'].replace('/', '-')
-            formatTF = f'{resolution.amount_value}{
-                resolution.unit_value[0].lower()}'
+            formatTF = f'{resolution.amount_value}{resolution.unit_value[0].lower()}'
             if self.MODE == IStrategyMode.BACKTEST:
                 delta: datetime.timedelta = start - \
                     self.get_current_time if shouldDelta else datetime.timedelta()
@@ -529,13 +528,13 @@ class PaperBroker(BaseBroker):
                             assert order['side'] == IOrderSide.BUY, "Order side must be BUY for closing a SELL position"
                             self.Positions[symbol][orderId]['qty'] += order['qty']
 
-                        # Clear buying power wwithheld by the order
-                        entryPrince = order['filled_price'] if order[
+                        # Clear buying power withheld by the order
+                        entryPrice = order['filled_price'] if order[
                             'filled_price'] != None else self.Positions[symbol][orderId]['avg_entry_price']
                         self.Account.cash += max(
-                            np.round((order['qty'] * entryPrince) / self.LEVERAGE, 2), 0)
+                            np.round((order['qty'] * entryPrice) / self.LEVERAGE, 2), 0)
                         if self.Account.cash == 0:
-                            # No buying power left close the positiopn
+                            # No buying power left close the position
                             order['status'] = ITradeUpdateEvent.CANCELED
                             self.CANCELED_ORDERS.append(order)
                             raise BaseException({
@@ -560,23 +559,17 @@ class PaperBroker(BaseBroker):
                                 "Not enough BP - Position Update Init:", e)
 
                         return
-                        # order['status'] = ITradeUpdateEvent.CANCELED
-                        # self.CANCELED_ORDERS.append(order)
-                        # raise BaseException({
-                        #     "code": "insufficient_funds",
-                        #     "data": {"order_id": order['order_id']}
-                        # })
 
-                    entryPrince = order['filled_price'] if order['filled_price'] != None else currentBar.close
-                    market_value = entryPrince * order['qty']
+                    entryPrice = order['filled_price'] if order['filled_price'] != None else currentBar.close
+                    market_value = entryPrice * order['qty']
                     self.Positions[symbol][orderId] = IPosition(
                         asset=order['asset'],
-                        avg_entry_price=entryPrince,
+                        avg_entry_price=entryPrice,
                         qty=order['qty'] if order['side'] == IOrderSide.BUY else -order['qty'],
                         side=order['side'],
                         market_value=market_value,
                         cost_basis=market_value,
-                        current_price=entryPrince,
+                        current_price=entryPrice,
                         unrealized_pl=0
                     )
 
@@ -584,10 +577,8 @@ class PaperBroker(BaseBroker):
                     self.Account.cash -= np.round(
                         marginRequired/self.LEVERAGE, 2)
 
-                    # logging.info(f"Filled a New Position: {self.Positions[symbol][orderId]}")
-
                 case ITradeUpdateEvent.CANCELED:
-                    # ORder will just be canclled
+                    # Order will just be canceled
                     pass
 
         if oldPosition:
@@ -604,12 +595,11 @@ class PaperBroker(BaseBroker):
                 # No price change in the position since the last update
                 return
 
-            # or order['status'] != ITradeUpdateEvent.CLOSED or not order['stop_price']:
             if oldPosition != 0:
                 # Update the position market value
                 self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
                     np.abs(oldPosition['qty'])
-                # qunaity can be negative for short positions
+                # quantity can be negative for short positions
 
                 # Update the unrealized PnL
                 self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
@@ -1010,7 +1000,7 @@ class PaperBroker(BaseBroker):
                 'feature') == None else asset['feature']
             if asset.get('stored') and asset.get('stored_path'):
                 bar_data_path = asset['stored_path'] + \
-                    f'/bar/{asset['symbol']}_{asset["time_frame"]
+                    f'/bar/{asset["symbol"]}_{asset["time_frame"]
                                               }_{self.START_DATE}-{self.END_DATE}.h5'
 
             if asset.get('stored'):
@@ -1557,6 +1547,8 @@ class PaperBroker(BaseBroker):
     def update_account_balance(self):
         self.ACCOUNT.buying_power = max(np.round(
             self.ACCOUNT.cash * self.LEVERAGE, 2), 0)
+        self.ACCOUNT.equity = self.ACCOUNT.cash + sum(
+            position['market_value'] for positions in self.Positions.values() for position in positions.values())
 
     @property
     def Account(self) -> IAccount:

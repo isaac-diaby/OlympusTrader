@@ -31,7 +31,7 @@
 **/obj
 
 
-**/Docker
+
 **/bin
 **/etc
 **/lib
@@ -42,5 +42,6 @@
 data/**/*
 examples/**/*
 docs/**/*
+config/**/*
 
 # README.md

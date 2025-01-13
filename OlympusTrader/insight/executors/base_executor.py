@@ -3,7 +3,7 @@ import abc
 from typing import TYPE_CHECKING, Optional, Self, override
 from pandas import DataFrame
 
-from ...broker.interfaces import IQuote
+from ...broker.interfaces import IAsset, IQuote
 
 from ..insight import Insight, InsightState, StrategyTypes
 
@@ -63,9 +63,10 @@ class BaseExecutor(abc.ABC):
     """Set of allowed assets for the executor"""
     ALLOWED_ALPHAS: Optional[set[str]] = set()
     """Set of allowed alphas for the executor"""
+    ALLOW_INSIGHT_CHANGE_STATE: bool = True
 
     @abc.abstractmethod
-    def __init__(self, strategy: BaseStrategy, state: InsightState, version: float = "1.0", allowed_assets:  Optional[set[str]] = None, allowed_alphas: Optional[set[str]] = None) -> None:
+    def __init__(self, strategy: BaseStrategy, state: InsightState, version: float = "1.0", allowed_assets:  Optional[set[str]] = None, allowed_alphas: Optional[set[str]] = None, allowed_insight_change_state: bool = True) -> None:
         self.NAME = self.__class__.__name__
         self.VERSION = version
 
@@ -77,6 +78,8 @@ class BaseExecutor(abc.ABC):
             assert isinstance(
                 allowed_assets, set), "Allowed assets must be a set"
             self.ALLOWED_ASSETS = allowed_assets
+
+        self.ALLOW_INSIGHT_CHANGE_STATE = allowed_insight_change_state
 
         if allowed_alphas is not None:
             assert isinstance(
@@ -98,6 +101,8 @@ class BaseExecutor(abc.ABC):
 
     def changeState(self, insight: Insight, state: InsightState, message: str = None) -> None:
         """Change the state of the insight"""
+        if not self.ALLOW_INSIGHT_CHANGE_STATE:
+            return
         self.STRATEGY.insights[insight.INSIGHT_ID].updateState(
             state, f"{self.NAME:^20} : {message}")
 
@@ -112,6 +117,10 @@ class BaseExecutor(abc.ABC):
     def get_previos_bar(self, symbol: str) -> DataFrame:
         """Get the previous bar of a symbol"""
         return self.get_history(symbol).iloc[-2]
+    
+    def get_asset(self, symbol: str) -> IAsset:
+        """Get the asset of a symbol"""
+        return self.STRATEGY.UNIVERSE.get(symbol)
 
     def get_latest_quote(self, insight: Insight) -> IQuote:
         """Get the latest quote of an insight"""

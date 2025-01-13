@@ -17,7 +17,7 @@ from alpaca.data.enums import DataFeed, CryptoFeed
 from alpaca.common.enums import BaseURL
 from alpaca.trading.models import Position, Order, TradeUpdate
 from alpaca.data.models import Bar, Quote
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLimitOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest, ReplaceOrderRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLimitOrderRequest, StopOrderRequest, ClosePositionRequest, OrderSide, OrderType, OrderClass, TimeInForce, TakeProfitRequest, StopLossRequest, ReplaceOrderRequest
 from alpaca.trading.stream import TradingStream
 # from alpaca.trading.enums import AssetClass
 
@@ -292,8 +292,7 @@ class AlpacaBroker(BaseBroker):
                 stop_price=insight.SL,
                 # stop_price=round(insight.SL-0.01 if insight.side == 'long' else insight.SL+0.01, 2),
             )
-        if insight.limit_price:
-            orderRequest["limit_price"] = insight.limit_price
+        
 
         if asset['asset_type'] == 'crypto':
             # "crypto orders not allowed for advanced order_class: otoco or OTO"}
@@ -304,9 +303,41 @@ class AlpacaBroker(BaseBroker):
                 case IOrderType.MARKET:
                     req = MarketOrderRequest(**orderRequest)
                 case IOrderType.LIMIT:
-                    req = LimitOrderRequest(**orderRequest)
+                    if insight.limit_price:
+                        orderRequest["limit_price"] = insight.limit_price
+                        req = LimitOrderRequest(**orderRequest)
                 case IOrderType.STOP:
-                    req = StopLimitOrderRequest(**orderRequest)
+                    # insight.type == IOrderType.STOP
+                    if insight.stop_price:
+                        if insight.ASSET['asset_type'] == 'crypto':
+                            orderRequest["limit_price"] = insight.stop_price
+                            req = LimitOrderRequest(**orderRequest)
+                        else:
+                            orderRequest['stop_price'] = insight.stop_price
+                            req = StopOrderRequest(**orderRequest)
+                    else:
+                        print(
+                            f"ALPACA: Order Type {insight.type} needs a stop price")
+                        return None
+                case IOrderType.STOP_LIMIT:
+                    # insight.type == IOrderType.STOP_LIMIT
+                    if insight.stop_price and insight.limit_price:
+                        if insight.ASSET['asset_type'] == 'crypto':
+                            orderRequest["limit_price"] = insight.stop_price
+                            req = LimitOrderRequest(**orderRequest)
+                        else:
+                            orderRequest['stop_price'] = insight.stop_price
+                            orderRequest['limit_price'] = insight.limit_price
+                            req = StopLimitOrderRequest(**orderRequest)
+                    else:
+                        print(
+                            f"ALPACA: Order Type {insight.type} needs a stop price and limit price")
+                        return None
+                case IOrderType.TRAILING_STOP:
+                    print(
+                        f"ALPACA: Order Type not supported {insight.type} ")
+                    return None
+                # TODO: insight.type == IOrderType.TRAILING_STOP
                 case _:
                     print(
                         f"ALPACA: Order Type not supported {insight.type} ")

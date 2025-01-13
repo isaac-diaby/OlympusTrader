@@ -1,0 +1,32 @@
+
+services:
+  trader:
+    restart: always
+    # container_name: mt5
+    build:
+      context: ./
+      # dockerfile: docker/trader.Dockerfile # This is for strategy in the strategies directory, just make sure your have a pyproject.toml file in the root directory
+      dockerfile: Docker/localTrader.mt5.Dockerfile # like trader.Dockerfile but for internal use - local framework source code
+      args:
+        STRATEGY: ${STRATEGY}
+    volumes:
+      - ./standaloneMt5config:/config
+    ports:
+      - 50000:50000 # This is the port for the SharedStrategyManager (SSM) to extract performance metrics
+      - 8050:8050 # This is the port the dashboard will be available on
+      - 3000:3000 # This is the port the kasm VNC will be available on
+      #  - 8001:8001 # the remote connection port to mt5 from another client with mt5linex
+    env_file:
+      # - .env
+      - stack.env
+    healthcheck:
+      # test: ["CMD-SHELL", "nc -vz trader 50000"]
+      # test: ["CMD-SHELL", "wget -q --spider trader:8050 -O /dev/null"]
+      interval: "5s"
+      retries: 300
+    environment:
+      - CUSTOM_USER=trader
+      - PASSWORD=supersecurepw123
+
+     
+     

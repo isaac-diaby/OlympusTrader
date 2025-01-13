@@ -1,12 +1,3 @@
-# Comments are provided throughout this file to help you get started.
-# If you need more help, visit the Docker compose reference guide at
-# https://docs.docker.com/go/compose-spec-reference/
-
-# Here the instructions define your application as a service called "server".
-# This service is built from the Dockerfile in the current directory.
-# You can add other services your application may depend on here, such as a
-# database or a cache. For examples, see the Awesome Compose repository:
-# https://github.com/docker/awesome-compose
 services:
   trader:
     restart: always
@@ -15,10 +6,10 @@ services:
       # dockerfile: docker/trader.Dockerfile # This is for strategy in the strategies directory, just make sure your have a pyproject.toml file in the root directory
       dockerfile: Docker/localTrader.Dockerfile # like trader.Dockerfile but for internal use - local framework source code
       args:
-        STRATEGY: ${STRATEGY:-SuperTrendStrategy}
+        STRATEGY: ${STRATEGY}
     ports:
-      - 50000:50000
-      - 8050:8050
+      - 50000:50000 # This is the port for the SharedStrategyManager (SSM) to extract performance metrics
+      - 8050:8050 # This is the port the dashboard will be available on
     env_file:
       # - .env
       - stack.env

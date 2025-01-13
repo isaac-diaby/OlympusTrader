@@ -111,8 +111,12 @@ class BaseAlpha(abc.ABC):
     def get_previos_bar(self, symbol: str) -> DataFrame:
         return self.get_history(symbol).iloc[-2]
 
-    def get_latest_quote(self, insight: Insight) -> IQuote:
-        return self.STRATEGY.broker.get_latest_quote(insight.ASSET)
+    def get_latest_quote(self, asset: IAsset) -> IQuote:
+        if asset:
+            return self.STRATEGY.broker.get_latest_quote(asset)
+        return None    
+    def get_asset(self, symbol: str) -> IAsset:
+        return self.STRATEGY.UNIVERSE.get(symbol)
 
     def isAllowedAsset(self, symbol: str) -> bool:
         """Check if the asset is allowed"""

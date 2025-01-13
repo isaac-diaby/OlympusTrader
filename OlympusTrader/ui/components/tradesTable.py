@@ -44,6 +44,8 @@ def tradeRow(insight: IInsight, position: Optional[IPosition]):
         html.Td(
             insight["strategy"], className="px-6 py-4 whitespace-nowrap text-sm text-white"),
         html.Td(
+            insight["state"], className="px-6 py-4 whitespace-nowrap text-sm text-white"),
+        html.Td(
             insight["contracts"] if insight["useContractSize"] else insight["quantity"], className="px-6 py-4  whitespace-nowrap text-sm text-white"),
         html.Td(
             insight["limit_price"], className="px-6 py-4 whitespace-nowrap text-sm text-white"),
@@ -71,6 +73,8 @@ def tradeTable(index_id, FILTERS={}):
                    html.Th(
                        "Strategy", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
                    html.Th(
+                       "State", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
+                   html.Th(
                        "size", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
                    html.Th(
                        "Entry", className="px-6 py-3 text-left text-xs font-medium text-accent uppercase tracking-wider"),
@@ -97,7 +101,7 @@ def tradeTable(index_id, FILTERS={}):
               State({'type': 'trades-table-body', 'index': MATCH}, 'children')
 ])
 def update_trade_table_body(insights, positions, filter, children):
-    def filterInsights(insights, filters: Optional[dict]):
+    def filterInsights(insights: dict[str, IInsight], filters: Optional[dict]):
         filterdInsights = []
 
         if filter == None:
@@ -119,6 +123,7 @@ def update_trade_table_body(insights, positions, filter, children):
 
     entries = filterInsights(insights, filter)
 
+    entries.sort(key=lambda x: x["created_at"])
     # If there are no entries and there are children, return no update
     if children != None and len(entries) == 0:
         return []

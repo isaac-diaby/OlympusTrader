@@ -1,6 +1,6 @@
 from ..base_executor import BaseExecutor
 from ...insight import InsightState
-from ....broker.interfaces import IOrderType
+from ....broker.interfaces import IOrderSide, IOrderType
 
 
 class MarketOrderEntryPriceExecutor(BaseExecutor):
@@ -22,13 +22,23 @@ class MarketOrderEntryPriceExecutor(BaseExecutor):
         super().__init__(strategy, InsightState.NEW, "1.0", **kwargs)
 
     def run(self, insight):
-        if insight.type != IOrderType.MARKET:
+        if insight.type != IOrderType.MARKET or insight.limit_price:
             return self.returnResults(True, True, "Insight already has a limit price set. Passing to next executor.")
         try:
             # Set the limit price to the current close price
             latestBar = self.get_latest_bar(insight.symbol)
-            self.STRATEGY.insights[insight.INSIGHT_ID].update_limit_price(
-                latestBar.close)
-            return self.returnResults(True, True, f"limit price set to current close price: {latestBar.close}")
+            latest_quote = self.get_latest_quote(insight)
+            atPrice = latestBar.close
+
+            match insight.side:
+                case IOrderSide.BUY:
+                    if latest_quote["ask"]:
+                        atPrice = latest_quote["ask"]
+                case IOrderSide.SELL:
+                    if latest_quote["bid"]:
+                        atPrice = latest_quote["bid"]
+            
+            insight.update_limit_price(atPrice or latestBar.close)
+            return self.returnResults(True, True, f"limit price set to current close price: {atPrice}")
         except Exception as e:
             return self.returnResults(False, False, f"Error setting limit price: {e}")

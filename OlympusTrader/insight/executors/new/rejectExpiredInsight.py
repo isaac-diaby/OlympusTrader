@@ -19,17 +19,17 @@ class RejectExpiredInsightExecutor(BaseExecutor):
     def run(self, insight):
         # Check if the insight has expired
         try:
-            hasExpired = self.STRATEGY.insights[insight.INSIGHT_ID].hasExpired(
-                True)
+            hasExpired = insight.hasExpired(
+                self.ALLOW_INSIGHT_CHANGE_STATE)
             if hasExpired == None:
                 response = self.returnResults(
                     True, True, "Insight state is not applicable for expiration check.")
                 return response
-            if hasExpired == True:
+            elif hasExpired == True:
                 response = self.returnResults(
                     False, True, "Insight has expired. Rejecting insight.")
                 return response
-
-            return self.returnResults(True, True)
+            else:
+                return self.returnResults(True, True)
         except Exception as e:
             return self.returnResults(False, False, f"Error rejecting expired insight: {e}")

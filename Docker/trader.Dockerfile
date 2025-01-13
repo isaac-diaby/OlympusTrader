@@ -89,8 +89,8 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 ARG STRATEGY
 COPY strategies/$STRATEGY strategy
-
 ENV STRATEGY=$STRATEGY
+EXPOSE 8050 50000
 CMD ["python", "strategy"]
 # CMD ["python", "strategy/__init__.py"]
 # CMD ["python", "-m", "strategy.$STRATEGY"]

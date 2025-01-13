@@ -84,12 +84,12 @@ class RSIDiverganceAlpha(BaseAlpha):
             # and marketState < 0):
             if (not np.isnan(latestBar['RSI_Divergance_Long'])):
                 # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
-                TP = self.STRATEGY.tools.dynamic_round(
-                    (latestBar.close + (latestIATR*3.5)), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    (latestBar.close - (latestIATR*1.5)), symbol)
                 ENTRY = previousBar.high if (abs(
                     previousBar.high - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+                TP = self.STRATEGY.tools.dynamic_round(
+                    (ENTRY + (latestIATR*3.5)), symbol)
+                SL = self.STRATEGY.tools.dynamic_round(
+                    (ENTRY - (latestIATR*1.5)), symbol)
                 # time to live unfilled
                 TTLUF = self.STRATEGY.tools.calculateTimeToLive(
                     latestBar['close'], ENTRY, latestIATR)
@@ -103,12 +103,12 @@ class RSIDiverganceAlpha(BaseAlpha):
             # and marketState > 0):
             if (self.STRATEGY.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short'])):
                 # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
-                TP = self.STRATEGY.tools.dynamic_round(
-                    (latestBar.close - (latestIATR*3.5)), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    (latestBar.close + (latestIATR*1.5)), symbol)
                 ENTRY = previousBar.low if (abs(
                     previousBar.low - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+                TP = self.STRATEGY.tools.dynamic_round(
+                    (ENTRY - (latestIATR*3.5)), symbol)
+                SL = self.STRATEGY.tools.dynamic_round(
+                    (ENTRY + (latestIATR*1.5)), symbol)
                 # time to live unfilled
                 TTLUF = self.STRATEGY.tools.calculateTimeToLive(
                     latestBar['close'], ENTRY, latestIATR)

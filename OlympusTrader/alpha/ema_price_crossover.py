@@ -82,10 +82,10 @@ class EMAPriceCrossoverAlpha(BaseAlpha):
     def create_insight(self, order_side: IOrderSide, symbol: str, latestBar, previousBar, latestIATR, latestBarIEMA, baseConfidence: float):
         if order_side == IOrderSide.BUY:
             TP = self.STRATEGY.tools.dynamic_round(latestBar['high']+(latestIATR*3.5), symbol)
-            SL = self.STRATEGY.tools.dynamic_round(max(previousBar['low']-(.5*latestIATR), latestBarIEMA-latestIATR*1.5), symbol)
+            SL = self.STRATEGY.tools.dynamic_round(max(previousBar['low']-(latestIATR), latestBarIEMA-latestIATR*1.5), symbol)
         else:
             TP = self.STRATEGY.tools.dynamic_round(latestBar['low']-(latestIATR*3.5), symbol)
-            SL = self.STRATEGY.tools.dynamic_round(min(previousBar['high']+(.5*latestIATR), latestBarIEMA+latestIATR*1.5), symbol)
+            SL = self.STRATEGY.tools.dynamic_round(min(previousBar['high']+(latestIATR), latestBarIEMA+latestIATR*1.5), symbol)
 
         ENTRY = self.STRATEGY.tools.dynamic_round(latestBarIEMA, symbol)
         TTLUF = self.STRATEGY.tools.calculateTimeToLive(latestBar['close'], ENTRY, latestIATR)
