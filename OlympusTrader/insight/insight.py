@@ -384,7 +384,7 @@ class Insight:
                             self.symbol,
                             StrategyTypes.MANUAL,
                             self.tf,
-                            self.quantity,
+                            self.quantity if (self.state == InsightState.FILLED) else self._partial_filled_quantity,
                             stop_price=price,
                             periodUnfilled=None,
                             periodTillTp=None,
@@ -681,12 +681,12 @@ class Insight:
 
         if self.SL:
             if (limit_price < self.SL and self.side == IOrderSide.BUY):
-                print("invalid entry insight: limit price is above the stop loss for a buy order")
+                print(f"invalid entry insight: limit price is below the stop loss for a buy order - limit: {limit_price} < SL: {self.SL}")
                 return False
             elif (
                 limit_price > self.SL and self.side == IOrderSide.SELL
             ):
-                print("invalid entry insight: limit price is below the stop loss for a sell order")
+                print(f"invalid entry insight: limit price is above the stop loss for a sell order - limit: {limit_price} > SL: {self.SL}")
                 return False
         if self.TP:
             if self.side == IOrderSide.BUY:

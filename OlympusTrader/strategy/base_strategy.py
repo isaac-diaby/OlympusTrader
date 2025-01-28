@@ -220,29 +220,49 @@ class BaseStrategy(abc.ABC):
     def executeInsight(self, insight: Insight):
         """Called for each active insight in the strategy.
         it allows you to conrol the execution of the insight and manage the order.
+        ### Example:
+        ```python
+        def executeInsight(self, insight: Insight):
+            match insight.state:
+                case InsightState.NEW:
+                    pass
+                case InsightState.EXECUTED:
+                    pass
+                case InsightState.FILLED:
+                    pass
+                case InsightState.CLOSED:
+                    pass
+                case InsightState.REJECTED:
+                    pass
+                case InsightState.CANCELED:
+                    pass
+                case _:
+                    pass
+        ```
+
         """
         print(
             "IS THIS WORKING, Add executeInsight Function? ->  async def executeInsight(self, symbol: str):"
         )
-        match insight.state:
-            # case InsightState.NEW:
-            #     pass
-            # case InsightState.EXECUTED:
-            #     pass
-            # case InsightState.FILLED:
-            #     pass
-            # case InsightState.CLOSED:
-            #     pass
-            # case InsightState.REJECTED:
-            #     pass
-            # case InsightState.CANCELED:
-            #     pass
-            case _:
-                print(
-                    "Implement the insight state in the executeInsight function:",
-                    insight.state,
-                )
-                pass
+        # match insight.state:
+        #     # case InsightState.NEW:
+        #     #     pass
+        #     # case InsightState.EXECUTED:
+        #     #     pass
+        #     # case InsightState.FILLED:
+        #     #     pass
+        #     # case InsightState.CLOSED:
+        #     #     pass
+        #     # case InsightState.REJECTED:
+        #     #     pass
+        #     # case InsightState.CANCELED:
+        #     #     pass
+        #     case _:
+        #         print(
+        #             "Implement the insight state in the executeInsight function:",
+        #             insight.state,
+        #         )
+        #         pass
 
     @abc.abstractmethod
     def teardown(self):

@@ -313,10 +313,10 @@ class Mt5Broker(BaseBroker):
 
     def get_latest_quote(self, asset: IAsset) -> IQuote:
         try:
-            quote = mt5.symbol_info_tick(asset.symbol)
+            quote = mt5.symbol_info_tick(asset.get('symbol'))
             if not quote:
                 return None
-            return self.format_on_quote(quote, asset.symbol)
+            return self.format_on_quote(quote, asset.get('symbol'))
         except Exception as e:
             print(f"Error: {e}")
             return None
@@ -718,7 +718,7 @@ class Mt5Broker(BaseBroker):
             bid_size=0,
             ask_size=0,
             volume=quote.volume,
-            timestamp=self.time,
+            timestamp=pd.Timestamp(quote.time, unit="s", tz=timezone.utc),
         )
         return data
 
