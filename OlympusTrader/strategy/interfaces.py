@@ -34,7 +34,7 @@ class IStrategyMode(Enum):
 
 
 @dataclass
-class IStrategyMatrics:
+class IStrategyMetrics:
     start_date: Optional[datetime] = None
     """ The start date """
     end_date: Optional[datetime] = None

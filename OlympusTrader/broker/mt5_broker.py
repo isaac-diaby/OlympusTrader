@@ -430,7 +430,7 @@ class Mt5Broker(BaseBroker):
             else mt5.ORDER_TYPE_SELL,
             "deviation": deviation,
             "magic": 234777,
-            "comment": f"OlympusTrader Open - {insight.strategyType.value}",
+            "comment": f"OlympusTrader Open - {insight.strategyType}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_RETURN,
         }
@@ -478,7 +478,7 @@ class Mt5Broker(BaseBroker):
         if insight.order_id:
             # This is likely a close order / reduce order
             request["position"] = insight.order_id
-            request["comment"] = f"OlympusTrader Close - {insight.strategyType.value}"
+            request["comment"] = f"OlympusTrader Close - {insight.strategyType}"
 
         try:
             check_result = mt5.order_check(request)

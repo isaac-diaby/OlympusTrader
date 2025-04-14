@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 
 from OlympusTrader.broker.interfaces import IAccount, IPosition
 from OlympusTrader.insight.insight import Insight
-from OlympusTrader.strategy.interfaces import IStrategyMatrics, IStrategyMode
+from OlympusTrader.strategy.interfaces import IStrategyMetrics, IStrategyMode
 from OlympusTrader.ui.components.accountBalanceCard import AccountBalanceCard
 from OlympusTrader.ui.components.dashboardCards import dashboardCard, dashboardCardInsights, dashboardCardMode
 from OlympusTrader.ui.components.matricItem import MatricItem
@@ -25,7 +25,7 @@ register_page(__name__, title="OlympusTrader - Overview", path='/')
 #     pd.date_range(start="2023-01-01", periods=100), np.random.randint(40_000, 60_000, 100))]
 
 
-def account_card_section_populate(account: IAccount, metrics: IStrategyMatrics, insights: Insight, mode: IStrategyMode):
+def account_card_section_populate(account: IAccount, metrics: IStrategyMetrics, insights: Insight, mode: IStrategyMode):
     alltimeChange = round(account["equity"] - metrics["starting_cash"], 2)
 
     # print(insight)
@@ -95,7 +95,7 @@ strategy_metrics_section = html.Div(
     # prevent_initial_call=True,
 
 )
-def update_account_card_section(metrics: IStrategyMatrics):
+def update_account_card_section(metrics: IStrategyMetrics):
     currency = "£"
     if metrics is None:
         return  None

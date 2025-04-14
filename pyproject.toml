@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "olympustrader"
-version = "0.3.5.2"
+version = "0.3.5.3"
 description = "trading bot framework"
 authors = ["Moustapha Diaby <me@isaacdiaby.tech>"]
 license = "Apache 2.0"
@@ -42,11 +42,12 @@ python-dotenv = "^1.0.1"
 nest-asyncio = "^1.6.0"
 tables = "^3.10.1"
 setuptools = "^72.1.0"
-vectorbt = "^0.26.2"
+vectorbt = "0.27.2"
 quantstats = "^0.0.62"
 ccxt = "^4.4.38"
 dash = "^2.18.2"
 dash-tvlwc = "^0.1.1"
+tqdm = "^4.67.1"
 
 
 

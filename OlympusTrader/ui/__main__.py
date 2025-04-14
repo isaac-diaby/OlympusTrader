@@ -11,7 +11,7 @@ import pandas as pd
 from OlympusTrader.broker.interfaces import IAccount, IAsset, IOrderSide, IPosition, ITradeUpdateEvent
 from OlympusTrader.insight.insight import Insight, InsightState, StrategyDependantConfirmation
 # from OlympusTrader.strategy.base_strategy import BaseStrategy
-from OlympusTrader.strategy.interfaces import IStrategyMatrics, IStrategyMode
+from OlympusTrader.strategy.interfaces import IStrategyMetrics, IStrategyMode
 from OlympusTrader.ui.helper import sharedStrategyManager
 from OlympusTrader.ui.helper.tradingViewHelper import history_to_trading_view_format
 from OlympusTrader.ui.interfaces.store import STRATEGY_STORE_MAPPINGS, STRATEGY_SYNC_MAPPING
@@ -192,7 +192,7 @@ def update_strategy_data(n_intervals):
     MODE: IStrategyMode = str(SSM_manager.get_mode().strip("'"))
     INSIGHTS: dict[str, Insight] = {k: v for k, v in SSM_manager.get_insights().items()}
     HISTORY = { k : history_to_trading_view_format(v) for k, v in SSM_manager.get_history().items() }
-    METRICS: IStrategyMatrics =  {k: v for k, v in SSM_manager.get_metrics().items()}
+    METRICS: IStrategyMetrics =  {k: v for k, v in SSM_manager.get_metrics().items()}
     
     BROKER_TIME: datetime.datetime = int(str(SSM_manager.get_time()).split('.')[0])
     # print("Broker Time:", BROKER_TIME)

@@ -32,12 +32,12 @@ class MarketOrderEntryPriceExecutor(BaseExecutor):
 
             match insight.side:
                 case IOrderSide.BUY:
-                    if latest_quote["ask"]:
+                    if (latest_quote is not None )  and latest_quote["ask"]:
                         atPrice = latest_quote["ask"]
                 case IOrderSide.SELL:
-                    if latest_quote["bid"]:
+                    if (latest_quote is not None ) and latest_quote["bid"]:
                         atPrice = latest_quote["bid"]
-            
+
             insight.update_limit_price(atPrice or latestBar.close)
             return self.returnResults(True, True, f"limit price set to current close price: {atPrice}")
         except Exception as e:

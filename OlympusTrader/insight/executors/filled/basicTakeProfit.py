@@ -43,6 +43,10 @@ class BasicTakeProfitExecutor(BaseExecutor):
             shouldClose = False
             atPrice = None
 
+            if len(insight.TP) == 0:
+                return self.returnResults(
+                    True, True, "Take profit price has not been set."
+                )
             currentTP = insight.TP[0]
             match insight.side:
                 case IOrderSide.BUY:

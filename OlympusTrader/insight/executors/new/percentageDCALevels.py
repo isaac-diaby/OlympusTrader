@@ -41,7 +41,7 @@ class PercentageDCALevels(BaseExecutor):
         if insight.quantity is None:
             return self.returnResults(True, True, "Insight does not have a desired quantity.")
         # Check if the insight is a parent insight
-        if insight.PARANT:
+        if insight.PARENT:
             return self.returnResults(True, True, "Insight is not a parent insight.")
         try:
             latestBar = self.get_latest_bar(insight.symbol)

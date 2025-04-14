@@ -37,7 +37,7 @@ from .sharedmemory import SharedStrategyManager
 from .interfaces import (
     IBacktestingConfig,
     IMarketDataStream,
-    IStrategyMatrics,
+    IStrategyMetrics,
     IStrategyMode,
 )
 from ..insight.insight import Insight, InsightState
@@ -113,7 +113,7 @@ class BaseStrategy(abc.ABC):
     BACKTESTING_RESULTS: dict[str, Portfolio] = {}
     """Backtesting results"""
 
-    MATRICS: IStrategyMatrics = IStrategyMatrics()
+    METRICS: IStrategyMetrics = IStrategyMetrics()
 
     @abc.abstractmethod
     def __init__(
@@ -176,7 +176,7 @@ class BaseStrategy(abc.ABC):
             self.ORDERS = self.BROKER.get_orders()
 
             # Initialise the strategy metrics
-            self.MATRICS.updateStart(
+            self.METRICS.updateStart(
                 (
                     pd.Timestamp(self.BROKER.get_current_time, tz="UTC")
                     - datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
@@ -455,14 +455,14 @@ class BaseStrategy(abc.ABC):
             self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
             self.saveBacktestResults()
         print("Simulation Account", self.BROKER.Account)
-        self.MATRICS.updateEnd(
+        self.METRICS.updateEnd(
             (
                 pd.Timestamp(self.BROKER.get_current_time, tz="UTC")
                 - datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
             ).total_seconds(),
             self.BROKER.Account.equity,
         )
-        print("Trade Matrics: ", self.MATRICS)
+        print("Trade METRICS: ", self.METRICS)
 
         exit(0)
 
@@ -703,10 +703,10 @@ class BaseStrategy(abc.ABC):
                                         orderdata["filled_qty"],
                                         orderdata["order_id"],
                                     )
-                                    self.MATRICS.positionOpened()
+                                    self.METRICS.positionOpened()
                                 except AssertionError as e:
                                     continue
-                                if insight.PARANT == None and len(insight.CHILDREN) > 0:
+                                if insight.PARENT == None and len(insight.CHILDREN) > 0:
                                     # set the childe insight to be active
                                     for uid, childInsight in insight.CHILDREN.items():
                                         self.add_insight(childInsight)
@@ -794,21 +794,21 @@ class BaseStrategy(abc.ABC):
 
                                         closePnL = insight.partial_closes[p].getPL()
                                         if insight.uses_contract_size:
-                                            # TODO: might not to do this if quantity is in units of the contract size
                                             closePnL = closePnL * insight.ASSET.get(
                                                 "contract_size"
                                             )
                                         # Update the metrics with the closed PnL
-                                        self.MATRICS.positionClosed(closePnL)
+                                        self.METRICS.positionClosed(closePnL)
                                         return
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
                         if (
+                            # (
+                            #     (orderdata["qty"] == insight.quantity)
+                            #     and (orderdata["side"] != insight.side)
+                            #     and insight.close_order_id == None
+                            # )
+                            # or 
                             (
-                                (orderdata["qty"] == insight.quantity)
-                                and (orderdata["side"] != insight.side)
-                                and insight.close_order_id == None
-                            )
-                            or (
                                 (insight.close_order_id != None)
                                 and (insight.close_order_id == orderdata["order_id"])
                             )
@@ -856,30 +856,15 @@ class BaseStrategy(abc.ABC):
                                         orderdata["filled_qty"],
                                     )
 
-                                closePnL = 0
-                                if insight.side == IOrderSide.BUY:
-                                    closePnL = round(
-                                        (
-                                            (insight.close_price - insight.limit_price)
-                                            * insight.quantity
-                                        ),
-                                        2,
-                                    )
-                                else:
-                                    closePnL = round(
-                                        (
-                                            (insight.limit_price - insight.close_price)
-                                            * insight.quantity
-                                        ),
-                                        2,
-                                    )
+                        
+                                closePnL = insight.getPL(False) or 0
                                 if insight.uses_contract_size:
                                     # TODO: might not to do this if quantity is in units of the contract size
                                     closePnL = closePnL * insight.ASSET.get(
                                         "contract_size"
                                     )
 
-                                self.MATRICS.positionClosed(closePnL)
+                                self.METRICS.positionClosed(closePnL)
                                 return  # No need to continue
                             except AssertionError as e:
                                 continue
@@ -1054,6 +1039,7 @@ class BaseStrategy(abc.ABC):
             if not data.empty:
                 symbol = data.index[0][0]
                 timestamp = data.index[0][1]
+               
                 # ensure that the dataframe index names are set to ['symbol', 'date']
                 if data.index.names != ["symbol", "timestamp"]:
                     data.index.set_names(["symbol", "timestamp"])
@@ -1213,9 +1199,9 @@ class BaseStrategy(abc.ABC):
         return self.UNIVERSE
 
     @property
-    def metrics(self) -> IStrategyMatrics:
+    def metrics(self) -> IStrategyMetrics:
         """Returns the metrics of the strategy."""
-        return self.MATRICS
+        return self.METRICS
 
     @property
     def resolution(self) -> ITimeFrame:

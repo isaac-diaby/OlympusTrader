@@ -1,6 +1,7 @@
 
 import abc
 import datetime
+from threading import Barrier
 from typing import Any, Awaitable, Callable, List, Literal, Optional, Union
 
 from typing_extensions import override
@@ -24,6 +25,9 @@ class BaseBroker(abc.ABC):
     supportedFeatures: ISupportedBrokerFeatures
 
     TICKER_INFO: dict[str, IAsset] = {}
+    RUNNING_TRADE_STREAM: bool = False
+    RUNNING_MARKET_STREAM: bool = False
+    BACKTEST_FlOW_CONTROL_BARRIER: Barrier = None
 
     @abc.abstractmethod
     def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: Optional[str] = None) -> None:

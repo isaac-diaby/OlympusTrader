@@ -86,7 +86,7 @@ class PartialCloseResult:
 class Insight:
     INSIGHT_ID: UUID
     """Unique Insight ID"""
-    PARANT: Optional[UUID] = None
+    PARENT: Optional[UUID] = None
     """Parent Insight ID"""
     CHILDREN: dict[UUID, Self]
 
@@ -169,7 +169,7 @@ class Insight:
         assert side in IOrderSide, "Invalid Order Side"
         self.INSIGHT_ID = uuid4()
         if parent:
-            self.PARANT = parent  # Parent Insight ID
+            self.PARENT = parent  # Parent Insight ID
         self.CHILDREN = {}
 
         self.side = side  # buy or sell
@@ -665,11 +665,12 @@ class Insight:
             self.updateState(InsightState.REJECTED, "Short not allowed")
         return False
 
-    def checkValidEntryInsight(self, limit_price: float = None):
+    def checkValidEntryInsight(self, limit_price: float = None, bypassCheck: bool = False):
         """Check if the insight is valid. limitprice needs to be beween the take profit and stop loss."""
         if (
             self.strategyType == StrategyTypes.TEST
             or self.strategyType == StrategyTypes.MANUAL
+            or bypassCheck
         ):
             return True  # skip the check for manual and test insights
 
@@ -834,7 +835,7 @@ class Insight:
                 return False
         else:
             self.TP = TP
-            if self.checkValidEntryInsight() or bypassCheck:
+            if self.checkValidEntryInsight(bypassCheck=bypassCheck):
                 self.updateState(
                     message=f"Updated Take Profit For Order: {
                         self.takeProfitOrderLeg['order_id']} : {oldTP} -> {self.TP}"
@@ -1013,7 +1014,7 @@ class Insight:
         self.updateState(InsightState.CLOSED)
 
         # Close all of the child insights
-        if self.PARANT is None and len(self.CHILDREN) > 0:
+        if self.PARENT is None and len(self.CHILDREN) > 0:
             for child in self.CHILDREN:
                 childInsight = self.CHILDREN[child]
                 if childInsight.state == InsightState.FILLED:
@@ -1026,10 +1027,10 @@ class Insight:
                     )
         return self
 
-    def getPL(self):
+    def getPL(self, includePartialCloses: bool = True):
         assert self.close_price is not None, "Close price is not set"
         partialPL = 0
-        if len(self.partial_closes) > 0:
+        if includePartialCloses and len(self.partial_closes) > 0:
             for partial in self.partial_closes:
                 partialPL += partial.getPL()
 
@@ -1146,7 +1147,7 @@ class IInsight:
         self.symbol = insight.symbol
         self.insight_id = str(insight.INSIGHT_ID)
         self.parent = str(
-            insight.PARANT) if insight.PARANT is not None else None
+            insight.PARENT) if insight.PARENT is not None else None
         self.children = {
             str(key): IInsight(child) for key, child in insight.CHILDREN.items()
         }
