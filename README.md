@@ -1,26 +1,163 @@
-# Welcome to OlympusTrader
+# OlympusTrader: Quantitative Trading Framework
 
-  [![Documentation Status](https://readthedocs.org/projects/olympustrader/badge/?version=latest)](https://olympustrader.readthedocs.io/en/latest/?badge=latest)
-  [![PyPI version](https://badge.fury.io/py/olympustrader.svg)](https://badge.fury.io/py/olympustrader)
-  [![Downloads](https://pepy.tech/badge/olympustrader)](https://pepy.tech/project/olympustrader)
+[![Documentation Status](https://readthedocs.org/projects/olympustrader/badge/?version=latest)](https://olympustrader.readthedocs.io/en/latest/?badge=latest)
+[![PyPI version](https://badge.fury.io/py/olympustrader.svg)](https://badge.fury.io/py/olympustrader)
+[![Downloads](https://pepy.tech/badge/olympustrader)](https://pepy.tech/project/olympustrader)
 
-This is my implementation of a quant trading framework inspired by frameworks such as QuantConnect and Blankly. The main idea is to create a workflow that allows users to create their trading strategy and execute complex trades with dependencies and a Risk-first approach. The core components are Insights(potential trade idea) which can have dynamic components such as:
+OlympusTrader is a flexible, modular, and risk-first quantitative trading framework for Python, inspired by QuantConnect and Blankly. It lets you build, test, and execute simple or complex trading strategies with powerful abstractions for signals (Alphas), trade ideas (Insights), execution logic (Executors), and broker integration.
 
-- How to enter
-- What price to enter
-- Quantity
-- How long should it be kept alive (expires) filled or unfilled
-- Its confidence score
-- Multiple take profit level (with adjustable risk)
-- and much more
+---
 
-The base strategy class manages everything else:
+## 🚀 Quick Start
 
-- Getting the latest bar price for your timeframe and featured timeframes (multi-timeframe support)
-- Manages and tracking open and closed positions
-- Execution of Alpha models, Executors, your Strategy core functions such as start(), init(), generateInsight(),
+**Install via pip:**
+```bash
+pip install olympustrader
+```
 
-Feel free to fork the project if you want to add a new broker or anything you want and submit a PR - right now I just made it to use alpaca-py.
+**Or use Docker:**
+```bash
+STRATEGY=MyStrategy docker compose up
+```
+
+**Set up your environment:**
+- Create a `.env` file with your broker credentials (e.g. `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`).
+- Supported brokers: Alpaca (live/paper), MetaTrader5, more coming soon.
+
+---
+
+## 🗂️ Project Structure
+
+- `OlympusTrader/` - Core framework
+  - `alpha/` - Alpha models (signal generators)
+  - `broker/` - Broker integrations
+  - `insight/` - Insights and Executors logic
+  - `strategy/` - Strategy base classes
+  - `utils/` - Utilities (timeframes, state, etc.)
+- `strategies/` - Example/user strategies
+- `backtests/`, `data/`, `examples/` - Supporting files
+
+---
+
+## 🧠 Core Concepts
+
+- **Insight:** A trade idea (entry/exit, price, quantity, confidence, expiry, risk, etc.)
+- **Alpha:** Model that generates insights (signals). Inherit from `BaseAlpha`.
+- **Executor:** Handles execution and state transitions for insights. Inherit from `BaseExecutor`.
+- **Strategy:** Main user class. Orchestrates data, alphas, executors, and brokers.
+- **Broker:** Abstracted trading interface (Alpaca, MT5, etc.)
+- **Risk Management:** Built-in at both strategy and insight level.
+
+---
+
+## 📝 Usage Example: Your First Strategy
+
+```python
+from OlympusTrader.utils.insight import Insight, InsightState
+from OlympusTrader.utils.timeframe import TimeFrame, TimeFrameUnit
+from OlympusTrader import AlpacaBroker, Strategy
+
+class MyStrategy(Strategy):
+    def start(self):
+        # Initialization logic, add Alphas/Executors here
+        pass
+
+    def init(self, asset):
+        # Per-asset setup
+        pass
+
+    def universe(self):
+        return {'BTC/USD', 'ETH/USD', 'TSLA'}
+
+    def on_bar(self, symbol, bar):
+        # Called on each new bar
+        pass
+
+    def generateInsights(self, symbol: str):
+        # Generate trade ideas
+        pass
+
+    def executeInsight(self, insight: Insight):
+        # Handle execution logic for each insight
+        pass
+
+    def teardown(self):
+        # Cleanup logic
+        self.BROKER.close_all_positions()
+
+if __name__ == "__main__":
+    broker = AlpacaBroker(paper=True)
+    strategy = MyStrategy(broker, {}, resolution=TimeFrame(1, TimeFrameUnit.Minute), ui=True)
+    strategy.add_events('bar')
+    strategy.run()
+```
+
+---
+
+## 🔬 Backtesting Example
+
+```python
+from datetime import datetime
+from OlympusTrader import PaperBroker, IStrategyMode
+
+broker = PaperBroker(cash=1_000_000, start_date=datetime(2024, 5, 27), end_date=datetime(2024, 5, 31))
+strategy = MyStrategy(broker, variables={}, resolution=TimeFrame(1, TimeFrameUnit.Minute), verbose=0, ui=True, mode=IStrategyMode.BACKTEST)
+strategy.add_events('bar', stored=True, stored_path='data', start=broker.START_DATE, end=broker.END_DATE)
+```
+
+---
+
+## ⚡ Alpha Models
+- Inherit from `BaseAlpha` (`OlympusTrader/alpha/base_alpha.py`).
+- Use pandas-ta for indicators. Customizable and community-contributed.
+- Add Alphas in `start()`:
+
+```python
+from OlympusTrader.alpha.test_entry import TestEntryAlpha
+from OlympusTrader.alpha.ema_price_crossover import EMAPriceCrossoverAlpha
+
+strategy.add_alphas([
+    TestEntryAlpha(strategy),
+    EMAPriceCrossoverAlpha(strategy, atrPeriod=14, emaPeriod=9, baseConfidenceModifierField='market_state'),
+])
+```
+
+---
+
+## 🏹 Executor Models
+- Inherit from `BaseExecutor` (`OlympusTrader/insight/executors/base_executor.py`).
+- Add Executors in `start()`:
+
+```python
+from OlympusTrader.insight.executors.new.cancelAllOppositeSide import CancelAllOppositeSidetExecutor
+strategy.add_executors([
+    CancelAllOppositeSidetExecutor(strategy),
+    # ... other executors
+])
+```
+
+---
+
+## 📚 Advanced Documentation
+- Full docs: [ReadTheDocs](https://olympustrader.readthedocs.io/en/latest/)
+- Explore `OlympusTrader/alpha/` and `OlympusTrader/insight/executors/` for available models
+
+---
+
+## 🤝 Contributing
+- Fork and submit a PR for new Alphas, Executors, or Brokers
+- Follow community guidelines: modular, customizable, and well-documented code
+- See [CONTRIBUTING.md](CONTRIBUTING.md) (if available) or open an issue for questions
+
+---
+
+## ⭐ Star History
+[![Star History Chart](https://api.star-history.com/svg?repos=isaac-diaby/OlympusTrader&type=Timeline)](https://star-history.com/#isaac-diaby/OlympusTrader&Timeline)
+
+---
+
+## 🙌 Thanks
+OlympusTrader aims to be both easy for beginners and powerful for advanced users. Join the community and help shape the future of open-source trading!
 
 ## In Progress
 
