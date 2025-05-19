@@ -1042,7 +1042,7 @@ class BaseStrategy(abc.ABC):
                
                 # ensure that the dataframe index names are set to ['symbol', 'date']
                 if data.index.names != ["symbol", "timestamp"]:
-                    data.index.set_names(["symbol", "timestamp"])
+                    data.index.set_names(["symbol", "timestamp"], inplace=True)
                 if symbol == None:
                     if self.VERBOSE > 0:
                         print("Symbol is None - ignoring BaseStrategy_on_bar")

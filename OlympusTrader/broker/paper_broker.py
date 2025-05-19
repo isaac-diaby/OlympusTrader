@@ -111,7 +111,7 @@ class PaperBroker(BaseBroker):
                     return None
                 tickerInfo = yfRes.info
                 tickerAsset: IAsset = IAsset(
-                    id=tickerInfo['uuid'],
+                    id=str(uuid.uuid4()),
                     name=tickerInfo['shortName'],
                     asset_type=tickerInfo["quoteType"],
                     exchange=tickerInfo["exchange"],
