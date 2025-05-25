@@ -52,6 +52,7 @@ from OlympusTrader.insight.executors import BaseExecutor
 # from ..insight.executors.base_executor import BaseExecutor
 # from ..ui.base_ui import Dashboard
 import warnings
+import logging
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
@@ -80,6 +81,7 @@ class BaseStrategy(abc.ABC):
 
     # DEBUG
     VERBOSE: int = 0
+    LOGGER: logging.Logger = None
 
     _Running = False
 
@@ -132,6 +134,8 @@ class BaseStrategy(abc.ABC):
         self.MODE = mode
         self.WITHUI = ui
         self.WITHSSM = ssm
+
+        self.LOGGER = logging.getLogger("OlympusTrader."+self.NAME)
 
         if type(variables) is not AttributeDict:
             variables = AttributeDict(variables)
@@ -570,9 +574,8 @@ class BaseStrategy(abc.ABC):
                         result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
                         # Executor manage the insight state and mutates the insight
                         if not result.success:
-                            print(
-                                f"Executor {result.executor}: {
-                                  result.message}"
+                            self.LOGGER.error(
+                                f"Executor {result.executor}: {result.message}"
                             )
                             passed = False
                             break
@@ -580,7 +583,7 @@ class BaseStrategy(abc.ABC):
                             passed = False
                             break
                         if self.VERBOSE > 1:
-                            print(f"Executor {result.executor}: {result.message}")
+                            self.LOGGER.info(f"Executor {result.executor}: {result.message}")
 
                     if not passed:
                         continue
@@ -601,7 +604,7 @@ class BaseStrategy(abc.ABC):
                 except KeyError as e:
                     continue
                 except Exception as e:
-                    print("Error in _insightListener:", e)
+                    self.LOGGER.error("Error in _insightListener:", e)
                     continue
             if self.MODE == IStrategyMode.BACKTEST:
                 try:
@@ -618,7 +621,7 @@ class BaseStrategy(abc.ABC):
             self.POSITIONS = self.BROKER.get_positions()
             if self.POSITIONS == None:
                 self.POSITIONS = {}
-        print("End of Insight Listener")
+        self.LOGGER.info("End of Insight Listener")
 
     async def _on_trade_update(self, trade):
         """format the trade stream to the strategy."""
@@ -627,7 +630,7 @@ class BaseStrategy(abc.ABC):
         if orderdata and orderdata["asset"]["symbol"] not in self.UNIVERSE:
             # 'Order not in universe'
             return
-        print(
+        self.LOGGER.info(
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] is not None else orderdata['filled_price']} - {orderdata['order_id']}"
         )
         self.ORDERS[orderdata["order_id"]] = orderdata
@@ -1012,7 +1015,6 @@ class BaseStrategy(abc.ABC):
     async def _on_bar(self, bar: Any, timeframe: ITimeFrame):
         """format the bar stream to the strategy."""
         try:
-            # set_index(['symbol', 'timestamp']
             data: pd.DataFrame = None
             if (
                 self.MODE != IStrategyMode.BACKTEST
@@ -1022,32 +1024,30 @@ class BaseStrategy(abc.ABC):
             else:
                 data = bar
 
-            if data.empty:
-                print("Bar is None")
+            if data is None or data.empty:
+                self.LOGGER.warning("Bar is None or empty in _on_bar")
                 return
 
             self.ACCOUNT = self.BROKER.get_account()
             self.POSITIONS = self.BROKER.get_positions()
-            self.ORDERS = self.BROKER.get_orders()
+            self.ORDERS = self.BROKER.get_orders() or {}
+            self.POSITIONS = self.POSITIONS or {}
 
-            if self.ORDERS == None:
-                self.ORDERS = {}
-
-            if self.POSITIONS == None:
-                self.POSITIONS = {}
-
+            symbol, timestamp = None, None
             if not data.empty:
-                symbol = data.index[0][0]
-                timestamp = data.index[0][1]
-               
-                # ensure that the dataframe index names are set to ['symbol', 'date']
+                # Ensure index names
                 if data.index.names != ["symbol", "timestamp"]:
                     data.index.set_names(["symbol", "timestamp"], inplace=True)
-                if symbol == None:
-                    if self.VERBOSE > 0:
-                        print("Symbol is None - ignoring BaseStrategy_on_bar")
+                try:
+                    symbol = data.index[0][0]
+                    timestamp = data.index[0][1]
+                except Exception as e:
+                    self.LOGGER.error(f"Failed to extract symbol/timestamp from bar index: {e}")
                     return
-                # Check if the bar is part of the resolution of the strategy or if it is a feature event
+                if symbol is None:
+                    self.LOGGER.warning("Symbol is None - ignoring BaseStrategy_on_bar")
+                    return
+                # Feature event check
                 isFeature = False
                 for stream in self.STREAMS:
                     if (
@@ -1055,80 +1055,106 @@ class BaseStrategy(abc.ABC):
                         and (stream["symbol"] == symbol or stream["feature"] == symbol)
                         and stream["time_frame"].value != self.resolution.value
                     ):
-                        if stream["time_frame"].value == timeframe.value and stream[
-                            "time_frame"
-                        ].is_time_increment(timestamp):
+                        if stream["time_frame"].value == timeframe.value and stream["time_frame"].is_time_increment(timestamp):
                             isFeature = True
                             # Update the feature symbol name
                             if stream["feature"] != symbol:
-                                data.rename(
-                                    index={symbol: stream["feature"]}, inplace=True
-                                )
+                                data.rename(index={symbol: stream["feature"]}, inplace=True)
                                 symbol = stream["feature"]
-                            if self.VERBOSE > 0:
-                                print(
-                                    f"Feature Bar is part of the resolution of the strategy: {
-                                      symbol} - {timestamp} - {datetime.datetime.now()}"
-                                )
+                            self.LOGGER.info(f"Feature Bar is part of the resolution of the strategy: {symbol} - {timestamp} - {datetime.datetime.now()}")
                             break
-
                 if (
                     self.resolution.value == timeframe.value
                     and self.resolution.is_time_increment(timestamp)
                 ) or isFeature:
                     if self.VERBOSE > 0:
-                        print(
-                            f"New Bar is part of the resolution of the strategy: {
-                              symbol} - {timestamp} - {datetime.datetime.now()}"
-                        )
+                        self.LOGGER.info(f"New Bar is part of the resolution of the strategy: {symbol} - {timestamp} - {datetime.datetime.now()}")
                         start_time = timeit.default_timer()
-
-                    # TODO: check if the broker sends out multiple bar data when streaming bars with the same symbol
-
+                    # Append to history and remove duplicates
                     self.HISTORY[symbol] = pd.concat([self.HISTORY[symbol], data])
-                    # Remove duplicates keys in the history as sometimes when getting warm up data we get duplicates
                     self.HISTORY[symbol] = self.HISTORY[symbol].loc[
                         ~self.HISTORY[symbol].index.duplicated(keep="first")
                     ]
-                    # Needs to be warm up
                     if len(self.HISTORY[symbol]) < self.WARM_UP:
-                        print(
-                            f"Waiting for warm up: {
-                              symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}"
-                        )
+                        self.LOGGER.info(f"Waiting for warm up: {symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}")
                         return
-
                     if (
                         not self.BACKTESTING_CONFIG.get("preemptiveTA")
                         and self.MODE == IStrategyMode.BACKTEST
                     ) or (self.MODE != IStrategyMode.BACKTEST):
-                        # Run the pandas TA
                         self.HISTORY[symbol].ta.strategy(self.TaStrategy)
-
-                    # Call the on_bar function and process the bar
                     try:
-                        if (not isFeature) or (
-                            isFeature is True and self.tradeOnFeatureEvents
-                        ):
+                        if (not isFeature) or (isFeature and self.tradeOnFeatureEvents):
                             self.on_bar(symbol, data)
                             self._generateInsights(symbol)
                     except Exception as e:
-                        print("Error in on_bar:", e)
-
+                        self.LOGGER.error(f"Error in on_bar: {e}")
                     if self.VERBOSE > 0:
-                        print(
-                            "Time taken on_bar:",
-                            symbol,
-                            timeit.default_timer() - start_time,
-                        )
-                else:
-                    """ Bar is not part of the resolution of the strategy  nor is it a feature event"""
-                    pass
-                    # Will need to take the the 1 min bar and convert it to the resolution of the strategy
-            else:
-                print("Data is empty - BROKER.format_on_bar(bar) not working")
+                        self.LOGGER.info(f"Time taken on_bar: {symbol} {timeit.default_timer() - start_time}")
+                # else: not part of resolution/feature event
         except Exception as e:
-            print("Error in _on_bar_format in base Strategy:", e)
+            self.LOGGER.error(f"Exception in _on_bar: {e}")
+        finally:
+            # If in backtest mode and shutdown is signaled, ensure barrier is released
+            if self.MODE == IStrategyMode.BACKTEST and hasattr(self.BROKER, 'BACKTEST_FlOW_CONTROL_BARRIER') and self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER:
+                try:
+                    self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait(timeout=2)
+                except Exception as barrier_e:
+                    self.LOGGER.warning(f"Barrier wait failed or timed out: {barrier_e}")
+            # elif isFeature:
+            #     if self.VERBOSE > 0:
+            #         self.LOGGER.info(
+            #             f"New Bar is part of the resolution of the strategy: {
+            #               symbol} - {timestamp} - {datetime.datetime.now()}"
+            #         )
+            #         start_time = timeit.default_timer()
+
+            #     # TODO: check if the broker sends out multiple bar data when streaming bars with the same symbol
+
+            #     self.HISTORY[symbol] = pd.concat([self.HISTORY[symbol], data])
+            #     # Remove duplicates keys in the history as sometimes when getting warm up data we get duplicates
+            #     self.HISTORY[symbol] = self.HISTORY[symbol].loc[
+            #         ~self.HISTORY[symbol].index.duplicated(keep="first")
+            #         ]
+            #     # Needs to be warm up
+            #     if len(self.HISTORY[symbol]) < self.WARM_UP:
+            #         self.LOGGER.info(
+            #             f"Waiting for warm up: {
+            #               symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}"
+            #         )
+            #         return
+
+            #     if (
+            #         not self.BACKTESTING_CONFIG.get("preemptiveTA")
+            #         and self.MODE == IStrategyMode.BACKTEST
+            #     ) or (self.MODE != IStrategyMode.BACKTEST):
+            #         # Run the pandas TA
+            #         self.HISTORY[symbol].ta.strategy(self.TaStrategy)
+
+            #     # Call the on_bar function and process the bar
+            #     try:
+            #         if (not isFeature) or (
+            #                 isFeature is True and self.tradeOnFeatureEvents
+            #             ):
+            #                 self.on_bar(symbol, data)
+            #                 self._generateInsights(symbol)
+            #     except Exception as e:
+            #         self.LOGGER.error("Error in on_bar:", e)
+
+            #     if self.VERBOSE > 0:
+            #         self.LOGGER.info(
+            #             "Time taken on_bar:",
+            #                 symbol,
+            #                 timeit.default_timer() - start_time,
+            #             )
+            #     else:
+            #         """ Bar is not part of the resolution of the strategy  nor is it a feature event"""
+            #         pass
+            #         # Will need to take the the 1 min bar and convert it to the resolution of the strategy
+            # else:
+            #     self.LOGGER.info("Data is empty - BROKER.format_on_bar(bar) not working")
+        #  except Exception as e:
+        # self.LOGGER.error("Error in _on_bar_format in base Strategy:", e)
 
     def submit_order(self, insight: Insight):
         """Submits an order to the broker."""

@@ -69,7 +69,6 @@ class PaperBroker(BaseBroker):
     VERBOSE: int = 0
 
     def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf', feedDelay: int = 0, verbose: int = 0):
-
         super().__init__(ISupportedBrokers.PAPER, True, feed)
         self.MODE = mode
         self.VERBOSE = verbose
@@ -77,25 +76,34 @@ class PaperBroker(BaseBroker):
         self.STARTING_CASH = cash
         self.ACCOUNT = IAccount(account_id="PAPER_ACCOUNT", equity=self.STARTING_CASH, cash=self.STARTING_CASH, currency=currency,
                                 buying_power=cash*self.LEVERAGE, leverage=self.LEVERAGE, shorting_enabled=allow_short)
-
-        # Set the backtest configuration
+        self.HISTORICAL_DATA = {}
+        self.Positions = {}
+        self.Orders = {}
+        self.UPDATE_ORDERS = deque()
+        self.PENDING_ORDERS = deque()
+        self.ACTIVE_ORDERS = deque()
+        self.CLOSE_ORDERS = deque()
+        self.CANCELED_ORDERS = deque()
+        self.ACCOUNT_HISTORY = {}
+        self._MARKET_STREAMS = {}
+        self.FeedDelay = feedDelay
+        self.CurrentTime = None
+        self.PreviousTime = None
+        self.START_DATE = start_date
+        self.END_DATE = end_date
+        self.BACKTEST_FlOW_CONTROL_BARRIER = None
         if self.MODE == IStrategyMode.BACKTEST:
             assert start_date and end_date, 'Start and End date must be provided for backtesting'
             assert start_date < end_date, 'Start date must be before end date'
-            # self.START_DATE = start_date.replace(tzinfo=datetime.timezone.utc)
             self.START_DATE = start_date
             self.END_DATE = end_date
             self.CurrentTime = self.START_DATE
             self.update_account_history()
             self.BACKTEST_FlOW_CONTROL_BARRIER = Barrier(3)
-            # self.BACKTEST_FlOW_CONTROL_BARRIER.reset()
         else:
-            print("Live Papaer Trading Mode - There is a:",
-                  feedDelay, "minute delay in the feed")
+            print("Live Paper Trading Mode - There is a:", feedDelay, "minute delay in the feed")
             self.FeedDelay = feedDelay
-            self.CurrentTime = datetime.datetime.now(
-            ) - datetime.timedelta(minutes=self.FeedDelay)
-
+            self.CurrentTime = datetime.datetime.now() - datetime.timedelta(minutes=self.FeedDelay)
         self.supportedFeatures = ISupportedBrokerFeatures(
             barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
 
