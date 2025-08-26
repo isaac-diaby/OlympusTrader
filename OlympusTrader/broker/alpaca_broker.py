@@ -368,6 +368,8 @@ class AlpacaBroker(BaseBroker):
         return closeOrders
 
     def close_position(self, symbol, qty=None, percent=None):
+        super().close_position(symbol, qty, percent)
+
         try:
             closePosReq = ClosePositionRequest(
                 qty=str(qty)) if qty else ClosePositionRequest(percentage=str(percent))

@@ -177,7 +177,7 @@ if __name__ == "__main__":
     #     1, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.LIVE)
     
     broker = PaperBroker(cash=100_000, start_date=datetime(
-            2024, 10, 17), end_date=datetime(2024, 10,18), verbose=1, leverage=1.0)
+            2025, 5, 17), end_date=datetime(2025, 5,18), verbose=1, leverage=1.0)
     strategy = TestOrderUpdate(broker, variables={}, resolution=ITimeFrame(
         5, ITimeFrameUnit.Minute), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 

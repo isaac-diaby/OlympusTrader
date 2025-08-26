@@ -375,6 +375,8 @@ class CCXTBroker(BaseBroker):
         pass
 
     def close_position(self, symbol: str, qty=None, percent=None):
+        super().close_position(symbol, qty, percent)
+
         # Implement logic to close a specific position
         raise NotImplementedError()
         pass

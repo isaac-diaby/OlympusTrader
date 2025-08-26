@@ -43,7 +43,7 @@ class TestRSIStrat(Strategy):
 
 
         self.history[asset['symbol']] = self.broker.get_history(
-            asset, self.resolution.add_time_increment(datetime.now(), self.warm_up), datetime.now(), self.resolution)
+            asset, self.resolution.add_time_increment(datetime.now(), self.warm_up*-1), datetime.now(), self.resolution)
 
     def universe(self):
         # universe = {'btc-usd', 'eth-usd', 'xrp-usd'}
@@ -405,7 +405,7 @@ if __name__ == "__main__":
 
     # Paper Broker for backtesting
     broker = PaperBroker(cash=100_000, start_date=datetime(
-        2024, 7, 1), end_date=datetime(2024, 8, 23))  # all of may
+        2025, 6, 16), end_date=datetime(2025, 6, 17, 23))  # all of may
     strategy = TestRSIStrat(broker, variables={}, resolution=ITimeFrame(
         1, ITimeFrameUnit.Hour), verbose=0, ui=False, mode=IStrategyMode.BACKTEST)
 

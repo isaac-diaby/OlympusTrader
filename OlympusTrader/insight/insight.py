@@ -245,10 +245,14 @@ class Insight:
                         closeInsight.ASSET = self.ASSET
 
                     #  check if the insight has a take profit or stop loss order leg that need to be canceled before closing the position
-                    if self.takeProfitOrderLeg:
-                        self.cancelTakeProfitLeg()
-                    if self.stopLossOrderLeg:
-                        self.cancelStopLossLeg()
+                    try:    
+                        if self.takeProfitOrderLeg:
+                            self.cancelTakeProfitLeg()
+                        if self.stopLossOrderLeg:
+                            self.cancelStopLossLeg()
+                    except BaseException as e:
+                        print(f"Error canceling TP/SL legs: {e}")
+                        
                     # close insight
                     closeInsight.updateOrderID(self.order_id)
                     # Submit the insight to close the position
@@ -513,7 +517,7 @@ class Insight:
             old_quantity = self.quantity
             self.quantity = quantity
             if self.checkValidQuantity():
-                print(f"Updated quantity: {old_quantity} -> {self.quantity}")
+                print(f"Updated quantity: {old_quantity} -> {self.quantity} - {self.symbol} : {self.strategyType} : {self.order_id}")
                 return True
             else:
                 self.quantity = old_quantity
@@ -526,10 +530,7 @@ class Insight:
             old_contracts = self.contracts
             self.contracts = contracts
             if self.checkValidQuantity():
-                print(
-                    f"Updated contracts: {
-                        old_contracts} -> {self.contracts}"
-                )
+                print(f"Updated contracts: {old_contracts} -> {self.contracts} - {self.symbol} : {self.strategyType} : {self.order_id}")
                 self.quantity = self.contracts * self.ASSET["contract_size"]
                 return True
             else:
@@ -838,7 +839,7 @@ class Insight:
             if self.checkValidEntryInsight(bypassCheck=bypassCheck):
                 self.updateState(
                     message=f"Updated Take Profit For Order: {
-                        self.takeProfitOrderLeg['order_id']} : {oldTP} -> {self.TP}"
+                        self.order_id} : {oldTP} -> {self.TP}"
                 )
                 return True
             else:
@@ -902,7 +903,7 @@ class Insight:
             if self.checkValidEntryInsight() or bypassCheck:
                 self.updateState(
                     message=f"Updated Stop Loss For Order: {
-                        self.stopLossOrderLeg['order_id']} : {oldSL} -> {self.SL}"
+                        self.order_id} : {oldSL} -> {self.SL}"
                 )
                 return True
             else:
@@ -1068,7 +1069,7 @@ class Insight:
     def logPnL(self):
         PL = self.getPL()
         message = f"Trade Closed {"✅" if PL > 0 else "❌"}: {self.symbol} - {self.side} - {
-            self.quantity} @ {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}"
+            self.quantity} @ {self.close_price} <- {self.limit_price} - P/L: {PL} - UDA: {self.updatedAt}"
         return message
 
     def set_mode(

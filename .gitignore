@@ -19,3 +19,5 @@ docs/build/*
 standaloneMt5config/
 
 deploy.sh
+trade_log.csv
+vbt_signals.csv

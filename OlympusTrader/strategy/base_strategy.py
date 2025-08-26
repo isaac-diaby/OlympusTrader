@@ -59,31 +59,50 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 class BaseStrategy(abc.ABC):
     STRATEGY_ID: UUID = uuid4()
+    """Unique ID for the strategy"""
     NAME: str = "BaseStrategy"
+    """Name of the strategy"""
     BROKER: BaseBroker
+    """Broker for the strategy"""
     ACCOUNT: Optional[IAccount] = None
+    """Account for the strategy"""
     POSITIONS: dict[str, IPosition] = {}
+    """Positions for the strategy"""
     ORDERS: Optional[dict[str, IOrder]] = {}
+    """Orders for the strategy"""
     HISTORY: dict[str, pd.DataFrame] = {}
+    """History for the strategy"""
     INSIGHTS: dict[UUID, Insight] = {}
+    """Insights for the strategy"""
     UNIVERSE: dict[str, IAsset] = {}
+    """Universe of assets for the strategy"""
     RESOLUTION = ITimeFrame(5, ITimeFrameUnit.Minute)
+    """Resolution for the strategy"""
     STREAMS: List[IMarketDataStream] = []
+    """Market Data Streams for the strategy"""
     VARIABLES: AttributeDict
+    """Variables for the strategy"""
     MODE: IStrategyMode
+    """Strategy mode"""
     WITHUI: bool = True
+    """Enable UI for the strategy"""
     WITHSSM: bool = True
+    """Enable Shared Strategy Manager for the strategy functions"""
     SSM: Optional[SharedStrategyManager] = None
-    # DASHBOARD: Dashboard = None
+    """Shared Strategy Manager for the strategy functions"""
     tradeOnFeatureEvents: bool = False
+    """Trade on feature events"""
 
     TOOLS: Optional[ITradingTools] = None
+    """Trading tools for the strategy"""
 
     # DEBUG
     VERBOSE: int = 0
+    """Verbose level for the strategy"""
     LOGGER: logging.Logger = None
 
     _Running = False
+    """Running flag for the strategy"""
 
     # ALPHA MODELS
     ALPHA_MODELS: List[BaseAlpha] = []
@@ -99,16 +118,20 @@ class BaseStrategy(abc.ABC):
         InsightState.CANCELED: deque([]),
     }
     """Insight Executors Models"""
-
-    # Strategy Execution Parameters
     TaStrategy: ta.Strategy = None
+    """TA Strategy"""
     WARM_UP: int = 0
-    execution_risk: float = 0.01  # 1% of account per trade
-    minRewardRiskRatio: float = 2.0  # 2:1 Reward to Risk Ratio minimum
-    baseConfidence: float = 0.1  # Base Confidence level for the strategy
+    """Warm up bars for the strategy to ensure the strategy has enough data to make decisions"""
+    execution_risk: float = 0.01
+    """Execution risk per trade"""
+    minRewardRiskRatio: float = 2.0
+    """Minimum Reward to Risk Ratio required for the strategy"""
+    baseConfidence: float = 0.1
+    """Base Confidence level for the strategy"""
     shouldClosePartialFilledIfCancelled: bool = True
     """Insights that are partially filled and are cancelled should be closed if the insight is cancelled"""
     insightRateLimit: int = 1
+    """Insight rate limit"""
 
     BACKTESTING_CONFIG: IBacktestingConfig = IBacktestingConfig(preemptiveTA=False)
     """Backtesting configuration"""
@@ -116,6 +139,7 @@ class BaseStrategy(abc.ABC):
     """Backtesting results"""
 
     METRICS: IStrategyMetrics = IStrategyMetrics()
+    """Strategy metrics"""
 
     @abc.abstractmethod
     def __init__(
@@ -323,8 +347,8 @@ class BaseStrategy(abc.ABC):
                 self._run_strategy(loop, pool)
         except KeyboardInterrupt as e:
             print("Interrupted execution by user:", e)
-            self._handle_close_streams(loop, pool)
         finally:
+            self._handle_close_streams(loop, pool)
             self.run_teardown(loop)
 
     def _start_strategy(self):
@@ -397,11 +421,18 @@ class BaseStrategy(abc.ABC):
             start_time = timeit.default_timer()
 
         while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
-            if (
-                not self.BROKER.RUNNING_MARKET_STREAM
-                or not self.BROKER.RUNNING_TRADE_STREAM
-            ):
-                break
+            try:
+                self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+            except BrokenBarrierError as e:
+                # print('Error in _insightListener:', e)
+                # TODO: Should be checking if the backtesting range is completed but for now we will just break
+                if (
+                (not self.BROKER.RUNNING_MARKET_STREA)
+                or (not self.BROKER.RUNNING_TRADE_STREAM)
+                ):
+                    break
+                else:
+                    continue
 
         if self.VERBOSE > 0:
             print("Backtest Completed:", timeit.default_timer() - start_time)
@@ -411,7 +442,6 @@ class BaseStrategy(abc.ABC):
         raise KeyboardInterrupt("Backtest Completed")
 
     def _handle_close_streams(self, loop, pool):
-        """Handle interruptions and ensure all streams and listeners are closed."""
         """Handle interruptions and ensure all streams and listeners are closed."""
         try:
             self.teardown()
@@ -493,6 +523,10 @@ class BaseStrategy(abc.ABC):
                 print("Backtesting results saved for", symbol, "at", path)
             else:
                 print("No backtesting results found for", symbol)
+
+        # Save the account history
+        self.BROKER.export_trade_log()
+        self.BROKER.export_vbt_signals(list(self.UNIVERSE.keys())[0])
 
     def _startUISharedMemory(self):
         """Starts the UI shared memory."""
@@ -805,12 +839,6 @@ class BaseStrategy(abc.ABC):
                                         return
                         # Make sure the order is part of the insight as we dont have a clear way to tell if the closed fill is part of the strategy- to ensure that the the strategy is managed well
                         if (
-                            # (
-                            #     (orderdata["qty"] == insight.quantity)
-                            #     and (orderdata["side"] != insight.side)
-                            #     and insight.close_order_id == None
-                            # )
-                            # or 
                             (
                                 (insight.close_order_id != None)
                                 and (insight.close_order_id == orderdata["order_id"])
@@ -900,7 +928,7 @@ class BaseStrategy(abc.ABC):
             print(f"Failed to load {symbol} into universe")
 
     def add_events(
-        self, eventType: Literal["trade", "quote", "bar", "news"] = "bar", **kwargs
+        self, eventType: Literal["trade", "quote", "bar", "news"] = "bar", applyTA: bool = True, stored: bool = False, stored_path: str = "data", time_frame: Optional[ITimeFrame] = None, **kwargs
     ):
         """Adds bar streams to the strategy."""
         match eventType:
@@ -909,7 +937,7 @@ class BaseStrategy(abc.ABC):
 
                 if self.MODE == IStrategyMode.BACKTEST:
                     # Check if we should apply TA to the stream at the start of the backtest
-                    if kwargs.get("applyTA", True):
+                    if applyTA:
                         options["applyTA"] = True
                         options["TA"] = self.TaStrategy
                         self.BACKTESTING_CONFIG["preemptiveTA"] = True
@@ -919,11 +947,11 @@ class BaseStrategy(abc.ABC):
 
                     options["start"] = self.BROKER.START_DATE
                     options["end"] = self.BROKER.END_DATE
-                    options["stored"] = kwargs.get("stored", False)
-                    options["stored_path"] = kwargs.get("stored_path", "data")
+                    options["stored"] = stored if stored else False
+                    options["stored_path"] = stored_path if stored_path else "data"
 
-                if kwargs.get("time_frame"):
-                    options["time_frame"] = kwargs.get("time_frame")
+                if time_frame is not None:
+                    options["time_frame"] = time_frame
                     if (
                         options["time_frame"] != self.RESOLUTION
                         and not self.broker.supportedFeatures.featuredBarDataStreaming
@@ -1098,63 +1126,11 @@ class BaseStrategy(abc.ABC):
             # If in backtest mode and shutdown is signaled, ensure barrier is released
             if self.MODE == IStrategyMode.BACKTEST and hasattr(self.BROKER, 'BACKTEST_FlOW_CONTROL_BARRIER') and self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER:
                 try:
-                    self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait(timeout=2)
+                    # self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait(timeout=2)
+                    self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
                 except Exception as barrier_e:
                     self.LOGGER.warning(f"Barrier wait failed or timed out: {barrier_e}")
-            # elif isFeature:
-            #     if self.VERBOSE > 0:
-            #         self.LOGGER.info(
-            #             f"New Bar is part of the resolution of the strategy: {
-            #               symbol} - {timestamp} - {datetime.datetime.now()}"
-            #         )
-            #         start_time = timeit.default_timer()
-
-            #     # TODO: check if the broker sends out multiple bar data when streaming bars with the same symbol
-
-            #     self.HISTORY[symbol] = pd.concat([self.HISTORY[symbol], data])
-            #     # Remove duplicates keys in the history as sometimes when getting warm up data we get duplicates
-            #     self.HISTORY[symbol] = self.HISTORY[symbol].loc[
-            #         ~self.HISTORY[symbol].index.duplicated(keep="first")
-            #         ]
-            #     # Needs to be warm up
-            #     if len(self.HISTORY[symbol]) < self.WARM_UP:
-            #         self.LOGGER.info(
-            #             f"Waiting for warm up: {
-            #               symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}"
-            #         )
-            #         return
-
-            #     if (
-            #         not self.BACKTESTING_CONFIG.get("preemptiveTA")
-            #         and self.MODE == IStrategyMode.BACKTEST
-            #     ) or (self.MODE != IStrategyMode.BACKTEST):
-            #         # Run the pandas TA
-            #         self.HISTORY[symbol].ta.strategy(self.TaStrategy)
-
-            #     # Call the on_bar function and process the bar
-            #     try:
-            #         if (not isFeature) or (
-            #                 isFeature is True and self.tradeOnFeatureEvents
-            #             ):
-            #                 self.on_bar(symbol, data)
-            #                 self._generateInsights(symbol)
-            #     except Exception as e:
-            #         self.LOGGER.error("Error in on_bar:", e)
-
-            #     if self.VERBOSE > 0:
-            #         self.LOGGER.info(
-            #             "Time taken on_bar:",
-            #                 symbol,
-            #                 timeit.default_timer() - start_time,
-            #             )
-            #     else:
-            #         """ Bar is not part of the resolution of the strategy  nor is it a feature event"""
-            #         pass
-            #         # Will need to take the the 1 min bar and convert it to the resolution of the strategy
-            # else:
-            #     self.LOGGER.info("Data is empty - BROKER.format_on_bar(bar) not working")
-        #  except Exception as e:
-        # self.LOGGER.error("Error in _on_bar_format in base Strategy:", e)
+        
 
     def submit_order(self, insight: Insight):
         """Submits an order to the broker."""
@@ -1263,3 +1239,9 @@ class BaseStrategy(abc.ABC):
     def current_datetime(self) -> datetime:
         """Returns the current time of the strategy."""
         return self.BROKER.get_current_time.replace(tzinfo=datetime.UTC)
+    
+    @property
+    def mode(self) -> IStrategyMode:
+        """Returns the mode of the strategy."""
+        return self.MODE
+    

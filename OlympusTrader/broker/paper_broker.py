@@ -99,11 +99,13 @@ class PaperBroker(BaseBroker):
             self.END_DATE = end_date
             self.CurrentTime = self.START_DATE
             self.update_account_history()
-            self.BACKTEST_FlOW_CONTROL_BARRIER = Barrier(3)
+            self.BACKTEST_FlOW_CONTROL_BARRIER = Barrier(4)
         else:
-            print("Live Paper Trading Mode - There is a:", feedDelay, "minute delay in the feed")
+            print("Live Paper Trading Mode - There is a:",
+                  feedDelay, "minute delay in the feed")
             self.FeedDelay = feedDelay
-            self.CurrentTime = datetime.datetime.now() - datetime.timedelta(minutes=self.FeedDelay)
+            self.CurrentTime = datetime.datetime.now(
+            ) - datetime.timedelta(minutes=self.FeedDelay)
         self.supportedFeatures = ISupportedBrokerFeatures(
             barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
 
@@ -217,36 +219,91 @@ class PaperBroker(BaseBroker):
         return order
 
     def cancel_order(self, order_id: str):
-        order = self.Orders.get(order_id)
+        # First, try to find the order directly
+        order = self.get_order(order_id)
         if order:
-            if order['status'] == ITradeUpdateEvent.FILLED:
+            # Check if the order is already filled or closed
+            if order['status'] == ITradeUpdateEvent.FILLED or order['status'] == ITradeUpdateEvent.CLOSED:
+                print(
+                    f"Cannot cancel order {order_id} because it is already {order['status']}")
                 raise BaseException({
                     "code": "already_filled",
-                    "data": {"order_id": order_id}
+                    "data": {"order_id": order_id, "status": order['status']}
                 })
-            elif order['status'] == ITradeUpdateEvent.CANCELED or order in self.CANCELED_ORDERS:
-                raise BaseException({
-                    "code": "already_canceled",
-                    "data": {"order_id": order_id}
-                })
-            else:
-                order['updated_at'] = self.get_current_time
-                self.CANCELED_ORDERS.append(order)
-                return order
-        else:
-            # check legs
-            for i, leg_order in self.Orders.items():
-                if leg_order['legs'] != None and leg_order not in self.CANCELED_ORDERS and (leg_order['status'] != ITradeUpdateEvent.CANCELED and leg_order['status'] != ITradeUpdateEvent.CLOSED):
-                    if leg_order['legs'].get('take_profit'):
-                        if leg_order['legs']['take_profit']['order_id'] == order_id:
-                            # remove the take profit leg
-                            del self.Orders[i]['legs']['take_profit']
-                            return order_id
 
-                    if leg_order['legs'].get('stop_loss'):
-                        if leg_order['legs']['stop_loss']['order_id'] == order_id:
-                            del self.Orders[i]['legs']['stop_loss']
-                            return order_id
+            order['status'] = ITradeUpdateEvent.CANCELED
+            order['updated_at'] = self.get_current_time
+
+            # Check if order is already in CANCELED_ORDERS to avoid duplicates
+            if not any(canceled_order['order_id'] == order_id for canceled_order in self.CANCELED_ORDERS):
+                self.CANCELED_ORDERS.append(order)
+                print(f"Added order {order_id} to CANCELED_ORDERS")
+
+            # Remove from PENDING_ORDERS if present
+            for pending_order in list(self.PENDING_ORDERS):
+                if pending_order['order_id'] == order_id:
+                    self.PENDING_ORDERS.remove(pending_order)
+                    print(
+                        f"Removed order {order_id} from PENDING_ORDERS during cancellation")
+
+            # If this order has TP/SL legs, cancel those too
+            if order.get('legs'):
+                if order['legs'].get('take_profit'):
+                    tp_order_id = order['legs']['take_profit']['order_id']
+                    print(
+                        f"Canceling take profit leg {tp_order_id} of order {order_id}")
+                    try:
+                        # Recursively cancel the TP leg but don't raise exceptions if already canceled
+                        self.cancel_order(tp_order_id)
+                    except Exception as e:
+                        print(f"Could not cancel TP leg: {e}")
+
+                if order['legs'].get('stop_loss'):
+                    sl_order_id = order['legs']['stop_loss']['order_id']
+                    print(
+                        f"Canceling stop loss leg {sl_order_id} of order {order_id}")
+                    try:
+                        # Recursively cancel the SL leg but don't raise exceptions if already canceled
+                        self.cancel_order(sl_order_id)
+                    except Exception as e:
+                        print(f"Could not cancel SL leg: {e}")
+
+            return order
+
+        # If not found directly, check if this is a TP or SL leg of another order
+        for parent_id, parent_order in self.Orders.items():
+            if parent_order.get('legs'):
+                # Check if this is a take profit leg
+                if parent_order['legs'].get('take_profit') and parent_order['legs']['take_profit'].get('order_id') == order_id:
+                    # Check if the order is already filled or closed
+                    if parent_order['status'] == ITradeUpdateEvent.FILLED or parent_order['status'] == ITradeUpdateEvent.CLOSED:
+                        # print(f"Cannot cancel order {parent_id} because it is already {parent_order['status']}")
+                        raise BaseException({
+                            "code": "already_filled",
+                            "data": {"order_id": parent_id, "status": parent_order['status']}
+                        })
+                    else:
+                        print(
+                            f"Order {order_id} is a take profit leg of {parent_id}, removing reference")
+                        # Remove the take profit leg reference
+                        del parent_order['legs']['take_profit']
+                        return self.get_order(order_id) or {'order_id': order_id, 'status': ITradeUpdateEvent.CANCELED}
+
+                # Check if this is a stop loss leg
+                if parent_order['legs'].get('stop_loss') and parent_order['legs']['stop_loss'].get('order_id') == order_id:
+                    # Check if the order is already filled or closed
+                    if parent_order['status'] == ITradeUpdateEvent.FILLED or parent_order['status'] == ITradeUpdateEvent.CLOSED:
+                        # print(f"Cannot cancel order {parent_id} because it is already {parent_order['status']}")
+                        raise BaseException({
+                            "code": "already_filled",
+                            "data": {"order_id": parent_id, "status": parent_order['status']}
+                        })
+                    else:
+                        print(
+                            f"Order {order_id} is a stop loss leg of {parent_id}, removing reference")
+                        # Remove the stop loss leg reference
+                        del parent_order['legs']['stop_loss']
+                        return self.get_order(order_id) or {'order_id': order_id, 'status': ITradeUpdateEvent.CANCELED}
 
         # Order Id not found
         raise BaseException({
@@ -321,13 +378,16 @@ class PaperBroker(BaseBroker):
             # trade stream for all of the pending, filled, canceled oerders.
             while self.get_current_time <= self.END_DATE and self.RUNNING_TRADE_STREAM:
                 try:
-                    self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
 
-                    self.processPendingOrders(callback, loop)
-                    self.processCanceledOrders(callback, loop)
-                    self.processActiveOrders(callback, loop)
-                    self.processClosedOrders(callback, loop)
                     self.processUpdateOrders(callback, loop)
+                    self.processClosedOrders(callback, loop)
+                    self.processCanceledOrders(callback, loop)
+                    self.processPendingOrders(callback, loop)
+                    self.processActiveOrders(callback, loop)
+                    # perform any order updates again
+                    self.processUpdateOrders(callback, loop)
+                    self.processCanceledOrders(callback, loop)
+                    self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
 
                 except BrokenBarrierError:
                     continue
@@ -338,28 +398,57 @@ class PaperBroker(BaseBroker):
 
         else:
             # live paper trade stream
-            try:
-                while self.RUNNING_TRADE_STREAM:
-
-                    self.processPendingOrders(callback, loop)
-                    self.processCanceledOrders(callback, loop)
-                    self.processActiveOrders(callback, loop)
-                    self.processClosedOrders(callback, loop)
+            while self.RUNNING_TRADE_STREAM:
+                try:
                     self.processUpdateOrders(callback, loop)
-                    sleep(1)
-            except Exception as e:
-                print("Error: ", e)
+                    self.processClosedOrders(callback, loop)
+                    self.processCanceledOrders(callback, loop)
+                    self.processPendingOrders(callback, loop)
+                    self.processActiveOrders(callback, loop) 
+                    # perform any order updates again
+                    self.processUpdateOrders(callback, loop)
+                    self.processCanceledOrders(callback, loop)
+                except Exception as e:
+                    print("Error: ", e)
+                    continue
+                sleep(1)
 
     def processUpdateOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
-        for i, order in enumerate(list(self.UPDATE_ORDERS)):
+        for i, order in enumerate(self.UPDATE_ORDERS):
             updateOrder = order.copy()
+            print("Processing update order: ", updateOrder['order_id'])
             updateOrder['status'] = ITradeUpdateEvent.REPLACED
             loop.run_until_complete(
                 callback(ITradeUpdate(updateOrder, updateOrder['status'])))
             self.UPDATE_ORDERS.remove(order)
 
     def processPendingOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
-        for i, order in enumerate(list(self.PENDING_ORDERS)):
+        """ Process pending orders that are either new or accepted.
+        This method checks the current market conditions and fills market orders immediately.
+        It also processes limit orders based on the current bar's high and low prices.
+        """
+        # Allowed order states
+        allowed_states = [ITradeUpdateEvent.NEW,
+                          ITradeUpdateEvent.ACCEPTED, ITradeUpdateEvent.PENDING_NEW]
+        idx = 0
+        # Iterate through pending orders
+        # for i, order in enumerate(self.PENDING_ORDERS):
+        while idx < len(self.PENDING_ORDERS):
+            order = self.PENDING_ORDERS[idx]
+            
+            # Check if order has been canceled and is not already filled or closed
+            if any(canceled_order['order_id'] == order['order_id'] for canceled_order in self.CANCELED_ORDERS):
+                # Only skip if the order is not already filled or closed
+                if order['status'] != ITradeUpdateEvent.FILLED and order['status'] != ITradeUpdateEvent.CLOSED:
+                    self.PENDING_ORDERS.remove(order)
+                    print(
+                        f"Skipping processing of canceled order {order['order_id']} in PENDING_ORDERS")
+                    continue
+
+            if order['status'] not in allowed_states:
+                self.PENDING_ORDERS.remove(order)
+                continue
+
             currentBar = self._get_current_bar(
                 order['asset']['symbol'])
             if currentBar is None:
@@ -389,7 +478,14 @@ class PaperBroker(BaseBroker):
                 except BaseException as e:
                     if e.code == "insufficient_funds":
                         print("Error: ", e)
-
+                    order['status'] = ITradeUpdateEvent.REJECTED
+                    order['filled_at'] = None
+                    order['filled_price'] = None
+                    order['filled_qty'] = None
+                    order['updated_at'] = self.get_current_time
+                    self.PENDING_ORDERS.remove(order)
+                    loop.run_until_complete(callback(ITradeUpdate(
+                        order, order['status'])))
                 continue
 
             elif order['type'] == IOrderType.LIMIT:
@@ -416,10 +512,29 @@ class PaperBroker(BaseBroker):
                     except BaseException as e:
                         if e.code == "insufficient_funds":
                             print("Error: ", e)
+                        order['status'] = ITradeUpdateEvent.REJECTED
+                        order['filled_at'] = None
+                        order['filled_price'] = None
+                        order['filled_qty'] = None
+                        order['updated_at'] = self.get_current_time
+                        self.PENDING_ORDERS.remove(order)
+                        loop.run_until_complete(callback(ITradeUpdate(
+                            order, order['status'])))
                     continue
+            idx += 1  # Increment index only if the order is not removed
 
     def processActiveOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
-        for i, order in enumerate(list(self.ACTIVE_ORDERS)):
+        """ Process active orders that are either filled or partially filled.
+        This method checks for take profit and stop loss conditions and updates the order status accordingly.
+        It also updates the position information and calculates the P&L for filled positions.
+        """
+        # Allowed order states
+        allowed_states = [ITradeUpdateEvent.FILLED,
+                          ITradeUpdateEvent.PARTIAL_FILLED]
+        for i, order in enumerate(self.ACTIVE_ORDERS):
+            if order['status'] not in allowed_states:
+                self.ACTIVE_ORDERS.remove(order)
+                continue
             # update the position information as the position is filled and keep track of all  positions PNL
             self._update_position(order)
 
@@ -473,7 +588,17 @@ class PaperBroker(BaseBroker):
                 continue
 
     def processClosedOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
-        for i, order in enumerate(list(self.CLOSE_ORDERS)):
+        """ Process closed orders that are either filled or closed.
+        This method updates the order status to CLOSED and sets the stop price to the current bar's open price.
+        It also updates the filled quantity and filled at time.
+        """
+        # Allowed order states
+        allowed_states = [ITradeUpdateEvent.CLOSED, ITradeUpdateEvent.FILLED]
+        for i, order in enumerate(self.CLOSE_ORDERS):
+            if order['status'] not in allowed_states:
+                self.CLOSE_ORDERS.remove(order)
+                continue
+
             currentBar = self._get_current_bar(
                 order['asset']['symbol'])
             if currentBar is None:
@@ -491,14 +616,40 @@ class PaperBroker(BaseBroker):
                 order, order['status'])))
 
     def processCanceledOrders(self, callback: Awaitable, loop: asyncio.AbstractEventLoop):
-        for i, order in enumerate(list(self.CANCELED_ORDERS)):
-            if order['status'] != ITradeUpdateEvent.FILLED and order['status'] != ITradeUpdateEvent.CLOSED:
+        """ Process canceled orders that are either canceled or pending new.
+        This method cancels pending orders and removes it from the PENDING_ORDERS and UPDATE_ORDERS.
+        """
+        # Allowed order states
+        allowed_states = [ITradeUpdateEvent.CANCELED,
+                          ITradeUpdateEvent.ACCEPTED, ITradeUpdateEvent.PENDING_NEW]
+        for i, order in enumerate(self.CANCELED_ORDERS):
+            if order['status'] not in allowed_states:
+                self.CANCELED_ORDERS.remove(order)
+                continue
+
+            # Only remove from PENDING_ORDERS and UPDATE_ORDERS
+            # Do NOT remove from ACTIVE_ORDERS as those are filled orders that need processing
+            if order in self.PENDING_ORDERS:
+                self.PENDING_ORDERS.remove(order)
+                print(
+                    f"Removed canceled order {order['order_id']} from PENDING_ORDERS")
+            if order in self.UPDATE_ORDERS:
+                self.UPDATE_ORDERS.remove(order)
+                print(
+                    f"Removed canceled order {order['order_id']} from UPDATE_ORDERS")
+
+            if (order['status'] != ITradeUpdateEvent.FILLED and order['status'] != ITradeUpdateEvent.CLOSED):
                 order['status'] = ITradeUpdateEvent.CANCELED
                 order['updated_at'] = self.get_current_time
                 self._update_order(order)
+
                 loop.run_until_complete(callback(ITradeUpdate(
                     order, order['status'])))
             else:
+                # If the order is already FILLED or CLOSED, remove it from CANCELED_ORDERS
+                # but don't change its status or remove from ACTIVE_ORDERS
+                print(
+                    f"Order {order['order_id']} is already {order['status']}, removing from CANCELED_ORDERS only")
                 self.CANCELED_ORDERS.remove(order)
 
     async def closeTradeStream(self):
@@ -536,12 +687,33 @@ class PaperBroker(BaseBroker):
                             assert order['side'] == IOrderSide.BUY, "Order side must be BUY for closing a SELL position"
                             self.Positions[symbol][orderId]['qty'] += order['qty']
 
-                        # Clear buying power withheld by the order
+                        # Calculate realized P&L and update account
                         entryPrice = order['filled_price'] if order[
                             'filled_price'] != None else self.Positions[symbol][orderId]['avg_entry_price']
-                        self.Account.cash += max(
-                            np.round((order['qty'] * entryPrice) / self.LEVERAGE, 2), 0)
-                        if self.Account.cash == 0:
+                        closePrice = order['stop_price']
+
+                        # Calculate realized P&L based on position side
+                        if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY:
+                            # For long positions: (close_price - entry_price) * qty
+                            realized_pl = (
+                                closePrice - entryPrice) * order['qty']
+                        else:
+                            # For short positions: (entry_price - close_price) * qty
+                            realized_pl = (
+                                entryPrice - closePrice) * order['qty']
+
+                        # Update cash with realized P&L and return of margin
+                        margin_used = np.round(
+                            (order['qty'] * entryPrice) / self.LEVERAGE, 2)
+                        self.Account.cash += margin_used + realized_pl
+
+                        # Update equity with realized P&L (margin was already counted in equity)
+                        self.Account.equity += realized_pl
+
+                        print(
+                            f"[AUDIT] Realized P&L: {realized_pl}, Margin Released: {margin_used}")
+
+                        if self.Account.cash <= 0:
                             # No buying power left close the position
                             order['status'] = ITradeUpdateEvent.CANCELED
                             self.CANCELED_ORDERS.append(order)
@@ -581,91 +753,169 @@ class PaperBroker(BaseBroker):
                         unrealized_pl=0
                     )
 
-                    # Credit the account on the new opened position
-                    self.Account.cash -= np.round(
-                        marginRequired/self.LEVERAGE, 2)
+                    # Deduct margin requirement from cash (affects buying power)
+                    margin_required = np.round(marginRequired/self.LEVERAGE, 2)
+                    self.Account.cash -= margin_required
+
+                    # Equity doesn't change when opening a position (just moving assets)
+                    # Track this margin requirement for future reference
+                    self.Positions[symbol][orderId]['margin_required'] = margin_required
+
+                    print(
+                        f"[AUDIT] New position margin requirement: {margin_required}")
 
                 case ITradeUpdateEvent.CANCELED:
                     # Order will just be canceled
                     pass
 
-        if oldPosition:
-            self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order['stop_price'] else order['stop_price']
+        if oldPosition is not None:
+            # Always update to latest price
+            self.Positions[symbol][orderId]['current_price'] = currentBar.close if not order.get(
+                'stop_price') else order['stop_price']
+
+            # --- BEGIN AUDIT LOGGING ---
+            # before_cash = self.Account.cash
+            # before_equity = self.Account.equity
+            # print(f"[AUDIT] OrderID: {orderId}, Symbol: {symbol}, Side: {order.get('side')}, Qty: {order.get('qty')}, Price: {order.get('filled_price', None) or order.get('stop_price', None)}, Status: {order.get('status')}, BEFORE cash: {before_cash}, BEFORE equity: {before_equity}")
+            # --- END AUDIT LOGGING ---
 
             if order['status'] == ITradeUpdateEvent.CLOSED:
                 if self.Positions[symbol][orderId]['qty'] == 0:
                     # remove the position from the Positions dictionary
                     del self.Positions[symbol][orderId]
-
+                # --- LOG POST-CLOSE ---
+                print(
+                    f"[AUDIT] CLOSED OrderID: {orderId}, AFTER cash: {self.Account.cash}, AFTER equity: {self.Account.equity}")
                 return
 
-            if self.Positions[symbol][orderId]['current_price'] == oldPosition['current_price'] and order['status'] != ITradeUpdateEvent.CLOSED:
+            # Only update if price has changed
+            if self.Positions[symbol][orderId]['current_price'] == oldPosition.get('current_price') and order['status'] != ITradeUpdateEvent.CLOSED:
                 # No price change in the position since the last update
                 return
 
-            if oldPosition != 0:
-                # Update the position market value
-                self.Positions[symbol][orderId]['market_value'] = self.Positions[symbol][orderId]['current_price'] * \
-                    np.abs(oldPosition['qty'])
-                # quantity can be negative for short positions
+            # Update the position market value and unrealized PnL based on current data
+            side = self.Positions[symbol][orderId]['side']
+            curr_qty = self.Positions[symbol][orderId]['qty']
+            curr_price = self.Positions[symbol][orderId]['current_price']
+            cost_basis = self.Positions[symbol][orderId].get('cost_basis', 0)
+            avg_entry = self.Positions[symbol][orderId]['avg_entry_price']
 
-                # Update the unrealized PnL
-                self.Positions[symbol][orderId]['unrealized_pl'] = (self.Positions[symbol][orderId]['market_value'] - self.Positions[symbol][orderId]['cost_basis']
-                                                                    ) if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY else (self.Positions[symbol][orderId]['cost_basis'] - self.Positions[symbol][orderId]['market_value'])
+            # Calculate market value
+            self.Positions[symbol][orderId]['market_value'] = curr_price * \
+                np.abs(curr_qty)
 
-                # Update the account equity and cash
-                changeInPL = round(self.Positions[symbol][orderId]['unrealized_pl'] -
-                                   oldPosition['unrealized_pl'], 2)
-                self.Account.cash = max(self.Account.cash + changeInPL, 0)
-                self.Account.equity = max(self.Account.equity + changeInPL, 0)
+            # Calculate unrealized P&L properly based on position side
+            if side == IOrderSide.BUY:
+                # Long position: (current_price - avg_entry) * qty
+                self.Positions[symbol][orderId]['unrealized_pl'] = (
+                    curr_price - avg_entry) * np.abs(curr_qty)
+            else:
+                # Short position: (avg_entry - current_price) * qty
+                self.Positions[symbol][orderId]['unrealized_pl'] = (
+                    avg_entry - curr_price) * np.abs(curr_qty)
+
+            # Calculate change in unrealized P&L
+            changeInPL = round(
+                self.Positions[symbol][orderId]['unrealized_pl'] - oldPosition.get('unrealized_pl', 0), 2)
+
+            # Only update equity with unrealized P&L changes, not cash
+            # Cash only changes with realized P&L (when positions are closed)
+            self.Account.equity = max(self.Account.equity + changeInPL, 0)
+
+            # --- LOG POST-UPDATE ---
+            print(f"[AUDIT] OrderID: {orderId}, AFTER cash: {self.Account.cash}, AFTER equity: {self.Account.equity}, ChangeInPL: {changeInPL}, Unrealized PL: {self.Positions[symbol][orderId]['unrealized_pl']}")
 
         else:
             return
 
     def _log_signal(self, order: IOrder, signalType: Literal['entry', 'exit']):
+        """
+        Logs entry/exit signals for both BUY and SELL sides with proper DCA support.
+        Ensures price and qty columns are set correctly, prioritizes DCA accumulation over position closure conflicts.
+        """
         symbol = order['asset']['symbol']
-        currentBarIndex = self._get_current_bar(symbol).index
-        # Track the signals to later plot the signals, entries and exits and run against the backtester (ours and vector BT)
+        bar = self._get_current_bar(symbol)
+        if bar is None:
+            # No bar found for this symbol/time
+            return
+        currentBarIndex = bar.index
+        signals = self.HISTORICAL_DATA[symbol]['signals']
+
+        # Check if this is DCA accumulation (same direction as existing position)
+        current_position = self.get_position(symbol)
+        is_dca_accumulation = False
+        if current_position and signalType == 'entry':
+            current_qty = current_position.get('qty', 0)
+            is_dca_accumulation = ((order['side'] == IOrderSide.BUY and current_qty > 0) or 
+                                 (order['side'] == IOrderSide.SELL and current_qty < 0))
+
+        # Handle signal logging with DCA priority
+        qty = order.get('filled_qty', order.get('qty', 0))
+        
         if signalType == 'entry':
-            # Log th entry signal
             if order['side'] == IOrderSide.BUY:
-                self.HISTORICAL_DATA[symbol
-                                     ]['signals'].loc[currentBarIndex, 'entries'] = True
-            else:
-                self.HISTORICAL_DATA[symbol
-                                     ]['signals'].loc[currentBarIndex, 'short_entries'] = True
-            # Record the entry price
-            if order['filled_price']:
-                if np.isnan(self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0]):
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex,
-                                                                'price'] = order['filled_price']
-                else:
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (
-                        self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['filled_price']) / 2
-
+                # For DCA: if conflicting exit exists, prioritize entry (accumulation)
+                if signals.loc[currentBarIndex, 'exits'].bool():
+                    if is_dca_accumulation:
+                        print(f"[DCA] Prioritizing BUY entry over exit for {symbol} - DCA accumulation")
+                        signals.loc[currentBarIndex, 'exits'] = False
+                    else:
+                        print(f"[DCA] Skipping BUY entry for {symbol} - conflicting exit signal")
+                        return
+                signals.loc[currentBarIndex, 'entries'] = True
+                signals.loc[currentBarIndex, 'qty'] += abs(qty)
+                
+            elif order['side'] == IOrderSide.SELL:
+                # For DCA: if conflicting short exit exists, prioritize entry (accumulation)
+                if signals.loc[currentBarIndex, 'short_exits'].bool():
+                    if is_dca_accumulation:
+                        print(f"[DCA] Prioritizing SELL entry over short exit for {symbol} - DCA accumulation")
+                        signals.loc[currentBarIndex, 'short_exits'] = False
+                    else:
+                        print(f"[DCA] Skipping SELL entry for {symbol} - conflicting short exit signal")
+                        return
+                signals.loc[currentBarIndex, 'short_entries'] = True
+                signals.loc[currentBarIndex, 'qty'] -= abs(qty)
+            
+            # Set the entry price
+            if order.get('filled_price') is not None and not np.isnan(order['filled_price']):
+                signals.loc[currentBarIndex, 'price'] = order['filled_price']
+                
         elif signalType == 'exit':
-            # Log the exit signal
             if order['side'] == IOrderSide.SELL:
-                self.HISTORICAL_DATA[symbol
-                                     ]['signals'].loc[currentBarIndex, 'exits'] = True
-            else:
-                self.HISTORICAL_DATA[symbol
-                                     ]['signals'].loc[currentBarIndex, 'short_exits'] = True
-            # Record the exit price
-            if order['stop_price']:
-                if np.isnan(self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0]):
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex,
-                                                                'price'] = order['stop_price']
-                else:
-                    self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'] = (
-                        self.HISTORICAL_DATA[symbol]['signals'].loc[currentBarIndex, 'price'][0] + order['stop_price']) / 2
+                # Clear conflicting entry if this is a true position closure
+                if signals.loc[currentBarIndex, 'entries'].bool():
+                    print(f"[DCA] Exit SELL clearing conflicting entry for {symbol}")
+                    signals.loc[currentBarIndex, 'entries'] = False
+                signals.loc[currentBarIndex, 'exits'] = True
+                signals.loc[currentBarIndex, 'qty'] -= abs(qty)
+                
+            elif order['side'] == IOrderSide.BUY:
+                # Clear conflicting short entry if this is a true position closure
+                if signals.loc[currentBarIndex, 'short_entries'].bool():
+                    print(f"[DCA] Exit BUY clearing conflicting short entry for {symbol}")
+                    signals.loc[currentBarIndex, 'short_entries'] = False
+                signals.loc[currentBarIndex, 'short_exits'] = True
+                signals.loc[currentBarIndex, 'qty'] += abs(qty)
+            
+            # Set the exit price (prefer stop_price, fallback to filled_price)
+            exit_price = order.get('stop_price')
+            if exit_price is None or np.isnan(exit_price):
+                exit_price = order.get('filled_price')
+            if exit_price is not None and not np.isnan(exit_price):
+                signals.loc[currentBarIndex, 'price'] = exit_price
 
-        if order['side'] == IOrderSide.BUY:
-            self.HISTORICAL_DATA[symbol
-                                 ]['signals'].loc[currentBarIndex, 'qty'] += order['qty']
-        else:
-            self.HISTORICAL_DATA[symbol
-                                 ]['signals'].loc[currentBarIndex, 'qty'] -= order['qty']
+        # Final validation: VectorBT cannot handle overlapping signals on same bar
+        # This should rarely trigger now with improved logic above
+        if (signals.loc[currentBarIndex, 'entries'].bool() and 
+            signals.loc[currentBarIndex, 'exits'].bool()):
+            print(f"[VBT] Warning: Still have conflicting long signals for {symbol} on same bar - clearing exit")
+            signals.loc[currentBarIndex, 'exits'] = False
+            
+        if (signals.loc[currentBarIndex, 'short_entries'].bool() and 
+            signals.loc[currentBarIndex, 'short_exits'].bool()):
+            print(f"[VBT] Warning: Still have conflicting short signals for {symbol} on same bar - clearing short exit")
+            signals.loc[currentBarIndex, 'short_exits'] = False
 
     def _update_order(self, order: IOrder):
         if self.Orders.get(order['order_id']):
@@ -676,13 +926,27 @@ class PaperBroker(BaseBroker):
         def onNewOrder():
             # Add the new order to the pending orders queue
             if not oldOrder:
-                self.PENDING_ORDERS.append(order)
-
                 """ Check if the order is affecting any active orders as it might be an order to close a position and update the active orders accordingly"""
-                if self.get_position(order['asset']['symbol']):
+                current_position = self.get_position(order['asset']['symbol'])
+                
+                if current_position:
+                    # Check if this is DCA accumulation (same direction) or position closure/reversal
+                    current_qty = current_position.get('qty', 0)
+                    is_dca_accumulation = ((order['side'] == IOrderSide.BUY and current_qty > 0) or 
+                                         (order['side'] == IOrderSide.SELL and current_qty < 0))
+                    
+                    if is_dca_accumulation:
+                        # This is DCA accumulation - don't treat as position closure
+                        # Simply add to pending orders and let it accumulate
+                        print(f"[DCA] Order for {order['asset']['symbol']} is DCA accumulation - allowing to proceed")
+                        self.PENDING_ORDERS.append(order)
+                        return
+                    
+                    # Handle position closure/reversal logic (existing logic for opposite direction orders)
+                    print(f"[DCA] Order for {order['asset']['symbol']} is opposite direction - handling as closure/reversal")
                     tempCloseOrder = order.copy()
                     conflicting = False
-                    for i, activeOrder in enumerate(list(self.ACTIVE_ORDERS)):
+                    for i, activeOrder in enumerate(self.ACTIVE_ORDERS):
                         if activeOrder['asset']['symbol'] == order['asset']['symbol'] and \
                                 activeOrder['side'] != order['side'] and \
                                 activeOrder['status'] == ITradeUpdateEvent.FILLED:
@@ -698,7 +962,7 @@ class PaperBroker(BaseBroker):
                                 tempCloseOrder['order_id'] = activeOrder['order_id']
                                 tempCloseOrder['filled_price'] = activeOrder['filled_price']
                                 tempCloseOrder['filled_qty'] = activeOrder['filled_qty']
-
+                                tempCloseOrder['status'] = ITradeUpdateEvent.FILLED
                                 self.CLOSE_ORDERS.append(tempCloseOrder.copy())
                                 tempCloseOrder['qty'] = 0
                                 conflicting = True
@@ -714,6 +978,7 @@ class PaperBroker(BaseBroker):
                                 tempCloseOrder['order_id'] = activeOrder['order_id']
                                 tempCloseOrder['filled_price'] = activeOrder['filled_price']
                                 tempCloseOrder['filled_qty'] = tempCloseOrder['qty']
+                                tempCloseOrder['status'] = ITradeUpdateEvent.FILLED
                                 self.CLOSE_ORDERS.append(tempCloseOrder.copy())
                                 tempCloseOrder['qty'] = 0
                                 conflicting = True
@@ -727,18 +992,24 @@ class PaperBroker(BaseBroker):
                                 tempCloseOrder['qty'] = activeOrder['qty']
                                 tempCloseOrder['filled_price'] = activeOrder['filled_price']
                                 tempCloseOrder['filled_qty'] = tempCloseOrder['qty']
+                                tempCloseOrder['status'] = ITradeUpdateEvent.FILLED
                                 self.CLOSE_ORDERS.append(tempCloseOrder.copy())
-
                                 tempCloseOrder['qty'] = quantityLeft
                                 conflicting = True
                                 continue
 
                             if tempCloseOrder['qty'] == 0:
                                 break
+
+                        tempCloseOrder['status'] = ITradeUpdateEvent.PENDING_NEW
                     if tempCloseOrder['qty'] > 0 and conflicting:
                         # Add the order to the pending orders
                         order['qty'] = tempCloseOrder['qty']
                         self.PENDING_ORDERS.append(order)
+                        return
+                    
+         
+                self.PENDING_ORDERS.append(order)
 
         def onFilledOrder():
             if oldOrder in self.PENDING_ORDERS:
@@ -771,6 +1042,10 @@ class PaperBroker(BaseBroker):
             # This update is already done in the on trade update
             self._update_position(order)
 
+            if self.MODE == IStrategyMode.BACKTEST:
+                # log the exit signal
+                self._log_signal(order, 'exit')
+
             # Check if the position is completely closed and remove it from the positions dictionary - if the qty is 0 or None
             if self.Positions[order['asset']['symbol']].get(order['order_id']) == None:
                 pass
@@ -778,25 +1053,20 @@ class PaperBroker(BaseBroker):
             if oldOrder in self.ACTIVE_ORDERS:
                 self.ACTIVE_ORDERS.remove(oldOrder)
 
-            if oldOrder in self.CANCELED_ORDERS:
-                self.CANCELED_ORDERS.remove(oldOrder)
-
             if oldOrder in self.CLOSE_ORDERS:
                 self.CLOSE_ORDERS.remove(oldOrder)
             if order in self.CLOSE_ORDERS:
                 # This is when the order was sent and we are closing a position with another order id than the original order id - order is the updated order with the new order id and oldOrder is the original order (in the filled state)
                 self.CLOSE_ORDERS.remove(order)
 
-            if self.MODE == IStrategyMode.BACKTEST:
-                # log the exit signal
-                self._log_signal(order, 'exit')
-
         def onCanceledOrder():
-            if oldOrder in self.ACTIVE_ORDERS:
+            if oldOrder in self.ACTIVE_ORDERS or order in self.ACTIVE_ORDERS:
                 """ Should not really happen as the order state check should be before have already happened when cancelling the order """
                 # if order is already filled oldOrder['status'] == ITradeUpdateEvent.CANCELED and oldOrder in self.CANCELED_ORDERS:
                 if oldOrder in self.CANCELED_ORDERS:
                     self.CANCELED_ORDERS.remove(oldOrder)
+                if order in self.CANCELED_ORDERS:
+                    self.CANCELED_ORDERS.remove(order)
 
                 raise BaseException({
                     "code": "already_filled",
@@ -813,18 +1083,20 @@ class PaperBroker(BaseBroker):
 
             if oldOrder in self.CANCELED_ORDERS:
                 self.CANCELED_ORDERS.remove(oldOrder)
-
-        match order['status']:
-            case ITradeUpdateEvent.NEW:
-                onNewOrder()
-            case ITradeUpdateEvent.FILLED:
-                onFilledOrder()
-            case ITradeUpdateEvent.CANCELED:
-                onCanceledOrder()
-            case ITradeUpdateEvent.CLOSED:
-                onClosedOrder()
-            case _:
-                pass
+        try:
+            match order['status']:
+                case ITradeUpdateEvent.NEW:
+                    onNewOrder()
+                case ITradeUpdateEvent.FILLED:
+                    onFilledOrder()
+                case ITradeUpdateEvent.CANCELED:
+                    onCanceledOrder()
+                case ITradeUpdateEvent.CLOSED:
+                    onClosedOrder()
+                case _:
+                    pass
+        except Exception as e:
+            print("Error updating order: ", e)
 
         self.Orders[order['order_id']] = order
         return order
@@ -1103,17 +1375,26 @@ class PaperBroker(BaseBroker):
 
                             if asset.get('feature') == None:
                                 # Create signals dataframe
-                                size = self.HISTORICAL_DATA[symbol
-                                                            ]['bar'].shape[0]
-                                self.HISTORICAL_DATA[symbol]['signals'] = pd.DataFrame(data={"entries": np.zeros(size), "short_entries": np.zeros(size), "exits": np.zeros(
-                                    size), "short_exits": np.zeros(size), "price": np.zeros(size), "qty": np.zeros(size)}, columns=["entries", "short_entries", "exits", "short_exits", "price", "qty"], index=self.HISTORICAL_DATA[asset['symbol']]['bar'].index)
-                                # .reindex_like(self.HISTORICAL_DATA[asset['symbol']]['bar'])
-                                self.HISTORICAL_DATA[symbol]['signals'][[
-                                    'entries', 'exits', 'short_entries', 'short_exits']] = False
-                                self.HISTORICAL_DATA[symbol]['signals'][[
-                                    'qty']] = 0
-                                self.HISTORICAL_DATA[symbol]['signals'][[
-                                    'price']] = np.nan
+                                bar_df = self.HISTORICAL_DATA[symbol]['bar']
+                                size = bar_df.shape[0]
+                                signals_df = pd.DataFrame(
+                                    data={
+                                        "entries": np.zeros(size),
+                                        "short_entries": np.zeros(size),
+                                        "exits": np.zeros(size),
+                                        "short_exits": np.zeros(size),
+                                        "price": np.zeros(size),
+                                        "qty": np.zeros(size),
+                                    },
+                                    columns=["entries", "short_entries",
+                                             "exits", "short_exits", "price", "qty"],
+                                    index=bar_df.index
+                                )
+                                signals_df[["entries", "exits",
+                                            "short_entries", "short_exits"]] = False
+                                signals_df[["qty"]] = 0
+                                signals_df[["price"]] = np.nan
+                                self.HISTORICAL_DATA[symbol]["signals"] = signals_df
                                 if not TF:
                                     # set the Main time frame to the first asset time frame
                                     TF = asset['time_frame']
@@ -1178,8 +1459,13 @@ class PaperBroker(BaseBroker):
                                             continue
                                         else:
                                             for index in barDatas.index:
-                                                loop.run_until_complete(
-                                                    callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                                                try:
+                                                    loop.run_until_complete(
+                                                        callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
+                                                except Exception as e:
+                                                    print(
+                                                        "Error streaming bar back to strategy: ", e)
+                                                    continue
                                     else:
                                         # Get the current bar data with the index
                                         barData = self._get_current_bar(symbol)
@@ -1236,9 +1522,9 @@ class PaperBroker(BaseBroker):
                 if asset['type'] == 'bar':
                     self.HISTORICAL_DATA[asset['symbol']
                                          ]['bar'] = pd.DataFrame()
-                    barStreamCount += 1
-                    # if asset.get('feature') == None:
-                    #     TF = asset['time_frame']
+                barStreamCount += 1
+                # if asset.get('feature') == None:
+                #     TF = asset['time_frame']
 
             pool = ThreadPoolExecutor(max_workers=(
                 barStreamCount), thread_name_prefix="MarketDataStream")
@@ -1307,6 +1593,8 @@ class PaperBroker(BaseBroker):
         return False
 
     def close_position(self, symbol: str, qty=None, percent=None):
+        super().close_position(symbol, qty, percent)
+
         position = self.get_position(symbol)
         if position:
             quantityToClose = 0
@@ -1546,6 +1834,29 @@ class PaperBroker(BaseBroker):
             raise NotImplementedError(f'Mode {self.MODE} not supported')
         return results
 
+    def export_trade_log(self, filename="trade_log.csv"):
+        import pandas as pd
+        rows = []
+        for symbol, orders in self.Positions.items():
+            for order_id, pos in orders.items():
+                rows.append({
+                    'symbol': symbol,
+                    'order_id': order_id,
+                    **pos
+                })
+        df = pd.DataFrame(rows)
+        df.to_csv(filename, index=False)
+        print(f"[EXPORT] Trade log exported to {filename}")
+
+    def export_vbt_signals(self, asset, filename="vbt_signals.csv"):
+        import pandas as pd
+        if asset in self.HISTORICAL_DATA and 'signals' in self.HISTORICAL_DATA[asset]:
+            df = self.HISTORICAL_DATA[asset]['signals']
+            df.to_csv(filename)
+            print(f"[EXPORT] VBT signals for {asset} exported to {filename}")
+        else:
+            print(f"[EXPORT] No signals found for asset {asset}")
+
     def update_account_history(self):
         if self.VERBOSE >= 2:
             print("Updating Account History")
@@ -1553,10 +1864,28 @@ class PaperBroker(BaseBroker):
         self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
 
     def update_account_balance(self):
-        self.ACCOUNT.buying_power = max(np.round(
-            self.ACCOUNT.cash * self.LEVERAGE, 2), 0)
-        self.ACCOUNT.equity = self.ACCOUNT.cash + sum(
-            position['market_value'] for positions in self.Positions.values() for position in positions.values())
+        # Calculate total unrealized P&L across all positions
+        total_unrealized_pl = sum(
+            position.get('unrealized_pl', 0)
+            for positions in self.Positions.values()
+            for position in positions.values()
+        )
+
+        # Calculate total margin requirements for all open positions
+        total_margin_used = sum(
+            position.get('margin_required', 0)
+            for positions in self.Positions.values()
+            for position in positions.values()
+        )
+
+        # Update equity: cash + unrealized P&L
+        self.ACCOUNT.equity = np.round(
+            self.ACCOUNT.cash + total_unrealized_pl, 2)
+
+        # Calculate buying power: cash * leverage
+        # This ensures buying power reflects available cash, not tied up in positions
+        self.ACCOUNT.buying_power = max(
+            np.round(self.ACCOUNT.cash * self.LEVERAGE, 2), 0)
 
     @property
     def Account(self) -> IAccount:
@@ -1571,10 +1900,10 @@ class PaperBroker(BaseBroker):
         print("updated account cash from:",
               self.Account.cash, "->", account.cash)
         if cash and cash != self.ACCOUNT.cash:
-            self.ACCOUNT.cash = max(cash, 0)
+            self.ACCOUNT.cash = max(np.round(cash, 2), 0)
         equity = account.equity
         if equity and equity != self.ACCOUNT.equity:
-            self.ACCOUNT.equity = max(equity, 0)
+            self.ACCOUNT.equity = max(np.round(equity, 2), 0)
 
         if account.get('leverage') and account.leverage != self.ACCOUNT.leverage:
             self.ACCOUNT.leverage = account.leverage

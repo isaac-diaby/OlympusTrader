@@ -175,7 +175,7 @@ if __name__ == "__main__":
     #         2024, 7, 1), end_date=datetime(2024, 8, 23))
     
     broker = PaperBroker(cash=100_000, start_date=datetime(
-            2024, 8, 16), end_date=datetime(2024, 8, 23), verbose=1, leverage=1.0)
+            2025, 6, 13), end_date=datetime(2025, 6, 15), verbose=1, leverage=1.0)
     
     # Strategy
     # 1 Minute
