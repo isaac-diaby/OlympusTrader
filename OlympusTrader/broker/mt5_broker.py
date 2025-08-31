@@ -101,11 +101,17 @@ class Mt5Broker(BaseBroker):
             # Get the timezone shift from the first symbol
             # tzdif = pd.Timestamp(symbols[0].time, unit='s') - datetime.now()
             # tzdif = pd.Timestamp(symbols[0].time, unit='s') - pd.Timestamp.now()
-            tzdif = pd.Timestamp(
-                symbols[0].time, unit="s", tz=timezone.utc
-            ) - pd.Timestamp.now(timezone.utc)
-
-            self.TIMEZONE = timezone(tzdif.round(freq="H"))
+            tzdif = pd.Timestamp(symbols[0].time, unit="s", tz=timezone.utc) - pd.Timestamp.now(timezone.utc)
+            hours = int(tzdif.total_seconds() // 3600)
+            minutes = int((tzdif.total_seconds() % 3600) // 60)
+            # Clamp to valid range for timezone
+            if hours < -23:
+                hours = -23
+            elif hours > 23:
+                hours = 23
+            offset = timedelta(hours=hours, minutes=minutes)
+            print(f"Broker Timezone difference from UTC: {offset}")
+            self.TIMEZONE = timezone(offset)
             # self.TIMEZONE = timezone(np.abs(tzdif).round(freq='H'))
             return True
         except Exception as e:
@@ -274,13 +280,16 @@ class Mt5Broker(BaseBroker):
                     if position.side == IOrderSide.SELL
                     else mt5.ORDER_TYPE_SELL,
                     "magic": 234777,
-                    "comment": "OlympusTrader Close",
+                    # "comment": "OlympusTrader Close",
                     "type_time": mt5.ORDER_TIME_GTC,
                     "type_filling": mt5.ORDER_FILLING_RETURN,
                     "position": symbol,
                     # "position_by": symbol
                 }
                 result = mt5.order_send(request)
+                if not result:
+                    print("Order[CLOSE] send failed, error code =", mt5.last_error())
+                    return None
                 return self.format_order(result)
             else:
                 return None
@@ -326,9 +335,13 @@ class Mt5Broker(BaseBroker):
             request = {
                 "action": mt5.TRADE_ACTION_REMOVE,
                 "order": order_id,
-                "comment": "OlympusTrader Cancel",
+                # "comment": "OlympusTrader Cancel",
             }
+            print("Cancelling order", order_id)
             result = mt5.order_send(request)
+            if not result:
+                print("Order[CANCEL] send failed, error code =", mt5.last_error())
+                return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 print(
                     f"Order to cancel failed, retcode={
@@ -353,9 +366,12 @@ class Mt5Broker(BaseBroker):
                     "order": order_id,
                     "price": price,
                     "volume": qty,
-                    "comment": "OlympusTrader Update",
+                    # "comment": "OlympusTrader Update",
                 }
                 result = mt5.order_send(request)
+                if not result:
+                    print("Order[UPDATE] send failed, error code =", mt5.last_error())
+                    return None
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
                     print(
                         f"Order to update failed, retcode={
@@ -430,7 +446,7 @@ class Mt5Broker(BaseBroker):
             else mt5.ORDER_TYPE_SELL,
             "deviation": deviation,
             "magic": 234777,
-            "comment": f"OlympusTrader Open - {insight.strategyType}",
+            # "comment": f"OlympusTrader Open - {str(insight.strategyType)}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_RETURN,
         }
@@ -478,10 +494,15 @@ class Mt5Broker(BaseBroker):
         if insight.order_id:
             # This is likely a close order / reduce order
             request["position"] = insight.order_id
-            request["comment"] = f"OlympusTrader Close - {insight.strategyType}"
+            # request["comment"] = f"OlympusTrader Close - {str(insight.strategyType)}"
 
         try:
             check_result = mt5.order_check(request)
+            print(f"Order[EXECUTE] check: {check_result}")
+
+            if not check_result:
+                print("Order check failed, error code =", mt5.last_error())
+                return None
             if (
                 check_result.retcode != 0
                 and check_result.retcode != mt5.TRADE_RETCODE_DONE
@@ -496,6 +517,9 @@ class Mt5Broker(BaseBroker):
                 return None
 
             result = mt5.order_send(request)
+            if not result:
+                print("Order send failed, error code =", mt5.last_error())
+                return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 # Should not error here as we have already checked
                 print(
@@ -505,6 +529,7 @@ class Mt5Broker(BaseBroker):
                 # retcode=10027 Algorithmic trading is disabled
                 #
                 return None
+            print(f"Order[EXECUTED] Order Date: {result}")
             legs = IOrderLegs()
             if result[10].tp:
                 legs["take_profit"] = IOrderLeg(
@@ -562,10 +587,11 @@ class Mt5Broker(BaseBroker):
         rate = 0.5
         loop = asyncio.new_event_loop()
 
-        lastChecked = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
+        lastChecked = datetime.now(self.TIMEZONE)
         while self.RUNNING_TRADE_STREAM:
             sleep(1 / rate)
-            now = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
+            now = datetime.now(self.TIMEZONE)
+            print(f"Checking for new trades from {lastChecked} to {now}")
             new_incoming_orders = mt5.history_orders_get(lastChecked, now)
             new_incoming_deals = mt5.history_deals_get(lastChecked, now)
             # TODO:Check if they are sorted!
@@ -612,9 +638,7 @@ class Mt5Broker(BaseBroker):
 
                         # lastChecked = pd.Timestamp(mt5.symbol_info(
                         #     asset["symbol"]).time, unit='s', tz=self.TIMEZONE)
-                        lastChecked = pd.Timestamp.now(tz=self.TIMEZONE).replace(
-                            tzinfo=timezone.utc
-                        )
+                        lastChecked = pd.Timestamp.now(tz=self.TIMEZONE)
                         while self.RUNNING_MARKET_STREAM:
                             nextTimetoCheck = asset[
                                 "time_frame"
@@ -627,7 +651,7 @@ class Mt5Broker(BaseBroker):
 
                             # bars = mt5.copy_rates_range(asset['symbol'], int(
                             #     asset['time_frame']), lastChecked.timestamp(), nextTimetoCheck.timestamp())
-
+                            print(f"Checking for new bars from {lastChecked} to {nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}")
                             bars = mt5.copy_rates_from(
                                 asset["symbol"],
                                 int(asset["time_frame"]),

@@ -80,7 +80,8 @@ class MT5_test(Strategy):
         # universe = {'aapl', 'goog', 'amzn', 'msft', 'tsla'}
         # universe = {'btc/usd'}
         # universe = {'btc/usd', 'ETHUSD'}
-        universe = {'btc/usd', 'ETHUSD', "xrpusd", "uniusd"}
+        universe = {'btcusd'}
+        # universe = {'btc/usd', 'ETHUSD', "xrpusd", "uniusd"}
         # universe = {'gbp/usd'}
         # universe = {'btc/usd', 'gbp/usd'}
         # universe = {'btc/usdt', 'eth/usdt', 'sol/usdt'}
