@@ -597,8 +597,8 @@ class Mt5Broker(BaseBroker):
 
             # TODO:Check if they are sorted!
 
-            print("Oders", new_incoming_orders)
-            print("Deal", new_incoming_deals)
+            # print("Oders", new_incoming_orders)
+            # print("Deal", new_incoming_deals)
             if (new_incoming_orders and len(new_incoming_orders) > 0) or (
                 new_incoming_deals and len(new_incoming_deals) > 0
             ):
