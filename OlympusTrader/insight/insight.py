@@ -15,6 +15,7 @@ from ..broker.interfaces import (
     IOrderClass,
     IOrderLegs,
     IOrderLeg,
+    ISupportedBrokers
 )
 from ..strategy.interfaces import IStrategyMode
 
@@ -271,6 +272,10 @@ class Insight:
                         if order["legs"]:
                             self.updateLegs(order["legs"])
                         self.updateSubmited(True)
+                        if (self.BROKER.NAME == ISupportedBrokers.MT5):
+                            # MT5 broker will update the state to executed via the trade event
+                            self.updateState(InsightState.EXECUTED, f"Order ID: {order['order_id']}")
+                            
 
                         # We should only update the state if the insight was successfully executed via the trade event
                         # self.updateState(

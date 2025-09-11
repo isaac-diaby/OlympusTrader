@@ -101,17 +101,11 @@ class Mt5Broker(BaseBroker):
             # Get the timezone shift from the first symbol
             # tzdif = pd.Timestamp(symbols[0].time, unit='s') - datetime.now()
             # tzdif = pd.Timestamp(symbols[0].time, unit='s') - pd.Timestamp.now()
-            tzdif = pd.Timestamp(symbols[0].time, unit="s", tz=timezone.utc) - pd.Timestamp.now(timezone.utc)
-            hours = int(tzdif.total_seconds() // 3600)
-            minutes = int((tzdif.total_seconds() % 3600) // 60)
-            # Clamp to valid range for timezone
-            if hours < -23:
-                hours = -23
-            elif hours > 23:
-                hours = 23
-            offset = timedelta(hours=hours, minutes=minutes)
-            print(f"Broker Timezone difference from UTC: {offset}")
-            self.TIMEZONE = timezone(offset)
+            tzdif = pd.Timestamp(
+                symbols[0].time, unit="s", tz=timezone.utc
+            ) - pd.Timestamp.now(timezone.utc)
+
+            self.TIMEZONE = timezone(tzdif.round(freq="H"))
             # self.TIMEZONE = timezone(np.abs(tzdif).round(freq='H'))
             return True
         except Exception as e:
@@ -498,7 +492,7 @@ class Mt5Broker(BaseBroker):
 
         try:
             check_result = mt5.order_check(request)
-            print(f"Order[EXECUTE] check: {check_result}")
+            # print(f"Order[EXECUTE] check: {check_result}")
 
             if not check_result:
                 print("Order check failed, error code =", mt5.last_error())
@@ -529,7 +523,7 @@ class Mt5Broker(BaseBroker):
                 # retcode=10027 Algorithmic trading is disabled
                 #
                 return None
-            print(f"Order[EXECUTED] Order Date: {result}")
+            # print(f"Order[EXECUTED] Order Date: {result}")
             legs = IOrderLegs()
             if result[10].tp:
                 legs["take_profit"] = IOrderLeg(
@@ -584,22 +578,30 @@ class Mt5Broker(BaseBroker):
         super().startTradeStream(callback)
         self.RUNNING_TRADE_STREAM = True
         # Rate limit for new trade signals
-        rate = 0.5
+        rate = 1
         loop = asyncio.new_event_loop()
 
-        lastChecked = datetime.now(self.TIMEZONE)
+        lastChecked = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
         while self.RUNNING_TRADE_STREAM:
             sleep(1 / rate)
-            now = datetime.now(self.TIMEZONE)
-            print(f"Checking for new trades from {lastChecked} to {now}")
+            now = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
+            # now = datetime.now(self.TIMEZONE)
+            # print(f"Checking for new trades from {lastChecked} to {now}")
             new_incoming_orders = mt5.history_orders_get(lastChecked, now)
+            if (new_incoming_orders == None):
+                print("No history orders error code={}".format(mt5.last_error()))
+
             new_incoming_deals = mt5.history_deals_get(lastChecked, now)
+            if (new_incoming_deals == None):
+                print("No history deal error code={}".format(mt5.last_error()))
+
             # TODO:Check if they are sorted!
+
+            print("Oders", new_incoming_orders)
+            print("Deal", new_incoming_deals)
             if (new_incoming_orders and len(new_incoming_orders) > 0) or (
                 new_incoming_deals and len(new_incoming_deals) > 0
             ):
-                # print("Oders", new_incoming_orders)
-                # print("Deal", new_incoming_deals)
                 for order in new_incoming_orders:
                     try:
                         loop.run_until_complete(
@@ -616,6 +618,7 @@ class Mt5Broker(BaseBroker):
     async def closeTradeStream(self):
         # TODO: Will have to build this out
         self.RUNNING_TRADE_STREAM = False
+        mt5.shutdown()
         pass
 
     def streamMarketData(self, callback: Awaitable, assetStreams):
@@ -638,11 +641,12 @@ class Mt5Broker(BaseBroker):
 
                         # lastChecked = pd.Timestamp(mt5.symbol_info(
                         #     asset["symbol"]).time, unit='s', tz=self.TIMEZONE)
-                        lastChecked = pd.Timestamp.now(tz=self.TIMEZONE)
+                        # lastChecked = pd.Timestamp.now(tz=self.TIMEZONE)
+                        lastChecked = pd.Timestamp.now()
                         while self.RUNNING_MARKET_STREAM:
                             nextTimetoCheck = asset[
                                 "time_frame"
-                            ].get_next_time_increment(lastChecked)
+                            ].get_next_time_increment(pd.Timestamp.now())
                             # .replace(tzinfo=tz)
                             await asyncio.sleep(
                                 (nextTimetoCheck - lastChecked).total_seconds()
@@ -671,7 +675,7 @@ class Mt5Broker(BaseBroker):
                                         # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
                                         if asset["time_frame"].is_time_increment(
                                             bar.index[0][1]
-                                        ) and (not (bar.index[0][1]) < lastChecked):
+                                        ) and (not (bar.index[0][1]) < (lastChecked.replace(tzinfo=timezone.utc))):
                                             # TODO: Handle Feature streams? Strategy already handles renaming the index to include feature name
                                             loop.run_until_complete(
                                                 callback(
@@ -682,6 +686,7 @@ class Mt5Broker(BaseBroker):
                                         print(f"Error: {e}")
                                         continue
                             # Update the last checked time for this stream. -> moved to the top as run_until_complete may take over a min and we are clamped to the next min
+                           
                             lastChecked = nextTimetoCheck
 
                     streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
