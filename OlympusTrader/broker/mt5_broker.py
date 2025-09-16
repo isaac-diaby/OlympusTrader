@@ -242,7 +242,7 @@ class Mt5Broker(BaseBroker):
         self, symbol: str, qty: Optional[float] = None, percent: Optional[float] = None
     ) -> Optional[IOrder]:
         """
-        Close a position the param symbol for mt5 is the ticket ID
+        Close a position the param symbol for mt5 is the ticket ID 
         """
         super().close_position(symbol, qty, percent)
         try:
@@ -596,7 +596,6 @@ class Mt5Broker(BaseBroker):
                 print("No history deal error code={}".format(mt5.last_error()))
 
             # TODO:Check if they are sorted!
-
             # print("Oders", new_incoming_orders)
             # print("Deal", new_incoming_deals)
             if (new_incoming_orders and len(new_incoming_orders) > 0) or (
@@ -614,7 +613,7 @@ class Mt5Broker(BaseBroker):
         loop.close()
 
     # TradeOrder(ticket=530218319, time_setup=1582282114, time_setup_msc=1582282114681, time_done=1582303777, time_done_msc=1582303777582, time_expiration=0, ...
-
+    # TradeDeal(ticket=291835101, order=305043333, time=1757630992, time_msc=1757630992575, type=1, entry=0, magic=234777, position_id=305043333, reason=3, volume=0.02, price=1, 114359.7, commission=-0.74, swap=0.0, profit=0.0, fee=0.0, symbol='BTCUSD', comment='', external_id='271754123')
     async def closeTradeStream(self):
         # TODO: Will have to build this out
         self.RUNNING_TRADE_STREAM = False

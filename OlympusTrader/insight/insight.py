@@ -246,7 +246,7 @@ class Insight:
                         closeInsight.ASSET = self.ASSET
 
                     #  check if the insight has a take profit or stop loss order leg that need to be canceled before closing the position
-                    try:    
+                    try:
                         if self.takeProfitOrderLeg:
                             self.cancelTakeProfitLeg()
                         if self.stopLossOrderLeg:
@@ -322,7 +322,7 @@ class Insight:
         return False
 
     def cancel_order_by_id(self, order_id: str):
-        if order_id == None or order_id == "":
+        if ((order_id == None) or (order_id == "")):
             print("Order ID is not set")
             return False
         try:
@@ -345,6 +345,8 @@ class Insight:
                 if order:
                     self._cancelling = True
                     return True
+                elif order == False:
+                    return False
 
             except BaseException as e:
                 if e.args[0]["code"] == "already_filled":
@@ -466,7 +468,7 @@ class Insight:
         periodUnfilled: int = None,
         periodTillTp: int = None,
     ) -> Self:
-        """Add a child insight to the parent insight. The child insight will be executed after the parent insight is filled."""
+        """Add a child insight to the parent insight. The child insight will be executed after the parent insight is filled.""" 
         childInsight = Insight(
             parent=self.INSIGHT_ID,
             symbol=self.symbol,
@@ -871,10 +873,8 @@ class Insight:
 
     def cancelTakeProfitLeg(self):
         if self.takeProfitOrderLeg:
-            if self.cancel_order_by_id(self.takeProfitOrderLeg["order_id"]) or (
-                self.takeProfitOrderLeg["order_id"] is None
-                or self.takeProfitOrderLeg["order_id"] == ""
-            ):
+            if ((self.takeProfitOrderLeg["order_id"] is None)
+                or (self.takeProfitOrderLeg["order_id"] == "")) or self.cancel_order_by_id(self.takeProfitOrderLeg["order_id"]) :
                 self.legs["take_profit"] = None
                 self.updatedAt = (
                     datetime.now()
@@ -934,13 +934,10 @@ class Insight:
 
     def cancelStopLossLeg(self):
         if self.stopLossOrderLeg:
-            if self.cancel_order_by_id(
-                self.stopLossOrderLeg["order_id"]
-                or (
-                    self.stopLossOrderLeg["order_id"] is None
-                    or self.stopLossOrderLeg["order_id"] == ""
-                )
-            ):
+
+            if ((self.stopLossOrderLeg["order_id"] is None) or (self.stopLossOrderLeg["order_id"] == "")
+                ) or self.cancel_order_by_id(
+                self.stopLossOrderLeg["order_id"]):
                 self.legs["stop_loss"] = None
                 self.updatedAt = (
                     datetime.now()

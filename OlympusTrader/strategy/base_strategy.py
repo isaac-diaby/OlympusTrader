@@ -87,7 +87,7 @@ class BaseStrategy(abc.ABC):
     WITHUI: bool = True
     """Enable UI for the strategy"""
     WITHSSM: bool = True
-    """Enable Shared Strategy Manager for the strategy functions"""
+    """Enable Shared Strategy Manager for the strategy functions""" 
     SSM: Optional[SharedStrategyManager] = None
     """Shared Strategy Manager for the strategy functions"""
     tradeOnFeatureEvents: bool = False
@@ -820,11 +820,19 @@ class BaseStrategy(abc.ABC):
                                     ):
                                         # Update the insight closed price
                                         if self.MODE != IStrategyMode.BACKTEST:
-                                            insight.partial_closes[p].set_filled_price(
-                                                orderdata["filled_price"]
-                                                if orderdata["filled_price"] != None
-                                                else orderdata["limit_price"]
-                                            )
+                                            match (self.BROKER.NAME):
+                                                case ISupportedBrokers.MT5:
+                                                    insight.partial_closes[p].set_filled_price(
+                                                        orderdata["stop_price "]
+                                                        if orderdata["stop_price"] != None
+                                                        else orderdata["filled_price"]
+                                                    )
+                                                case _:
+                                                    insight.partial_closes[p].set_filled_price(
+                                                        orderdata["filled_price"]
+                                                        if orderdata["filled_price"] != None
+                                                        else orderdata["limit_price"]
+                                                    )
                                         else:
                                             insight.partial_closes[p].set_filled_price(
                                                 orderdata["stop_price"]
@@ -874,13 +882,23 @@ class BaseStrategy(abc.ABC):
                                     self.MODE != IStrategyMode.BACKTEST
                                     and self.broker.NAME != ISupportedBrokers.PAPER
                                 ):
-                                    insight.positionClosed(
-                                        orderdata["filled_price"]
-                                        if orderdata["filled_price"] != None
-                                        else orderdata["limit_price"],
-                                        orderdata["order_id"],
-                                        orderdata["filled_qty"],
-                                    )
+                                    match (self.BROKER.NAME):
+                                        case ISupportedBrokers.MT5:
+                                             insight.positionClosed(
+                                                orderdata["stop_price"]
+                                                if orderdata["stop_price"] != None
+                                                else orderdata["filled_price"],
+                                                orderdata["order_id"],
+                                                orderdata["filled_qty"],
+                                            )
+                                        case _:
+                                            insight.positionClosed(
+                                                orderdata["filled_price"]
+                                                if orderdata["filled_price"] != None
+                                                else orderdata["limit_price"],
+                                                orderdata["order_id"],
+                                                orderdata["filled_qty"],
+                                            )
                                 else:
                                     insight.positionClosed(
                                         orderdata["stop_price"]
@@ -921,7 +939,6 @@ class BaseStrategy(abc.ABC):
 
     def _loadAsset(self, symbol: str):
         """Loads the asset into the universe of the strategy."""
-        symbol = symbol.upper()
         assetInfo = self.BROKER.get_ticker_info(symbol)
         if assetInfo and assetInfo["status"] == "active" and assetInfo["tradable"]:
             self.UNIVERSE[assetInfo["symbol"]] = assetInfo
