@@ -113,8 +113,9 @@ class Mt5Broker(BaseBroker):
             return None
 
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
-        if self.TICKER_INFO.get(symbol):
-            return self.TICKER_INFO[symbol]
+        cached = super().get_ticker_info(symbol)
+        if cached:
+            return cached
         try:
             symbol = symbol.replace("/", "")
             tickerInfo = mt5.symbol_info(symbol)
@@ -616,7 +617,7 @@ class Mt5Broker(BaseBroker):
     # TradeDeal(ticket=291835101, order=305043333, time=1757630992, time_msc=1757630992575, type=1, entry=0, magic=234777, position_id=305043333, reason=3, volume=0.02, price=1, 114359.7, commission=-0.74, swap=0.0, profit=0.0, fee=0.0, symbol='BTCUSD', comment='', external_id='271754123')
     async def closeTradeStream(self):
         # TODO: Will have to build this out
-        self.RUNNING_TRADE_STREAM = False
+        super().closeTradeStream()
         mt5.shutdown()
         pass
 
