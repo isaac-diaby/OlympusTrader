@@ -189,8 +189,8 @@ class IAccountState(TypedDict):
 
 class ITradeUpdate():
     def __init__(self, order: IOrder, event: ITradeUpdateEvent):
-        self.event = event
         self.order = order
+        self.event = event
 
     def __str__(self):
         return f'{self.event} - {self.order["asset"]["symbol"]} - {self.order["qty"]} - {self.order["side"]} - {self.order["updated_at"]}'

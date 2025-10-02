@@ -242,7 +242,7 @@ class Mt5Broker(BaseBroker):
         self, symbol: str, qty: Optional[float] = None, percent: Optional[float] = None
     ) -> Optional[IOrder]:
         """
-        Close a position the param symbol for mt5 is the ticket ID
+        Close a position the param symbol for mt5 is the ticket ID 
         """
         super().close_position(symbol, qty, percent)
         try:
@@ -274,13 +274,16 @@ class Mt5Broker(BaseBroker):
                     if position.side == IOrderSide.SELL
                     else mt5.ORDER_TYPE_SELL,
                     "magic": 234777,
-                    "comment": "OlympusTrader Close",
+                    # "comment": "OlympusTrader Close",
                     "type_time": mt5.ORDER_TIME_GTC,
                     "type_filling": mt5.ORDER_FILLING_RETURN,
                     "position": symbol,
                     # "position_by": symbol
                 }
                 result = mt5.order_send(request)
+                if not result:
+                    print("Order[CLOSE] send failed, error code =", mt5.last_error())
+                    return None
                 return self.format_order(result)
             else:
                 return None
@@ -326,9 +329,13 @@ class Mt5Broker(BaseBroker):
             request = {
                 "action": mt5.TRADE_ACTION_REMOVE,
                 "order": order_id,
-                "comment": "OlympusTrader Cancel",
+                # "comment": "OlympusTrader Cancel",
             }
+            print("Cancelling order", order_id)
             result = mt5.order_send(request)
+            if not result:
+                print("Order[CANCEL] send failed, error code =", mt5.last_error())
+                return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 print(
                     f"Order to cancel failed, retcode={
@@ -353,9 +360,12 @@ class Mt5Broker(BaseBroker):
                     "order": order_id,
                     "price": price,
                     "volume": qty,
-                    "comment": "OlympusTrader Update",
+                    # "comment": "OlympusTrader Update",
                 }
                 result = mt5.order_send(request)
+                if not result:
+                    print("Order[UPDATE] send failed, error code =", mt5.last_error())
+                    return None
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
                     print(
                         f"Order to update failed, retcode={
@@ -430,7 +440,7 @@ class Mt5Broker(BaseBroker):
             else mt5.ORDER_TYPE_SELL,
             "deviation": deviation,
             "magic": 234777,
-            "comment": f"OlympusTrader Open - {insight.strategyType}",
+            # "comment": f"OlympusTrader Open - {str(insight.strategyType)}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_RETURN,
         }
@@ -478,10 +488,15 @@ class Mt5Broker(BaseBroker):
         if insight.order_id:
             # This is likely a close order / reduce order
             request["position"] = insight.order_id
-            request["comment"] = f"OlympusTrader Close - {insight.strategyType}"
+            # request["comment"] = f"OlympusTrader Close - {str(insight.strategyType)}"
 
         try:
             check_result = mt5.order_check(request)
+            # print(f"Order[EXECUTE] check: {check_result}")
+
+            if not check_result:
+                print("Order check failed, error code =", mt5.last_error())
+                return None
             if (
                 check_result.retcode != 0
                 and check_result.retcode != mt5.TRADE_RETCODE_DONE
@@ -496,6 +511,9 @@ class Mt5Broker(BaseBroker):
                 return None
 
             result = mt5.order_send(request)
+            if not result:
+                print("Order send failed, error code =", mt5.last_error())
+                return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 # Should not error here as we have already checked
                 print(
@@ -505,6 +523,7 @@ class Mt5Broker(BaseBroker):
                 # retcode=10027 Algorithmic trading is disabled
                 #
                 return None
+            # print(f"Order[EXECUTED] Order Date: {result}")
             legs = IOrderLegs()
             if result[10].tp:
                 legs["take_profit"] = IOrderLeg(
@@ -559,21 +578,29 @@ class Mt5Broker(BaseBroker):
         super().startTradeStream(callback)
         self.RUNNING_TRADE_STREAM = True
         # Rate limit for new trade signals
-        rate = 0.5
+        rate = 1
         loop = asyncio.new_event_loop()
 
         lastChecked = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
         while self.RUNNING_TRADE_STREAM:
             sleep(1 / rate)
             now = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
+            # now = datetime.now(self.TIMEZONE)
+            # print(f"Checking for new trades from {lastChecked} to {now}")
             new_incoming_orders = mt5.history_orders_get(lastChecked, now)
+            if (new_incoming_orders == None):
+                print("No history orders error code={}".format(mt5.last_error()))
+
             new_incoming_deals = mt5.history_deals_get(lastChecked, now)
+            if (new_incoming_deals == None):
+                print("No history deal error code={}".format(mt5.last_error()))
+
             # TODO:Check if they are sorted!
+            # print("Oders", new_incoming_orders)
+            # print("Deal", new_incoming_deals)
             if (new_incoming_orders and len(new_incoming_orders) > 0) or (
                 new_incoming_deals and len(new_incoming_deals) > 0
             ):
-                # print("Oders", new_incoming_orders)
-                # print("Deal", new_incoming_deals)
                 for order in new_incoming_orders:
                     try:
                         loop.run_until_complete(
@@ -586,10 +613,11 @@ class Mt5Broker(BaseBroker):
         loop.close()
 
     # TradeOrder(ticket=530218319, time_setup=1582282114, time_setup_msc=1582282114681, time_done=1582303777, time_done_msc=1582303777582, time_expiration=0, ...
-
+    # TradeDeal(ticket=291835101, order=305043333, time=1757630992, time_msc=1757630992575, type=1, entry=0, magic=234777, position_id=305043333, reason=3, volume=0.02, price=1, 114359.7, commission=-0.74, swap=0.0, profit=0.0, fee=0.0, symbol='BTCUSD', comment='', external_id='271754123')
     async def closeTradeStream(self):
         # TODO: Will have to build this out
         self.RUNNING_TRADE_STREAM = False
+        mt5.shutdown()
         pass
 
     def streamMarketData(self, callback: Awaitable, assetStreams):
@@ -612,13 +640,12 @@ class Mt5Broker(BaseBroker):
 
                         # lastChecked = pd.Timestamp(mt5.symbol_info(
                         #     asset["symbol"]).time, unit='s', tz=self.TIMEZONE)
-                        lastChecked = pd.Timestamp.now(tz=self.TIMEZONE).replace(
-                            tzinfo=timezone.utc
-                        )
+                        # lastChecked = pd.Timestamp.now(tz=self.TIMEZONE)
+                        lastChecked = pd.Timestamp.now()
                         while self.RUNNING_MARKET_STREAM:
                             nextTimetoCheck = asset[
                                 "time_frame"
-                            ].get_next_time_increment(lastChecked)
+                            ].get_next_time_increment(pd.Timestamp.now())
                             # .replace(tzinfo=tz)
                             await asyncio.sleep(
                                 (nextTimetoCheck - lastChecked).total_seconds()
@@ -627,7 +654,7 @@ class Mt5Broker(BaseBroker):
 
                             # bars = mt5.copy_rates_range(asset['symbol'], int(
                             #     asset['time_frame']), lastChecked.timestamp(), nextTimetoCheck.timestamp())
-
+                            print(f"Checking for new bars from {lastChecked} to {nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}")
                             bars = mt5.copy_rates_from(
                                 asset["symbol"],
                                 int(asset["time_frame"]),
@@ -647,7 +674,7 @@ class Mt5Broker(BaseBroker):
                                         # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
                                         if asset["time_frame"].is_time_increment(
                                             bar.index[0][1]
-                                        ) and (not (bar.index[0][1]) < lastChecked):
+                                        ) and (not (bar.index[0][1]) < (lastChecked.replace(tzinfo=timezone.utc))):
                                             # TODO: Handle Feature streams? Strategy already handles renaming the index to include feature name
                                             loop.run_until_complete(
                                                 callback(
@@ -658,6 +685,7 @@ class Mt5Broker(BaseBroker):
                                         print(f"Error: {e}")
                                         continue
                             # Update the last checked time for this stream. -> moved to the top as run_until_complete may take over a min and we are clamped to the next min
+                           
                             lastChecked = nextTimetoCheck
 
                     streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
