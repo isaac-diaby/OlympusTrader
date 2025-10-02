@@ -44,6 +44,9 @@ class CCXTBroker(BaseBroker):
         
 
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
+        cached = super().get_ticker_info(symbol)
+        if cached:
+            return cached
         try:
             if symbol in self.TICKER_INFO:
                 return self.TICKER_INFO[symbol]

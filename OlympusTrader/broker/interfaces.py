@@ -32,7 +32,9 @@ class ISupportedBrokers(Enum):
     ALPACA = 'AlpacaBroker'
     CCXT = 'CCXTBroker'
     MT5 = 'MetaTrader5Broker'
-    PAPER = 'PapeVrokerr'
+    TV= 'TradingViewBroker'
+    T212 = 'TradingTwoOneTwoBroker'
+    PAPER = 'PaperBrokerr'
     BASE = 'BaseBroker'
 
 

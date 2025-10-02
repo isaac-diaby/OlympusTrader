@@ -102,10 +102,10 @@ class AlpacaBroker(BaseBroker):
             return None
 
     def get_ticker_info(self, symbol):
+        cached = super().get_ticker_info(symbol)
+        if cached:
+            return cached
         try:
-            if symbol in self.TICKER_INFO:
-                return self.TICKER_INFO[symbol]
-
             tickerInfo = self.trading_client.get_asset(symbol)
 
             assert tickerInfo, f'Asset {symbol} not found'
@@ -411,6 +411,7 @@ class AlpacaBroker(BaseBroker):
         self.trading_stream_client.run()
 
     async def closeTradeStream(self):
+        super().closeTradeStream()
         self.trading_stream_client.stop()
         await self.trading_stream_client.close()
 
