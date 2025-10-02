@@ -33,24 +33,31 @@ class BaseBroker(abc.ABC):
     def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: Optional[str] = None) -> None:
         """Abstract class for broker implementations."""
         load_dotenv()
+        assert isinstance(name, ISupportedBrokers), 'name must be of type ISupportedBrokers enum'
         self.NAME = name
         self.PAPER = paper
         self.DataFeed = feed
 
     @abc.abstractmethod
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
-        pass
+        """Get ticker information by symbol"""
+        if symbol in self.TICKER_INFO:
+            return self.TICKER_INFO[symbol]
+        return None
 
     @abc.abstractmethod
     def get_account(self) -> IAccount:
+        """Get account information"""
         pass
 
     @abc.abstractmethod
     def get_position(self, symbol) -> IPosition:
+        """Get position by symbol"""
         pass
 
     @abc.abstractmethod
     def get_positions(self) -> dict[str, IPosition]:
+        """Get all open positions"""
         pass
 
     @abc.abstractmethod
@@ -74,18 +81,22 @@ class BaseBroker(abc.ABC):
 
     @abc.abstractmethod
     def get_order(self, order_id) -> Optional[IOrder]:
+        """Get order by order_id"""
         pass
 
     @abc.abstractmethod
     def get_latest_quote(self, asset: IAsset) -> IQuote:
+        """Get the latest quote for a given asset"""
         pass
 
     @abc.abstractmethod
     def cancel_order(self, order_id: str) -> Optional[str]:
+        """Cancel an order by order_id"""
         pass
 
     @abc.abstractmethod
     def update_order(self, order_id: str, price: float,  qty: float) -> Optional[IOrder]:
+        """Update an order by order_id"""
         pass
 
     @abc.abstractmethod
@@ -116,6 +127,8 @@ class BaseBroker(abc.ABC):
 
     @abc.abstractmethod
     async def closeTradeStream(self):
+        """Close the trade stream"""
+        self.RUNNING_TRADE_STREAM = False
         pass
 
     @abc.abstractmethod

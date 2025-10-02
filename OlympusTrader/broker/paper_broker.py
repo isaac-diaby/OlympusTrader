@@ -110,8 +110,9 @@ class PaperBroker(BaseBroker):
             barDataStreaming=True, featuredBarDataStreaming=True, trailingStop=False)
 
     def get_ticker_info(self, symbol: str):
-        if symbol in self.TICKER_INFO:
-            return self.TICKER_INFO[symbol]
+        cached = super().get_ticker_info(symbol)
+        if cached:
+            return cached
 
         if self.DataFeed == 'yf':
             symbol = symbol.replace('/', '-')

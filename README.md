@@ -21,7 +21,7 @@ STRATEGY=MyStrategy docker compose up
 ```
 
 **Set up your environment:**
-- Create a `.env` file with your broker credentials (e.g. `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`).
+- Create a `.env` file from the template with your broker credentials (e.g. `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`) and any other configuation changes.
 - Supported brokers: Alpaca (live/paper), MetaTrader5, more coming soon.
 
 ---
