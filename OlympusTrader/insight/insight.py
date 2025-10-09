@@ -244,7 +244,9 @@ class Insight:
                     # Submit a close order for the insight
                     if closeInsight.ASSET == None:
                         closeInsight.ASSET = self.ASSET
-
+                    # set the contracts if the asset uses contract size
+                    if closeInsight.uses_contract_size:
+                        closeInsight.convert_quantity_to_contracts()
                     #  check if the insight has a take profit or stop loss order leg that need to be canceled before closing the position
                     try:
                         if self.takeProfitOrderLeg:
@@ -546,7 +548,19 @@ class Insight:
         else:
             print("Asset has no contract size")
             return False
-
+        
+    def convert_quantity_to_contracts(self):
+        if self.uses_contract_size:
+            if self.quantity is not None:
+                self.contracts = round(self.quantity / self.ASSET["contract_size"], 2)
+                return True
+            else:
+                print("Quantity is not set")
+                return False
+        else:
+            print("Asset does not use contract size")
+            return False
+        
     def update_limit_price(self, price: float, updateToLimit: bool = False):
         # check if price is the same as the limit price
         if price == self.limit_price:
