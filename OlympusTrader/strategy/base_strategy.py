@@ -992,7 +992,7 @@ class BaseStrategy(abc.ABC):
                     if options["time_frame"] != self.RESOLUTION:
                         assetDataStreamInfo[
                             "feature"
-                        ] = f"{assetDataStreamInfo['symbol']}.{
+                        ] = f"{assetDataStreamInfo['symbol']}~{
                             assetDataStreamInfo['time_frame']}"
                         if assetDataStreamInfo["feature"] in self.HISTORY:
                             if not isinstance(

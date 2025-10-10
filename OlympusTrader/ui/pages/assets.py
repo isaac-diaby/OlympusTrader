@@ -350,8 +350,8 @@ def update_active_chart_timeframes(selected_asset_data, history):
 
     if selected_asset_data not in history:
         raise PreventUpdate
-
-    timeframes = [tf for tf in history.keys() if tf.split('.')[0]
+    # Get all timeframes for the selected asset and split them by the feature '~'
+    timeframes = [tf for tf in history.keys() if tf.split('~')[0]
                   == selected_asset_data]
 
     return [[
