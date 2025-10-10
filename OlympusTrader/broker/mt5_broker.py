@@ -103,7 +103,7 @@ class Mt5Broker(BaseBroker):
             # tzdif = pd.Timestamp(symbols[0].time, unit='s') - pd.Timestamp.now()
             tzdif = pd.Timestamp(
                 symbols[0].time, unit="s", tz=timezone.utc
-            ) - pd.Timestamp.now(timezone.utc)
+            ) - pd.Timestamp.now(timezone.utc).replace(tzinfo=timezone.utc)  
 
             self.TIMEZONE = timezone(tzdif.round(freq="H"))
             # self.TIMEZONE = timezone(np.abs(tzdif).round(freq='H'))

@@ -85,7 +85,7 @@ class RSIDiverganceAlpha(BaseAlpha):
             if (not np.isnan(latestBar['RSI_Divergance_Long'])):
                 # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
                 ENTRY = previousBar.high if (abs(
-                    previousBar.high - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+                    previousBar.high - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.high+(.2*latestIATR)), symbol)
                 TP = self.STRATEGY.tools.dynamic_round(
                     (ENTRY + (latestIATR*3.5)), symbol)
                 SL = self.STRATEGY.tools.dynamic_round(
@@ -104,7 +104,7 @@ class RSIDiverganceAlpha(BaseAlpha):
             if (self.STRATEGY.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short'])):
                 # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
                 ENTRY = previousBar.low if (abs(
-                    previousBar.low - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.open+(.2*latestIATR)), symbol)
+                    previousBar.low - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.low+(.2*latestIATR)), symbol)
                 TP = self.STRATEGY.tools.dynamic_round(
                     (ENTRY - (latestIATR*3.5)), symbol)
                 SL = self.STRATEGY.tools.dynamic_round(
