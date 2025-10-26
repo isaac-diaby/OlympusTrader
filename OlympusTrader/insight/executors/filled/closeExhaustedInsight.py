@@ -23,7 +23,7 @@ class CloseExhaustedInsightExecutor(BaseExecutor):
             if insight._closing:
                 return self.returnResults(False, True, "Insight is being closed.")
             
-            if self.STRATEGY.insights[insight.INSIGHT_ID].hasExhaustedTTL(True):
+            if insight.hasExhaustedTTL(True):
                 return self.returnResults(False, True, "Insight closed due to being exhausted TTL.")
             return self.returnResults(True, True, "Insight has not expired.")
         except Exception as e:
