@@ -75,7 +75,7 @@ class TestEntryAlpha(BaseAlpha):
                     SL=SL,
                     confidence=baseConfidence,
                     periodUnfilled=5,
-                    periodTillTp=10
+                    periodTillTp=1
                 ))
             else:
                 if self.STRATEGY.assets[symbol]["shortable"]:
@@ -97,7 +97,7 @@ class TestEntryAlpha(BaseAlpha):
                         SL=SL,
                         confidence=baseConfidence,
                         periodUnfilled=5,
-                        periodTillTp=10
+                        periodTillTp=1
                     ))
                 else:
                     return self.returnResults(message="Asset is not shortable.")

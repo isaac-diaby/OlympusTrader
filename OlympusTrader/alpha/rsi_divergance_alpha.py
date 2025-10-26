@@ -26,11 +26,12 @@ class RSIDiverganceAlpha(BaseAlpha):
     """
     local_window: int
     divergance_window: int
+    use_quote_entry: bool
 
     atrColumn: str
     rsiColumn: str
 
-    def __init__(self, strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField=None, **kwargs):
+    def __init__(self, strategy, local_window=36, divergance_window=50, atrPeriod=14, rsiPeriod=14, baseConfidenceModifierField=None, useQuoteEntry = False, **kwargs):
         super().__init__(strategy, "RSI_DIVERGANCE", "0.2", baseConfidenceModifierField, **kwargs)
         self.TA = [
             {"kind": 'atr', "length": atrPeriod},
@@ -42,6 +43,7 @@ class RSIDiverganceAlpha(BaseAlpha):
 
         self.local_window = local_window
         self.divergance_window = divergance_window
+        self.use_quote_entry = useQuoteEntry
 
     def start(self):
         self.STRATEGY.state['local_window'] = self.local_window
@@ -73,6 +75,9 @@ class RSIDiverganceAlpha(BaseAlpha):
             previousBar = self.get_previos_bar(symbol)
             latestIATR = latestBar[self.atrColumn]
             baseConfidence = self.STRATEGY.baseConfidence
+            if (self.use_quote_entry):
+                latestQuote = self.get_latest_quote(self.get_asset(symbol))
+                print(latestQuote)
 
             # Modify Confidence based on baseConfidenceModifierField
             if (self.baseConfidenceModifierField):
@@ -84,12 +89,19 @@ class RSIDiverganceAlpha(BaseAlpha):
             # and marketState < 0):
             if (not np.isnan(latestBar['RSI_Divergance_Long'])):
                 # print(f"Insight - {symbol}: Long Divergance: {latestBar['RSI_Divergance_Long']}")
-                ENTRY = previousBar.high if (abs(
-                    previousBar.high - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.high+(.2*latestIATR)), symbol)
-                TP = self.STRATEGY.tools.dynamic_round(
-                    (ENTRY + (latestIATR*3.5)), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    (ENTRY - (latestIATR*1.5)), symbol)
+                if (self.use_quote_entry):
+                    ENTRY = self.STRATEGY.tools.dynamic_round((latestQuote["ask"]), symbol)
+                    TP = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY + (latestIATR*3.5)), symbol)
+                    SL = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY - (latestIATR*1.5)), symbol)
+                else:
+                    ENTRY = previousBar.high if (abs(
+                        previousBar.high - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.high+(.2*latestIATR)), symbol)
+                    TP = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY + (latestIATR*3.5)), symbol)
+                    SL = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY - (latestIATR*1.5)), symbol)
                 # time to live unfilled
                 TTLUF = self.STRATEGY.tools.calculateTimeToLive(
                     latestBar['close'], ENTRY, latestIATR)
@@ -103,12 +115,19 @@ class RSIDiverganceAlpha(BaseAlpha):
             # and marketState > 0):
             if (self.STRATEGY.assets[symbol]['shortable'] and not np.isnan(latestBar['RSI_Divergance_Short'])):
                 # print(f"Insight - {symbol}: Short Divergance: {latestBar['RSI_Divergance_Short']}")
-                ENTRY = previousBar.low if (abs(
-                    previousBar.low - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.low+(.2*latestIATR)), symbol)
-                TP = self.STRATEGY.tools.dynamic_round(
-                    (ENTRY - (latestIATR*3.5)), symbol)
-                SL = self.STRATEGY.tools.dynamic_round(
-                    (ENTRY + (latestIATR*1.5)), symbol)
+                if (self.use_quote_entry):
+                    ENTRY = self.STRATEGY.tools.dynamic_round((latestQuote["bid"]), symbol)
+                    TP = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY - (latestIATR*3.5)), symbol)
+                    SL = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY + (latestIATR*1.5)), symbol)
+                else:
+                    ENTRY = previousBar.low if (abs(
+                        previousBar.low - latestBar.close) < latestIATR) else self.STRATEGY.tools.dynamic_round((latestBar.low+(.2*latestIATR)), symbol)
+                    TP = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY - (latestIATR*3.5)), symbol)
+                    SL = self.STRATEGY.tools.dynamic_round(
+                        (ENTRY + (latestIATR*1.5)), symbol)
                 # time to live unfilled
                 TTLUF = self.STRATEGY.tools.calculateTimeToLive(
                     latestBar['close'], ENTRY, latestIATR)
