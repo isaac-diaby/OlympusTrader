@@ -405,18 +405,21 @@ class AlpacaBroker(BaseBroker):
             print("Error updating order", e)
             raise e
 
-    def startTradeStream(self, callback: Awaitable):
-        super().startTradeStream(callback)
+    async def startTradeStream(self, callback: Awaitable):
+        await super().startTradeStream(callback)
         self.trading_stream_client.subscribe_trade_updates(callback)
-        self.trading_stream_client.run()
+        try:
+            await asyncio.to_thread(self.trading_stream_client.run)
+        except asyncio.CancelledError:
+            raise
 
     async def closeTradeStream(self):
         super().closeTradeStream()
         self.trading_stream_client.stop()
         await self.trading_stream_client.close()
 
-    def streamMarketData(self, callback: Awaitable, assetStreams):
-        super().streamMarketData(callback, assetStreams)
+    async def streamMarketData(self, callback: Awaitable, assetStreams):
+        await super().streamMarketData(callback, assetStreams)
         StockStreamCount = 0
         CryptoStreamCount = 0
         barStreamCount = len(

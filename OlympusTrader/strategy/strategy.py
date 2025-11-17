@@ -1,15 +1,38 @@
 from typing import override
 
+from OlympusTrader.strategy.interfaces import IStrategyMode
+from OlympusTrader.utils.timeframe import ITimeFrame, ITimeFrameUnit
+from OlympusTrader.utils.types import AttributeDict
+
 
 from .base_strategy import BaseStrategy
 from ..broker.base_broker import BaseBroker
 from ..insight.insight import Insight
 
 
-
 class Strategy(BaseStrategy):
-    def __init__(self, broker: BaseBroker, **kwargs):
-        super().__init__(broker, **kwargs)
+    def __init__(self, broker: BaseBroker,
+                 variables: AttributeDict = AttributeDict({}),
+                 resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute),
+                 verbose: int = 0,
+                 ui: bool = True,
+                 ssm: bool = True,
+                 mode: IStrategyMode = IStrategyMode.LIVE,
+                 tradeOnFeatureEvents: bool = False,
+                 **kwargs):
+
+        if type(variables) is not AttributeDict:
+            variables = AttributeDict(variables)
+
+        super().__init__(BROKER=broker,
+                         RESOLUTION=resolution,
+                         MODE=mode,
+                         VARIABLES=variables,
+                         VERBOSE=verbose,
+                         WITHUI=ui,
+                         WITHSSM=ssm,
+                         tradeOnFeatureEvents=tradeOnFeatureEvents,
+                         **kwargs)
 
     @override
     def start(self):

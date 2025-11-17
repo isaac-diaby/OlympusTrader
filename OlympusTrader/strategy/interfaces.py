@@ -21,7 +21,7 @@ class IMarketDataStream(TypedDict):
     start: Optional[datetime] = None
     end: Optional[datetime] = None
     applyTA: Optional[bool] = False
-    TA: Optional[ta.Strategy] = None
+    TA: Optional[ta.Study] = None
 
 
 class IBacktestingConfig(TypedDict):

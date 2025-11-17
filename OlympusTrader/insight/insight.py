@@ -197,7 +197,7 @@ class Insight:
         self.executionDepends = executionDepends  # execution depends on
         # self.state = InsightState.NEW
         self.createAt = datetime.now()
-        self.updatedAt = datetime.now()
+        self.updatedAt = self.createAt
 
         if self.limit_price == None:
             self.type = IOrderType.MARKET
@@ -1085,7 +1085,7 @@ class Insight:
     def logPnL(self):
         PL = self.getPL()
         message = f"Trade Closed {"✅" if PL > 0 else "❌"}: {self.symbol} - {self.side} - {
-            self.quantity} @ {self.close_price} <- {self.limit_price} - P/L: {PL} - UDA: {self.updatedAt}"
+            self.quantity} @ {self.limit_price} -> closed: {self.close_price} - P/L: {PL} - UDA: {self.updatedAt}"
         return message
 
     def set_mode(

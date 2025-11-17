@@ -5,8 +5,9 @@ if TYPE_CHECKING:
 
 from ..insight.insight import InsightState
 from ..broker.interfaces import IOrderSide
+from dataclasses import dataclass
 
-
+@dataclass
 class ITradingTools():
     STRATEGY = None
 

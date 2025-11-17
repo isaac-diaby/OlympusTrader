@@ -14,20 +14,24 @@ from .interfaces import IQuote, ISupportedBrokerFeatures, ISupportedBrokers, ITr
 from .interfaces import IAsset, IAccount, IOrder, IPosition, ITradeUpdateEvent
 from ..insight.insight import Insight
 from ..utils.timeframe import ITimeFrame, ITimeFrameUnit
+from ..utils.asyncStepCoordinator import AsyncStepCoordinator
 from ..strategy.interfaces import IMarketDataStream
-
+import logging
 
 class BaseBroker(abc.ABC):
     NAME: ISupportedBrokers = ISupportedBrokers.BASE
     DataFeed: Optional[str]
     PAPER: bool
 
+    TICKER_INFO: dict[str, IAsset] = {}
+
     supportedFeatures: ISupportedBrokerFeatures
 
-    TICKER_INFO: dict[str, IAsset] = {}
+    LOGGER: logging.Logger = None
+
     RUNNING_TRADE_STREAM: bool = False
     RUNNING_MARKET_STREAM: bool = False
-    BACKTEST_FlOW_CONTROL_BARRIER: Barrier = None
+    BACKTEST_FlOW_CONTROL: AsyncStepCoordinator = AsyncStepCoordinator(0)
 
     @abc.abstractmethod
     def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: Optional[str] = None) -> None:
@@ -37,6 +41,9 @@ class BaseBroker(abc.ABC):
         self.NAME = name
         self.PAPER = paper
         self.DataFeed = feed
+        self.LOGGER = logging.getLogger("OlympusTrader."+self.NAME.value)
+        # logging.basicConfig(level=logging.INFO)
+
 
     @abc.abstractmethod
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
@@ -120,26 +127,27 @@ class BaseBroker(abc.ABC):
         # assert isinstance(asset, Asset), 'asset must be of type Asset object'
 
     @abc.abstractmethod
-    def startTradeStream(self, callback: Awaitable):
+    async def startTradeStream(self, callback: Awaitable):
         """Listen to trades and order updates and call the callback function with the data"""
+        self.RUNNING_TRADE_STREAM = True
         print("Start Trade Stream -", self.NAME)
-        pass
+        return
 
     @abc.abstractmethod
     async def closeTradeStream(self):
         """Close the trade stream"""
         self.RUNNING_TRADE_STREAM = False
-        pass
 
     @abc.abstractmethod
-    def streamMarketData(self, callback: Awaitable, assetStreams: List[IMarketDataStream]):
+    async def streamMarketData(self, callback: Awaitable, assetStreams: List[IMarketDataStream]):
         """Listen to market data and call the callback function with the data"""
+        self.RUNNING_MARKET_STREAM = True
         for assetStream in assetStreams:
             assert assetStream['symbol'], 'assetStream must have a symbol'
             assert assetStream['time_frame'], 'assetStream must have a time_frame'
             assert assetStream['type'], 'assetStream must have a type'
         print("Stream Market Data -", self.NAME)
-        pass
+        
 
     @abc.abstractmethod
     async def closeStream(self,  assetStreams: List[IMarketDataStream]):

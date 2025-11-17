@@ -128,6 +128,11 @@ class IAccount():
     shorting_enabled: bool
     leverage: float
 
+    def __str__(self):
+        return f"Account ID: {self.account_id}, Cash: {self.cash}, Equity: {self.equity}, Buying Power: {self.buying_power}, Leverage: {self.leverage}, Currency: {self.currency}, Shorting Enabled: {self.shorting_enabled} "
+    def __repl__(self):
+        return f"Account ID: {self.account_id}, Cash: {self.cash}, Equity: {self.equity}, Buying Power: {self.buying_power}, Leverage: {self.leverage}, Currency: {self.currency}, Shorting Enabled: {self.shorting_enabled} "
+
 class IPosition(TypedDict):
     asset: IAsset
     avg_entry_price: float
@@ -137,6 +142,8 @@ class IPosition(TypedDict):
     cost_basis: float
     current_price: float
     unrealized_pl: float
+    margin_required: Optional[float] = 0
+    """BackTesting param: The margin required for leveraged positions"""
 
 class IOrderLeg(TypedDict):
     order_id: str

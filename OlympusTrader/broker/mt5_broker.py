@@ -424,7 +424,7 @@ class Mt5Broker(BaseBroker):
             volume = insight.quantity
 
         if volume > self.get_ticker_info(insight.symbol).get(
-            "max_order_size", np.infty
+            "max_order_size", np.inf
         ):
             # We could clamp here but user logic would not be aware until after we commit the order.
             print("exceesing max order limit")
@@ -572,12 +572,11 @@ class Mt5Broker(BaseBroker):
             print(f"Error: {e}")
             return None
 
-    def startTradeStream(self, callback: Awaitable):
+    async def startTradeStream(self, callback: Awaitable):
         """
         Starts a listener that will pass the trade events to the strategy
         """
-        super().startTradeStream(callback)
-        self.RUNNING_TRADE_STREAM = True
+        await super().startTradeStream(callback)
         # Rate limit for new trade signals
         rate = 1
         loop = asyncio.new_event_loop()
@@ -604,9 +603,9 @@ class Mt5Broker(BaseBroker):
             ):
                 for order in new_incoming_orders:
                     try:
-                        loop.run_until_complete(
-                            callback(ITradeUpdate(order, order.state))
-                        )
+                        await callback(ITradeUpdate(order, order.state))
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
                         print(f"Error: {e}")
 
@@ -621,88 +620,90 @@ class Mt5Broker(BaseBroker):
         mt5.shutdown()
         pass
 
-    def streamMarketData(self, callback: Awaitable, assetStreams):
-        super().streamMarketData(callback, assetStreams)
+    async def streamMarketData(self, callback: Awaitable, assetStreams):
+        await super().streamMarketData(callback, assetStreams)
+
         self.RUNNING_MARKET_STREAM = True
-        barStreamCount = len(
-            [asset for asset in assetStreams if asset["type"] == "bar"]
-        )
-        # Threading pools for the streams
-        pool = ThreadPoolExecutor(
-            max_workers=(barStreamCount), thread_name_prefix="MarketDataStream"
-        )
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        tasks = []
+
+        async def MT5BarStreamer(asset):
+            lastChecked = pd.Timestamp.now()
+
+            while self.RUNNING_MARKET_STREAM:
+
+                # Calculate next time increment
+                nextTimetoCheck = asset["time_frame"].get_next_time_increment(
+                    pd.Timestamp.now()
+                )
+
+                # Async sleep until the time increment is reached
+                wait_seconds = (nextTimetoCheck - lastChecked).total_seconds()
+                if wait_seconds > 0:
+                    await asyncio.sleep(wait_seconds)
+
+                print(
+                    f"Checking for new bars from {lastChecked} to "
+                    f"{nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}"
+                )
+
+                # Fetch bars
+                bars = mt5.copy_rates_from(
+                    asset["symbol"],
+                    int(asset["time_frame"]),
+                    lastChecked,
+                    1
+                )
+
+                if isinstance(bars, np.ndarray) and len(bars) > 0:
+                    barDatas = self.format_on_bar(bars, asset["symbol"])
+
+                    for idx in range(len(barDatas)):
+                        try:
+                            bar = barDatas.iloc[[idx]]
+
+                            # Check for valid time increment
+                            if (
+                                asset["time_frame"].is_time_increment(bar.index[0][1])
+                                and bar.index[0][1] >= lastChecked.replace(tzinfo=timezone.utc)
+                            ):
+                                await callback(bar, timeframe=asset["time_frame"])
+
+                        except Exception as e:
+                            print(f"Error inside callback dispatch: {e}")
+                            continue
+
+                lastChecked = nextTimetoCheck
+
+        # Create tasks for each bar stream
         for asset in assetStreams:
-            try:
-                if asset["type"] == "bar":
+            if asset["type"] != "bar":
+                raise NotImplementedError(
+                    f"Stream type {asset['type']} not supported"
+                )
 
-                    async def MT5BarStreamer(asset):
-                        # Set to last valid time (May need to change as we dont want any signals for past data)
+            streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
+            task = loop.create_task(
+                MT5BarStreamer(asset), name=f"Market:{streamKey}"
+            )
+            self._MARKET_STREAMS[streamKey] = task
+            tasks.append(task)
 
-                        # lastChecked = pd.Timestamp(mt5.symbol_info(
-                        #     asset["symbol"]).time, unit='s', tz=self.TIMEZONE)
-                        # lastChecked = pd.Timestamp.now(tz=self.TIMEZONE)
-                        lastChecked = pd.Timestamp.now()
-                        while self.RUNNING_MARKET_STREAM:
-                            nextTimetoCheck = asset[
-                                "time_frame"
-                            ].get_next_time_increment(pd.Timestamp.now())
-                            # .replace(tzinfo=tz)
-                            await asyncio.sleep(
-                                (nextTimetoCheck - lastChecked).total_seconds()
-                            )
-                            # may use self.TF_MAPPING[]
-
-                            # bars = mt5.copy_rates_range(asset['symbol'], int(
-                            #     asset['time_frame']), lastChecked.timestamp(), nextTimetoCheck.timestamp())
-                            print(f"Checking for new bars from {lastChecked} to {nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}")
-                            bars = mt5.copy_rates_from(
-                                asset["symbol"],
-                                int(asset["time_frame"]),
-                                lastChecked,
-                                1,
-                            )
-                            # bars = mt5.copy_rates_from(asset['symbol'], int(
-                            #     asset['time_frame']), lastChecked, 2)
-                            # May need the one below if we need to make the bar if the time frame is not supported
-                            # bars = mt5.copy_rates_from(asset['symbol'], int(
-                            #     asset['time_frame']), lastChecked, asset['time_frame'].amount)
-                            if isinstance(bars, np.ndarray) and len(bars) > 0:
-                                barDatas = self.format_on_bar(bars, asset["symbol"])
-                                for idx in range(0, len(barDatas)):
-                                    try:
-                                        bar = barDatas.iloc[[idx]]
-                                        # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
-                                        if asset["time_frame"].is_time_increment(
-                                            bar.index[0][1]
-                                        ) and (not (bar.index[0][1]) < (lastChecked.replace(tzinfo=timezone.utc))):
-                                            # TODO: Handle Feature streams? Strategy already handles renaming the index to include feature name
-                                            loop.run_until_complete(
-                                                callback(
-                                                    bar, timeframe=asset["time_frame"]
-                                                )
-                                            )
-                                    except Exception as e:
-                                        print(f"Error: {e}")
-                                        continue
-                            # Update the last checked time for this stream. -> moved to the top as run_until_complete may take over a min and we are clamped to the next min
-                           
-                            lastChecked = nextTimetoCheck
-
-                    streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
-                    self._MARKET_STREAMS[streamKey] = loop.create_task(
-                        MT5BarStreamer(asset), name=f"Market:{streamKey}"
-                    )
-                    # self._MARKET_STREAMS[streamKey] = loop.run_in_executor(pool, MT5BarStreamer, asset)
-                else:
-                    raise NotImplementedError(
-                        f"Stream type {asset['type']} not supported"
-                    )
-            except Exception as e:
-                print(f"Error: {e}")
-                continue
-        # TODO: Will need a way to close this stream as its not being referenced anywhere else
-        loop.run_forever()
+        # Start all streams
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            raise
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # cleanup on exit
+            for t in tasks:
+                t.cancel()
+            loop.stop()
+            loop.close()
 
     async def closeStream(self, assetStreams):
         if self.RUNNING_MARKET_STREAM:

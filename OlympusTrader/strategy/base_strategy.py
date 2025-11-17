@@ -1,3 +1,4 @@
+from __future__ import annotations
 import abc
 import asyncio
 from dataclasses import asdict
@@ -6,7 +7,7 @@ import os
 from pathlib import Path
 from threading import BrokenBarrierError
 from time import sleep
-from typing import Any, List, Optional, Literal
+from typing import Any, List, Optional, Literal, Self
 from uuid import uuid4, UUID
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -14,7 +15,6 @@ import datetime
 import nest_asyncio
 import timeit
 from collections import deque
-import logging
 from typing import TYPE_CHECKING
 
 import pandas_ta as ta
@@ -52,48 +52,69 @@ from OlympusTrader.insight.executors import BaseExecutor
 # from ..insight.executors.base_executor import BaseExecutor
 # from ..ui.base_ui import Dashboard
 import warnings
+
+
+import asyncio
+import functools
 import logging
+import signal
+import types
+from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Dict, Iterable, Optional
+
+
+# ----------------------------
+# Types / Protocols
+# ----------------------------
+
+
+AsyncCallback = Callable[..., Awaitable[None]]
+AssetStream = Dict[str, Any]
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-
+@dataclass
 class BaseStrategy(abc.ABC):
-    STRATEGY_ID: UUID = uuid4()
+    BROKER: BaseBroker
+    """Broker for the strategy"""
+    RESOLUTION: ITimeFrame = field(default_factory=lambda: ITimeFrame(5, ITimeFrameUnit.Minute))
+    """Resolution for the strategy"""
+    MODE: IStrategyMode = field(default=IStrategyMode.BACKTEST)
+    """Strategy mode"""
+
+    STRATEGY_ID: UUID =field(default_factory=uuid4)
     """Unique ID for the strategy"""
     NAME: str = "BaseStrategy"
     """Name of the strategy"""
-    BROKER: BaseBroker
-    """Broker for the strategy"""
-    ACCOUNT: Optional[IAccount] = None
+    ACCOUNT: Optional[IAccount] = field(default_factory=dict)
     """Account for the strategy"""
-    POSITIONS: dict[str, IPosition] = {}
+    POSITIONS: dict[str, IPosition] = field(default_factory=dict)
     """Positions for the strategy"""
-    ORDERS: Optional[dict[str, IOrder]] = {}
+    ORDERS: Optional[dict[str, IOrder]] = field(default_factory=dict)
     """Orders for the strategy"""
-    HISTORY: dict[str, pd.DataFrame] = {}
+    HISTORY: dict[str, pd.DataFrame] = field(default_factory=dict)
     """History for the strategy"""
-    INSIGHTS: dict[UUID, Insight] = {}
+    INSIGHTS: dict[UUID, Insight] = field(default_factory=dict)
     """Insights for the strategy"""
-    UNIVERSE: dict[str, IAsset] = {}
+    UNIVERSE: dict[str, IAsset] = field(default_factory=dict)
     """Universe of assets for the strategy"""
-    RESOLUTION = ITimeFrame(5, ITimeFrameUnit.Minute)
-    """Resolution for the strategy"""
-    STREAMS: List[IMarketDataStream] = []
+   
+    STREAMS: List[IMarketDataStream] = field(default_factory=list)
     """Market Data Streams for the strategy"""
-    VARIABLES: AttributeDict
+    VARIABLES: AttributeDict = field(default_factory=lambda: AttributeDict({}))
     """Variables for the strategy"""
-    MODE: IStrategyMode
-    """Strategy mode"""
+   
     WITHUI: bool = True
     """Enable UI for the strategy"""
     WITHSSM: bool = True
     """Enable Shared Strategy Manager for the strategy functions""" 
     SSM: Optional[SharedStrategyManager] = None
     """Shared Strategy Manager for the strategy functions"""
-    tradeOnFeatureEvents: bool = False
+    tradeOnFeatureEvents: bool = field(default=False)
     """Trade on feature events"""
 
-    TOOLS: Optional[ITradingTools] = None
+    TOOLS: Optional[ITradingTools] = field(default=None)
     """Trading tools for the strategy"""
 
     # DEBUG
@@ -101,24 +122,23 @@ class BaseStrategy(abc.ABC):
     """Verbose level for the strategy"""
     LOGGER: logging.Logger = None
 
-    _Running = False
+    _RUNNING = False
     """Running flag for the strategy"""
 
     # ALPHA MODELS
-    ALPHA_MODELS: List[BaseAlpha] = []
+    ALPHA_MODELS: List[BaseAlpha] = field(default_factory=list)
     """Alpha models to be used in the strategy"""
 
-    # Insight Executors Models
-    INSIGHT_EXECUTORS: dict[InsightState, deque[BaseExecutor]] = {
-        InsightState.NEW: deque([]),
-        InsightState.EXECUTED: deque([]),
-        InsightState.FILLED: deque([]),
-        InsightState.CLOSED: deque([]),
-        InsightState.REJECTED: deque([]),
-        InsightState.CANCELED: deque([]),
-    }
+    INSIGHT_EXECUTORS: dict[InsightState, deque[BaseExecutor]] = field(default_factory=lambda: {
+        InsightState.NEW: deque(),
+        InsightState.EXECUTED: deque(),
+        InsightState.FILLED: deque(),
+        InsightState.CLOSED: deque(),
+        InsightState.REJECTED: deque(),
+        InsightState.CANCELED: deque(),
+        })
     """Insight Executors Models"""
-    TaStrategy: ta.Strategy = None
+    TaStrategy: ta.Study = None
     """TA Strategy"""
     WARM_UP: int = 0
     """Warm up bars for the strategy to ensure the strategy has enough data to make decisions"""
@@ -133,57 +153,58 @@ class BaseStrategy(abc.ABC):
     insightRateLimit: int = 1
     """Insight rate limit"""
 
-    BACKTESTING_CONFIG: IBacktestingConfig = IBacktestingConfig(preemptiveTA=False)
+    BACKTESTING_CONFIG: IBacktestingConfig =  field(default_factory=lambda: IBacktestingConfig(preemptiveTA=False))
     """Backtesting configuration"""
-    BACKTESTING_RESULTS: dict[str, Portfolio] = {}
+    BACKTESTING_RESULTS: dict[str, Portfolio] = field(default_factory=dict)
     """Backtesting results"""
 
-    METRICS: IStrategyMetrics = IStrategyMetrics()
+    METRICS: IStrategyMetrics = field(default_factory=IStrategyMetrics)
     """Strategy metrics"""
 
-    @abc.abstractmethod
-    def __init__(
-        self,
-        broker: BaseBroker,
-        variables: AttributeDict = AttributeDict({}),
-        resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute),
-        verbose: int = 0,
-        ui: bool = True,
-        ssm: bool = True,
-        mode: IStrategyMode = IStrategyMode.LIVE,
-        tradeOnFeatureEvents: bool = False,
-    ) -> None:
+    # Internal task registry
+    _tasks: Dict[str, asyncio.Task] = field(default_factory=dict, init=False)
+
+    # def __init__(
+    #     self,
+    #     broker: BaseBroker,
+    #     variables: AttributeDict = AttributeDict({}),
+    #     resolution: ITimeFrame = ITimeFrame(1, ITimeFrameUnit.Minute),
+    #     verbose: int = 0,
+    #     ui: bool = True,
+    #     ssm: bool = True,
+    #     mode: IStrategyMode = IStrategyMode.LIVE,
+    #     tradeOnFeatureEvents: bool = False,
+    # ) -> None:
+    # @abc.abstractmethod
+    def __post_init__(self):
         """Abstract class for strategy implementations."""
         self.NAME = self.__class__.__name__
-        self.MODE = mode
-        self.WITHUI = ui
-        self.WITHSSM = ssm
-
         self.LOGGER = logging.getLogger("OlympusTrader."+self.NAME)
+        # self.VERBOSE = verbose  # TODO: Log Levels should be an derived from env file
+        logging.basicConfig(level=logging.INFO)
 
-        if type(variables) is not AttributeDict:
-            variables = AttributeDict(variables)
-        self.VARIABLES = variables
-        self.BROKER = broker
+
+        if not isinstance(self.VARIABLES, AttributeDict):
+            self.VARIABLES = AttributeDict(self.VARIABLES)
+
         self.TOOLS = ITradingTools(self)
-        self.VERBOSE = verbose  # TODO: Log Levels should be an derived from env file
+
+        # Validate timeframe
         assert ITimeFrame.validate_timeframe(
-            resolution.amount, resolution.unit
+            self.RESOLUTION.amount, self.RESOLUTION.unit
         ), "Resolution must be a valid timeframe"
-        self.RESOLUTION = resolution
-        self.tradeOnFeatureEvents = tradeOnFeatureEvents
-        # set the UI shared memory sever
+
+       # Shared memory server
         if self.WITHUI:
             self.WITHSSM = True
-        
+
         if self.WITHSSM:
             self._startUISharedMemory()
 
         # Set up TA Strategy
-        self.TaStrategy = ta.Strategy(
+        self.TaStrategy = ta.Study(
             name=self.NAME, description="Olympus Trader Framework", ta=[]
         )
-
         self.start()
         # Load the universe
         self._loadUniverse()
@@ -213,8 +234,8 @@ class BaseStrategy(abc.ABC):
             )
 
         except Exception as e:
-            print(f"Failed to get account info from the broker {e}")
-            pass
+            self.LOGGER.error(f"Failed to get account info from the broker {e}")
+
 
     @abc.abstractmethod
     def start(self):
@@ -298,13 +319,6 @@ class BaseStrategy(abc.ABC):
         print("Tear Down: Closing all positions")
         self.BROKER.close_all_positions()
 
-    def _start(self):
-        """Start the alpha models."""
-        # assert callable(self.start), 'start must be a callable function'
-        # print("Running start function")
-
-        for alpha in self.ALPHA_MODELS:
-            alpha.start()
 
     def _init(self, asset: IAsset):
         """Initialize the strategy."""
@@ -332,158 +346,217 @@ class BaseStrategy(abc.ABC):
 
     def run(self):
         """Starts the strategy."""
-        nest_asyncio.apply()
-        self._Running = True
-
-        self._start_strategy()
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
         try:
-            with ThreadPoolExecutor(
-                max_workers=5, thread_name_prefix="OlympusTrader"
-            ) as pool:
-                self._start_streams_and_listeners(loop, pool)
-                self._run_strategy(loop, pool)
-        except KeyboardInterrupt as e:
-            print("Interrupted execution by user:", e)
-        finally:
-            self._handle_close_streams(loop, pool)
-            self.run_teardown(loop)
+            asyncio.run(self._run())
+        except KeyboardInterrupt:
+            self.LOGGER.info("Stopped by user")
 
-    def _start_strategy(self):
+    async def _run(self) -> None:
+        """Top-level entry. Use asyncio.run(strategy.run())."""
+        self._RUNNING = True
+        await self._start_strategy()
+        # Install signal handlers for graceful shutdown
+        loop = asyncio.get_running_loop()
+        stop_event = asyncio.Event()
+
+        def _signal_handler():
+            self.LOGGER.info("Received stop signal")
+            self._RUNNING = False
+            stop_event.set()
+
+        for s in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(s, _signal_handler)
+            except NotImplementedError:
+                # Windows or event loop implementations may not support it
+                pass
+
+        # Use AsyncExitStack to ensure deterministic cleanup
+        async with AsyncExitStack() as stack:
+            # Create a TaskGroup for lifetime of strategy
+            async with asyncio.TaskGroup() as tg:
+                # Start streams/listeners/tasks
+                await self._start_streams_and_listeners(tg)
+
+                # Start the main strategy loop
+                tg.create_task(self._run_strategy(), name="strategy_main")
+
+                # Wait until a stop signal
+                await stop_event.wait()
+
+                # Signal tasks to stop
+                self.LOGGER.info("Cancelling tasks...")
+                # self._RUNNING = False
+                # TaskGroup will cancel tasks on exit from context
+
+        # outside TaskGroup: do teardown
+        try:
+            await asyncio.wait_for(self._shutdown(), timeout=30)
+        except Exception as e:
+            self.LOGGER.exception("Error during teardown: %s", e)
+
+        self.LOGGER.info("Strategy stopped")
+
+    async def _start_strategy(self):
         """Set up the strategy and check if the universe is empty."""
-        self._start()
         assert len(self.UNIVERSE) > 0, "Universe is empty"
 
-    def _start_streams_and_listeners(self, loop, pool):
-        """Start the trading data streams, market data streams, UI shared memory server, and insight listener."""
-        self.TRADE_STREAM = loop.run_in_executor(
-            pool, self.BROKER.startTradeStream, self._on_trade_update
-        )
-        self.MARKET_DATA_STREAM = loop.run_in_executor(
-            pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS
-        )
-        self.INSIGHT_STREAM = loop.run_in_executor(pool, self._insightListener)
+        for alpha in self.ALPHA_MODELS:
+            alpha.start()
 
-        if self.WITHSSM:
+# -------------------- stream and listener management --------------------
+    async def _start_streams_and_listeners(self, tg: asyncio.TaskGroup) -> None:
+        """Start broker streams, insight listener, shared servers, and UI.
+
+        - `tg` is an asyncio.TaskGroup in which tasks should be created.
+        - Non-async (blocking) servers are executed via asyncio.to_thread
+        """
+        # Start trade stream
+        if hasattr(self.broker, "startTradeStream"):
+            tg.create_task(
+            self.broker.startTradeStream(self._on_trade_update),
+            name="trade_stream",
+            )
+            self.LOGGER.info("Trade stream started")
+
+        # Start market data stream
+        if hasattr(self.broker, "streamMarketData"):
+            tg.create_task(
+            self.broker.streamMarketData(self._on_bar, self.STREAMS),
+            name="market_data_stream",
+            )
+            self.LOGGER.info("Market data stream started")
+
+        # Start insight listener if defined
+        if hasattr(self, "_insightListener"):
+            tg.create_task(self._insightListener(), name="insight_listener")
+
+        # Shared memory server (blocking) -> run in thread
+        if self.WITHSSM and hasattr(self, "SSM"):
             server = self.SSM.get_server()
-            # Run the UI Shared Memory Server
-            self.UI_SSM_STREAM = loop.run_in_executor(pool, server.serve_forever)
-            print("UI Shared Memory Server Started")
+            tg.create_task(
+            asyncio.to_thread(server.serve_forever), name="ssm_server"
+            )
+            self.LOGGER.info("UI Shared Memory Server started")
+
+            # UI server (e.g. Flask) - run in thread to avoid blocking
             if self.WITHUI:
-                from OlympusTrader.ui.__main__ import app
-                # FIXME: Enabling dev tools is not working in a pool executor for some reason
-                # if self.VERBOSE > 0:
-                #     # Enable the dev tools
-                #     app.enable_dev_tools(
-                #         debug=True,
-                #         dev_tools_ui=True,
-                #         dev_tools_serve_dev_bundles=True,
-                #         dev_tools_hot_reload=True
-                #     )
+                try:
+                    from OlympusTrader.ui.app import app
 
-                #     # Run the UI Dashboard Server in debug mode
-                #     self.UI_STREAM = loop.run_in_executor(pool,  functools.partial(app.run, debug=True))
-                # else:
-                #     log = logging.getLogger('werkzeug')
-                #     log.setLevel(logging.ERROR)
-                #     # Run the UI Dashboard Server in production mode
-                #     self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
-                # Run the UI Dashboard Server in production mode
-                log = logging.getLogger("werkzeug")
-                log.setLevel(logging.ERROR)
 
-                self.UI_STREAM = loop.run_in_executor(
-                    pool, functools.partial(app.run, host="0.0.0.0", threaded=True)
-                )
-                print("UI Dashboard Server Started")
+                    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+                    # loop = asyncio.get_running_loop()
+                    # tg.create_task(
+                    #     loop.run_in_executor(
+                    #         None,
+                    #         lambda: app.run(
+                    #             host="0.0.0.0",
+                    #             port=8050,
+                    #             debug=False,
+                    #             threaded=True,
+                    #             use_reloader=False,
+                    #         )
+                    #     ),
+                    #     name="ui_server"
+                    # )
+                    # OLD
+                    tg.create_task(
+                    asyncio.to_thread(
+                    functools.partial(app.run, host="0.0.0.0", threaded=True)
+                    ),
+                    name="ui_server",
+                    )
+                    self.LOGGER.info("UI Dashboard Server started")
+                except Exception as e:
+                    self.LOGGER.exception("Failed to start UI server: %s", e)
 
-    def _run_strategy(self, loop, pool):
+    # def _start_streams_and_listeners(self, loop, pool):
+    #     """Start the trading data streams, market data streams, UI shared memory server, and insight listener."""
+    #     self.TRADE_STREAM = loop.run_in_executor(
+    #         pool, self.BROKER.startTradeStream, self._on_trade_update
+    #     )
+    #     self.MARKET_DATA_STREAM = loop.run_in_executor(
+    #         pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS
+    #     )
+    #     self.INSIGHT_STREAM = loop.run_in_executor(pool, self._insightListener)
+
+    #     if self.WITHSSM:
+    #         server = self.SSM.get_server()
+    #         # Run the UI Shared Memory Server
+    #         self.UI_SSM_STREAM = loop.run_in_executor(pool, server.serve_forever)
+    #         print("UI Shared Memory Server Started")
+    #         if self.WITHUI:
+    #             from OlympusTrader.ui.__main__ import app
+    #             # FIXME: Enabling dev tools is not working in a pool executor for some reason
+    #             # if self.VERBOSE > 0:
+    #             #     # Enable the dev tools
+    #             #     app.enable_dev_tools(
+    #             #         debug=True,
+    #             #         dev_tools_ui=True,
+    #             #         dev_tools_serve_dev_bundles=True,
+    #             #         dev_tools_hot_reload=True
+    #             #     )
+
+    #             #     # Run the UI Dashboard Server in debug mode
+    #             #     self.UI_STREAM = loop.run_in_executor(pool,  functools.partial(app.run, debug=True))
+    #             # else:
+    #             #     log = logging.getLogger('werkzeug')
+    #             #     log.setLevel(logging.ERROR)
+    #             #     # Run the UI Dashboard Server in production mode
+    #             #     self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
+    #             # Run the UI Dashboard Server in production mode
+    #             log = logging.getLogger("werkzeug")
+    #             log.setLevel(logging.ERROR)
+
+    #             self.UI_STREAM = loop.run_in_executor(
+    #                 pool, functools.partial(app.run, host="0.0.0.0", threaded=True)
+    #             )
+    #             print("UI Dashboard Server Started")
+
+    async def _run_strategy(self):
         """Run the strategy in backtest mode or live mode."""
+        self.LOGGER.info("_run_strategy: starting")
+
         if self.MODE == IStrategyMode.BACKTEST:
-            self._run_backtest()
+            await self._run_backtest_loop()
         else:
-            loop.run_forever()
+            # Live mode: just stay alive until _RUNNING is False
+            while not getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) or not getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False):
+                await asyncio.sleep(0.1)
+            while getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) and getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False) and self._RUNNING:
+                await asyncio.sleep(1)
+        self.LOGGER.info("_run_strategy_loop: exiting")
 
-        self.teardown()
+    async def _run_backtest_loop(self) -> None:
+        """Backtest loop: waits for streams to start and controls backtest flow."""
+        # Wait until both market and trade streams are _RUNNING
+        while not getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) or not getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False):
+            await asyncio.sleep(0.1)
 
-    def _run_backtest(self):
-        """Run the strategy in backtest mode."""
-        while (
-            not self.BROKER.RUNNING_MARKET_STREAM
-            or not self.BROKER.RUNNING_TRADE_STREAM
-        ):
-            if self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
-                break
         if self.VERBOSE > 0:
+            import datetime, timeit
             print(f"Running Backtest - {datetime.datetime.now()}")
             start_time = timeit.default_timer()
 
-        while self.BROKER.RUNNING_MARKET_STREAM and self.BROKER.RUNNING_TRADE_STREAM:
+        # Main backtest control loop
+        while getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) and getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False):
             try:
-                self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
-            except BrokenBarrierError as e:
-                # print('Error in _insightListener:', e)
-                # TODO: Should be checking if the backtesting range is completed but for now we will just break
-                if (
-                (not self.BROKER.RUNNING_MARKET_STREA)
-                or (not self.BROKER.RUNNING_TRADE_STREAM)
-                ):
+                self.LOGGER.debug(f"Backtest itter: {self.BROKER.BACKTEST_FlOW_CONTROL._step_id}" )
+                await self.BROKER.BACKTEST_FlOW_CONTROL.wait_for_market()
+                await asyncio.sleep(0)
+                # await asyncio.to_thread(self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait)
+            except asyncio.CancelledError:
+                if (not self.BROKER.RUNNING_MARKET_STREAM) or (not self.BROKER.RUNNING_TRADE_STREAM):
                     break
-                else:
-                    continue
+                continue
 
         if self.VERBOSE > 0:
             print("Backtest Completed:", timeit.default_timer() - start_time)
-        # self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
-        # self.saveBacktestResults()
 
-        raise KeyboardInterrupt("Backtest Completed")
-
-    def _handle_close_streams(self, loop, pool):
-        """Handle interruptions and ensure all streams and listeners are closed."""
-        try:
-            self.teardown()
-
-            # Cancel all running tasks
-            for task in asyncio.all_tasks(loop):
-                task.cancel()
-
-            # Cancel individual streams
-            if hasattr(self, "TRADE_STREAM"):
-                self.TRADE_STREAM.cancel("From Main: Trade Stream Cancel")
-            if hasattr(self, "MARKET_DATA_STREAM"):
-                self.MARKET_DATA_STREAM.cancel("From Main: Market Stream Cancel")
-            if hasattr(self, "INSIGHT_STREAM"):
-                self.INSIGHT_STREAM.cancel()
-
-            # Cancel UI streams if UI is enabled
-            if self.WITHUI:
-                if hasattr(self, "UI_STREAM"):
-                    self.UI_STREAM.cancel("From Main: UI Stream Cancel")
-                if hasattr(self, "UI_SSM_STREAM"):
-                    self.UI_SSM_STREAM.cancel("From Main: UI SSM Stream Cancel")
-
-            # Shutdown the thread pool
-            pool.shutdown(wait=False, cancel_futures=True)
-            # Stop the event loop
-            loop.stop()
-
-        except Exception as e:
-            print(f"Error during interruption handling: {e}")
-        finally:
-            # Ensure the broker streams are closed
-            asyncio.run(self.BROKER.closeTradeStream())
-            asyncio.run(self.BROKER.closeStream(self.STREAMS))
-            self._Running = False
-
-    def run_teardown(self, loop):
+    async def run_teardown(self, loop):
         """Clean up resources and save backtest results if applicable."""
-        asyncio.run(self.BROKER.closeTradeStream())
-        asyncio.run(self.BROKER.closeStream(self.STREAMS))
-        loop.stop()
-        self._Running = False
+        self.teardown()
 
         if self.MODE == IStrategyMode.BACKTEST and len(self.BACKTESTING_RESULTS) == 0:
             self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
@@ -503,11 +576,11 @@ class BaseStrategy(abc.ABC):
     def saveBacktestResults(self):
         """Save the backtest results."""
         if self.MODE != IStrategyMode.BACKTEST:
-            print("Backtest results can only be saved in backtest mode")
+            self.LOGGER.info("Backtest results can only be saved in backtest mode")
             return
         # check if there are backtest results
         if len(self.BACKTESTING_RESULTS) == 0:
-            print("No backtest results to save")
+            self.LOGGER.info("No backtest results to save")
             return
 
         # Save the backtest results
@@ -582,79 +655,100 @@ class BaseStrategy(abc.ABC):
             print(f"Error in _startUISharedMemory: {e}")
             pass
 
-    def _insightListener(self):
+    async def _insightListener(self):
         """Listen to the insights and manage the orders."""
         assert callable(
             self.executeInsight
         ), "executeInsight must be a callable function"
         print("Running Insight Listener")
-        while self._Running:
-            # TODO: could use a thread pool executor to run the executeInsight() functions
-            for i in list(self.INSIGHTS):
-                insight = self.INSIGHTS.get(i, None)
-                if insight is None:
-                    continue
-                try:
-                    # if self.VERBOSE > 0:
-                    # print(f'Execute Insight: {
-                    #     symbol}- {datetime.datetime.now()}')
-                    # start_time = timeit.default_timer()
+        try:
+            while self._RUNNING:
+                # Update the account and positions
+                self.ACCOUNT = self.BROKER.get_account()
+                self.POSITIONS = self.BROKER.get_positions()
+                if self.POSITIONS == None:
+                    self.POSITIONS = {}
 
-                    # Execute the insight Executors
-                    passed = True
-                    for executor in self.INSIGHT_EXECUTORS[insight.state]:
-                        if not executor.should_run(insight):
+                if self.MODE == IStrategyMode.BACKTEST:
+                    # Wait for market producers to finish this timestep
+                    await self.BROKER.BACKTEST_FlOW_CONTROL.wait_for_market()
+                else:
+                    await asyncio.sleep(self.insightRateLimit if (self.insightRateLimit >= 0) else 1)
+
+                for i in list(self.INSIGHTS):
+                    insight = self.INSIGHTS.get(i, None)
+                    if insight is None:
+                        continue
+                    try:
+                        # if self.VERBOSE > 0:
+                        # print(f'Execute Insight: {
+                        #     symbol}- {datetime.datetime.now()}')
+                        # start_time = timeit.default_timer()
+
+                        # Execute the insight Executors
+                        passed = True
+                        for executor in self.INSIGHT_EXECUTORS[insight.state]:
+                            if not executor.should_run(insight):
+                                continue
+                            result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
+                            # Executor manage the insight state and mutates the insight
+                            if not result.success:
+                                self.LOGGER.error(
+                                    f"Executor {result.executor}: {result.message}"
+                                )
+                                passed = False
+                                break
+                            elif not result.passed:
+                                passed = False
+                                break
+                            if self.VERBOSE > 1:
+                                self.LOGGER.info(f"Executor {result.executor}: {result.message}")
+
+                        if not passed:
                             continue
-                        result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
-                        # Executor manage the insight state and mutates the insight
-                        if not result.success:
-                            self.LOGGER.error(
-                                f"Executor {result.executor}: {result.message}"
-                            )
-                            passed = False
-                            break
-                        elif not result.passed:
-                            passed = False
-                            break
-                        if self.VERBOSE > 1:
-                            self.LOGGER.info(f"Executor {result.executor}: {result.message}")
 
-                    if not passed:
+                        # latestInsight = self.INSIGHTS.get(insight.INSIGHT_ID)
+                        # if latestInsight is not None:
+                        #     self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+
+                        self.executeInsight(insight)
+
+                        # Change the flag to indicate that the insight has been ran once against the executor list
+                        if insight.state == InsightState.FILLED and insight._first_on_fill:
+                            insight._first_on_fill = False
+
+                        # if self.VERBOSE > 0:
+                        # print('Time taken executeInsight:', symbol,
+                        #       timeit.default_timer() - start_time)
+                    except KeyError as e:
+                        continue
+                    except Exception as e:
+                        self.LOGGER.error("Error in _insightListener:", e)
                         continue
 
-                    # latestInsight = self.INSIGHTS.get(insight.INSIGHT_ID)
-                    # if latestInsight is not None:
-                    #     self.executeInsight(self.INSIGHTS[insight.INSIGHT_ID])
+                # signal insight stage done
+                await self.BROKER.BACKTEST_FlOW_CONTROL.report_insight()
+                # note: we do NOT step_complete here; trade will signal trade complete, then market will call step_complete()
+                # Wait small time to yield control (optional)
+                await asyncio.sleep(0)
 
-                    self.executeInsight(insight)
-
-                    # Change the flag to indicate that the insight has been ran once against the executor list
-                    if insight.state == InsightState.FILLED and insight._first_on_fill:
-                        insight._first_on_fill = False
-
-                    # if self.VERBOSE > 0:
-                    # print('Time taken executeInsight:', symbol,
-                    #       timeit.default_timer() - start_time)
-                except KeyError as e:
-                    continue
-                except Exception as e:
-                    self.LOGGER.error("Error in _insightListener:", e)
-                    continue
-            if self.MODE == IStrategyMode.BACKTEST:
-                try:
-                    self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
-                except BrokenBarrierError as e:
-                    # print('Error in _insightListener:', e)
-                    # TODO: Should be checking if the backtesting range is completed but for now we will just break
-                    break
-            else:
-                # await asyncio.sleep(1)
-                sleep(self.insightRateLimit)
-            # Update the account and positions
-            self.ACCOUNT = self.BROKER.get_account()
-            self.POSITIONS = self.BROKER.get_positions()
-            if self.POSITIONS == None:
-                self.POSITIONS = {}
+                # if self.MODE == IStrategyMode.BACKTEST:
+                #     try:
+                #         await asyncio.to_thread(self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait)
+                #     except BrokenBarrierError as e:
+                #         # print('Error in _insightListener:', e)
+                #         # TODO: Should be checking if the backtesting range is completed but for now we will just break
+                #         break
+                
+                # Update the account and positions
+                self.ACCOUNT = self.BROKER.get_account()
+                self.POSITIONS = self.BROKER.get_positions()
+                if self.POSITIONS == None:
+                    self.POSITIONS = {}
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._INSIGHT_RUNNING = False
         self.LOGGER.info("End of Insight Listener")
 
     async def _on_trade_update(self, trade):
@@ -667,9 +761,9 @@ class BaseStrategy(abc.ABC):
         self.LOGGER.info(
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] is not None else orderdata['filled_price']} - {orderdata['order_id']}"
         )
-        print(
-            f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] is not None else orderdata['filled_price']} - {orderdata['order_id']}"
-        )
+        # print(
+        #     f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] is not None else orderdata['filled_price']} - {orderdata['order_id']}"
+        # )
         self.ORDERS[orderdata["order_id"]] = orderdata
         for i, insight in self.INSIGHTS.items():
             # Check if the insight is managing the order by checking the symbol
@@ -943,9 +1037,9 @@ class BaseStrategy(abc.ABC):
         if assetInfo and assetInfo["status"] == "active" and assetInfo["tradable"]:
             self.UNIVERSE[assetInfo["symbol"]] = assetInfo
             self.HISTORY[assetInfo["symbol"]] = pd.DataFrame()
-            print(f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
+            self.LOGGER.info(f'Loaded {symbol}:{assetInfo["exchange"], }  into universe')
         else:
-            print(f"Failed to load {symbol} into universe")
+            self.LOGGER.warning(f"Failed to load {symbol} into universe")
 
     def add_events(
         self, eventType: Literal["trade", "quote", "bar", "news"] = "bar", applyTA: bool = True, stored: bool = False, stored_path: str = "data", time_frame: Optional[ITimeFrame] = None, **kwargs
@@ -1130,7 +1224,7 @@ class BaseStrategy(abc.ABC):
                         not self.BACKTESTING_CONFIG.get("preemptiveTA")
                         and self.MODE == IStrategyMode.BACKTEST
                     ) or (self.MODE != IStrategyMode.BACKTEST):
-                        self.HISTORY[symbol].ta.strategy(self.TaStrategy)
+                        self.HISTORY[symbol].ta.study(self.TaStrategy)
                     try:
                         if (not isFeature) or (isFeature and self.tradeOnFeatureEvents):
                             self.on_bar(symbol, data)
@@ -1143,11 +1237,12 @@ class BaseStrategy(abc.ABC):
         except Exception as e:
             self.LOGGER.error(f"Exception in _on_bar: {e}")
         finally:
+            return
             # If in backtest mode and shutdown is signaled, ensure barrier is released
             if self.MODE == IStrategyMode.BACKTEST and hasattr(self.BROKER, 'BACKTEST_FlOW_CONTROL_BARRIER') and self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER:
                 try:
                     # self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait(timeout=2)
-                    self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait()
+                     await asyncio.to_thread(self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait)
                 except Exception as barrier_e:
                     self.LOGGER.warning(f"Barrier wait failed or timed out: {barrier_e}")
         
@@ -1265,3 +1360,37 @@ class BaseStrategy(abc.ABC):
         """Returns the mode of the strategy."""
         return self.MODE
     
+# -------------------- utilities --------------------
+    def create_task(self, coro: Awaitable, name: Optional[str] = None) -> None:
+        """Create and track a background task on the running loop.
+
+        This helper is useful for launching tasks outside TaskGroup contexts.
+        Tasks created here are stored in self._tasks and will be cancelled on teardown.
+        """
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(coro, name=name)
+        if name:
+            self._tasks[name] = task
+        else:
+            self._tasks[f"task-{id(task)}"] = task
+
+
+    async def cancel_tracked_tasks(self) -> None:
+        """Cancel tasks created with create_task()."""
+        if not self._tasks:
+            return
+        self.LOGGER.info("Cancelling %d tracked tasks", len(self._tasks))
+        for name, t in list(self._tasks.items()):
+            t.cancel()
+        await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+        self._tasks.clear()
+
+    async def _shutdown(self):
+        print("Shutting down streams...")
+
+        # Broker or strategy cleanup
+        try:
+            await self.run_teardown()
+        except Exception:
+            self.LOGGER.exception("Error in run_teardown")
+        self._RUNNING = False
