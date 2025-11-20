@@ -55,15 +55,59 @@ Project Structure
 - ``strategies/`` - Example/user strategies
 - ``backtests/``, ``data/``, ``examples/`` - Supporting files
 
-Core Concepts
--------------
+Key Components
+--------------
 
-- **Insight:** A trade idea (entry/exit, price, quantity, confidence, expiry, risk, etc.)
-- **Alpha:** Model that generates insights (signals). Inherit from ``BaseAlpha``.
-- **Executor:** Handles execution and state transitions for insights. Inherit from ``BaseExecutor``.
-- **Strategy:** Main user class. Orchestrates data, alphas, executors, and brokers.
-- **Broker:** Abstracted trading interface (Alpaca, MT5, etc.)
-- **Risk Management:** Built-in at both strategy and insight level.
+1. Insights (``Insight``)
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An **Insight** represents a trade idea or a signal. It is the core unit of information that moves through the system.
+
+- **Purpose**: To define *what* to trade, *how* (buy/sell), *when* (now/limit), and *parameters* (TP/SL, quantity, confidence).
+- **Key Attributes**:
+    - ``symbol``: The asset to trade.
+    - ``side``: ``BUY`` or ``SELL``.
+    - ``state``: The current status (``NEW``, ``FILLED``, ``EXECUTED``, ``CANCELED``, ``REJECTED``, ``CLOSED``).
+    - ``limit_price``, ``stop_price``: For entry orders.
+    - ``TP`` (Take Profit), ``SL`` (Stop Loss): Risk management parameters.
+    - ``confidence``: A score (0-1) indicating the strength of the signal.
+    - ``periodUnfilled``: Time-to-live for the order before it expires.
+- **Lifecycle**: An Insight starts as ``NEW``, moves to ``EXECUTED`` (when submitted to broker), then ``FILLED`` (when trade happens), and finally ``CLOSED`` (when position is exited).
+
+2. Alpha Models (``BaseAlpha``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An **Alpha Model** is responsible for generating **Insights**.
+
+- **Purpose**: To analyze market data (price, volume, indicators) and produce trade signals.
+- **Key Methods**:
+    - ``generateInsights(symbol)``: The main method where your logic lives. It returns an ``AlphaResults`` object containing an ``Insight`` if a signal is found.
+    - ``start()``: Run once at the beginning to initialize models or load data.
+    - ``init(asset)``: Run for each asset to set up asset-specific variables.
+- **Usage**: You can have multiple Alpha models in a strategy, and they can be specific to certain assets.
+
+3. Executors (``BaseExecutor``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An **Executor** is responsible for **managing** the execution of Insights.
+
+- **Purpose**: To decide *how* and *when* to act on an Insight based on its state. It handles the logistics of placing orders, managing stops/limits, and handling cancellations.
+- **Key Methods**:
+    - ``run(insight)``: Evaluates an Insight and performs actions (like submitting an order to the broker).
+- **Types**:
+    - **New Executors**: Handle ``NEW`` insights (e.g., ``MarketOrderEntryPriceExecutor``).
+    - **Filled Executors**: Handle ``FILLED`` insights (e.g., ``BasicStopLossExecutor``, ``BasicTakeProfitExecutor``).
+    - **Cancelled/Rejected Executors**: Handle cleanup or retry logic.
+- **Philosophy**: Separates the *signal* (Alpha) from the *execution* (Executor), allowing you to swap execution logic (e.g., market vs. limit orders) without changing the strategy logic.
+
+How they work together
+^^^^^^^^^^^^^^^^^^^^^^
+
+1.  **Strategy**: The orchestrator. It defines the universe of assets and runs the loop.
+2.  **Alpha**: Analyzes data and emits an **Insight** (State: ``NEW``).
+3.  **Executor**: Picks up the ``NEW`` Insight and submits it to the **Broker** (State becomes ``EXECUTED``).
+4.  **Broker**: Fills the order (State becomes ``FILLED``).
+5.  **Executor**: Monitors the ``FILLED`` Insight and manages exit logic (TP/SL) to eventually close it (State becomes ``CLOSED``).
 
 Usage Example
 -------------
