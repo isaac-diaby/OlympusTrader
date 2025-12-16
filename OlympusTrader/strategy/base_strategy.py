@@ -430,7 +430,7 @@ class BaseStrategy(abc.ABC):
                     try:
                         await asyncio.wait_for(self._shutdown(), timeout=self._teardown_timeout)
                     except Exception as e:
-                        self.LOGGER.exception("Error during teardown: %s", e)
+                        self.LOGGER.exception(f"Error during teardown: {e}")
 
                     # Signal to stop the broker streams
                     self._RUNNING = False
@@ -438,7 +438,7 @@ class BaseStrategy(abc.ABC):
                         try:
                             await self.BROKER.closeTradeStream()
                         except Exception as e:
-                            self.LOGGER.exception("Error closing trade stream: %s", e)
+                            self.LOGGER.exception(f"Error closing trade stream: {e}")
                     
                     # Set stop event to trigger TaskGroup exit
                     stop_event.set()
@@ -456,7 +456,7 @@ class BaseStrategy(abc.ABC):
                     try:
                         await asyncio.wait_for(self._shutdown(), timeout=20)
                     except Exception as e:
-                        self.LOGGER.exception("Error during teardown: %s", e)
+                        self.LOGGER.exception(f"Error during teardown: {e}")
 
                 # Signal tasks to stop
                 self.LOGGER.info("Cancelling tasks...")
@@ -496,7 +496,7 @@ class BaseStrategy(abc.ABC):
                 try:
                     self._ssm_server.shutdown()
                 except Exception as e:
-                    self.LOGGER.debug("Error shutting down SSM server: %s", e)
+                    self.LOGGER.debug(f"Error shutting down SSM server: {e}")
             # Cancel the tasks
             for task in ui_ssm_tasks:
                 task.cancel()
@@ -554,7 +554,7 @@ class BaseStrategy(abc.ABC):
                     tasks.append(task)
                     self.LOGGER.info("UI Dashboard Server started")
                 except Exception as e:
-                    self.LOGGER.exception("Failed to start UI server: %s", e)
+                    self.LOGGER.exception(f"Failed to start UI server: {e}")
         
         return tasks
 
@@ -610,7 +610,7 @@ class BaseStrategy(abc.ABC):
                         )
                         self.LOGGER.info("UI Dashboard Server started")
                     except Exception as e:
-                        self.LOGGER.exception("Failed to start UI server: %s", e)
+                        self.LOGGER.exception(f"Failed to start UI server: {e}")
         return
     async def _run_strategy(self):
         """Run the strategy in backtest mode or live mode."""
@@ -697,9 +697,9 @@ class BaseStrategy(abc.ABC):
             if self.BACKTESTING_RESULTS.get(symbol):
                 self.BACKTESTING_RESULTS[symbol].save(path)
                 self.BACKTESTING_RESULTS[symbol].plot().show()
-                self.LOGGER.info("Backtesting results saved for", symbol, "at", path)
+                self.LOGGER.info(f"Backtesting results saved for {symbol} at {path}")
             else:
-                self.LOGGER.info("No backtesting results found for", symbol)
+                self.LOGGER.info(f"No backtesting results found for {symbol}")
 
         # Save the account history
         self.BROKER.export_trade_log()
@@ -1484,7 +1484,7 @@ class BaseStrategy(abc.ABC):
         """Cancel tasks created with create_task()."""
         if not self._tasks:
             return
-        self.LOGGER.info("Cancelling %d tracked tasks", len(self._tasks))
+        self.LOGGER.info(f"Cancelling %d tracked tasks {len(self._tasks)}")
         for name, t in list(self._tasks.items()):
             t.cancel()
         await asyncio.gather(*self._tasks.values(), return_exceptions=True)

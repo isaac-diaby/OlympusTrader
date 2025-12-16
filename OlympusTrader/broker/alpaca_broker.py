@@ -127,7 +127,7 @@ class AlpacaBroker(BaseBroker):
             self.TICKER_INFO[symbol] = tickerAsset
             return tickerAsset
         except alpaca.common.exceptions.APIError as e:
-            self.LOGGER.exception("Error: No asset for", symbol)
+            self.LOGGER.exception(f"Error: No asset for {symbol}")
             return None
 
     def get_account(self):
@@ -377,7 +377,7 @@ class AlpacaBroker(BaseBroker):
             # print("Closed position", order)
             return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
-            self.LOGGER.exception("Error closing position", e)
+            self.LOGGER.exception(f"Error closing position {e}")
             raise e
 
     def cancel_order(self, order_id):

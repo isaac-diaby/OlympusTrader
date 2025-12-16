@@ -98,8 +98,7 @@ class PaperBroker(BaseBroker):
             self.update_account_history()
             # self.BACKTEST_FLOW_CONTROL_BARRIER = Barrier(4)
         else:
-            self.LOGGER.info("Live Paper Trading Mode - There is a:",
-                  feedDelay, "minute delay in the feed")
+            self.LOGGER.info(f"Live Paper Trading Mode - There is a: {feedDelay} minute delay in the feed")
             self.FeedDelay = feedDelay
             self.CurrentTime = datetime.datetime.now(
             ) - datetime.timedelta(minutes=self.FeedDelay)
@@ -137,7 +136,7 @@ class PaperBroker(BaseBroker):
                 self.TICKER_INFO[symbol] = tickerAsset
                 return tickerAsset
             except Exception as e:
-                self.LOGGER.error("Error: ", e)
+                self.LOGGER.error(f"Error: {e}")
                 return None
         else:
             raise NotImplementedError(
@@ -375,12 +374,11 @@ class PaperBroker(BaseBroker):
         if self.MODE == IStrategyMode.BACKTEST:
             # trade stream for all of the pending, filled, canceled oerders.
             while self.get_current_time <= self.END_DATE and self.RUNNING_TRADE_STREAM:
-                self.LOGGER.debug("trade: waiting for insight for step %s", self.BACKTEST_FlOW_CONTROL._step_id)
+                self.LOGGER.debug(f"trade: waiting for insight for step {self.BACKTEST_FlOW_CONTROL._step_id}")
                 self.LOGGER.debug("DEBUG: Entering wait_for_insight")
                 await self.BACKTEST_FlOW_CONTROL.wait_for_insight()
                 self.LOGGER.debug("DEBUG: Exited wait_for_insight")
-                self.LOGGER.debug("trade: processing orders for step %s", self.BACKTEST_FlOW_CONTROL._step_id)
-
+                self.LOGGER.debug(f"trade: processing orders for step {self.BACKTEST_FlOW_CONTROL._step_id}")
                 try:
                     await self.processUpdateOrders(callback)
                     await self.processClosedOrders(callback)
@@ -396,13 +394,13 @@ class PaperBroker(BaseBroker):
                     if isinstance(e, asyncio.CancelledError):
                          self.LOGGER.info("startTradeStream cancelled")
                     else:
-                         self.LOGGER.exception("Error processing orders in trade stream", e)
+                         self.LOGGER.exception(f"Error processing orders in trade stream {e}")
                     raise
                 finally:
                     self.LOGGER.debug("DEBUG: startTradeStream inner finally block")
                 # signal trade done for this timestep
                 await self.BACKTEST_FlOW_CONTROL.report_trade()
-                self.LOGGER.debug("trade: reported trade for step %s", self.BACKTEST_FlOW_CONTROL._step_id)
+                self.LOGGER.debug(f"trade: reported trade for step {self.BACKTEST_FlOW_CONTROL._step_id}")
 
                 # optionally wait a tiny bit to yield
                 await asyncio.sleep(0)
@@ -425,7 +423,7 @@ class PaperBroker(BaseBroker):
                     await self.processUpdateOrders(callback)
                     await self.processCanceledOrders(callback)
                 except Exception as e:
-                    self.LOGGER.error("Error: ", e)
+                    self.LOGGER.error(f"Error: {e}")
                     continue
                 asyncio.sleep(1)
         self.LOGGER.info("End of Trade Stream")
@@ -434,7 +432,7 @@ class PaperBroker(BaseBroker):
     async def processUpdateOrders(self, callback: Awaitable):
         for i, order in enumerate(self.UPDATE_ORDERS):
             updateOrder = order.copy()
-            self.LOGGER.debug("Processing update order: ", updateOrder['order_id'])
+            self.LOGGER.debug(f"Processing update order: {updateOrder['order_id']}")
             updateOrder['status'] = ITradeUpdateEvent.REPLACED
             await callback(ITradeUpdate(updateOrder, updateOrder['status']))
             self.UPDATE_ORDERS.remove(order)
@@ -494,7 +492,7 @@ class PaperBroker(BaseBroker):
                     await callback(ITradeUpdate(order, order['status']))
                 except BaseException as e:
                     if e.code == "insufficient_funds":
-                        self.LOGGER.warning("Error: ", e)
+                        self.LOGGER.warning(f"Error: {e}")
                     order['status'] = ITradeUpdateEvent.REJECTED
                     order['filled_at'] = None
                     order['filled_price'] = None
@@ -526,7 +524,7 @@ class PaperBroker(BaseBroker):
                         await callback(ITradeUpdate(order, order['status']))
                     except BaseException as e:
                         if e.code == "insufficient_funds":
-                            self.LOGGER.error("Error: ", e)
+                            self.LOGGER.error(f"Error: {e}")
                         order['status'] = ITradeUpdateEvent.REJECTED
                         order['filled_at'] = None
                         order['filled_price'] = None
@@ -735,7 +733,7 @@ class PaperBroker(BaseBroker):
                             })
 
                     else:
-                        self.LOGGER.debug("Order Close Without stop_price:", order)
+                        self.LOGGER.debug(f"Order Close Without stop_price: {order}")
 
         else:
             match order['status']:
@@ -1182,7 +1180,7 @@ class PaperBroker(BaseBroker):
                 case _:
                     pass
         except Exception as e:
-            self.LOGGER.warn("Error updating order: ", e)
+            self.LOGGER.warning(f"Error updating order: {e}")
 
         self.Orders[order['order_id']] = order
         return order
@@ -1356,7 +1354,7 @@ class PaperBroker(BaseBroker):
             'feature') == None else asset['feature']
         if not asset.get('applyTA') or not asset.get('TA'):
             return
-        self.LOGGER.info("Applying TA for: ", symbol)
+        self.LOGGER.info(f"Applying TA for: {symbol}")
         self.HISTORICAL_DATA[symbol]['bar'].ta.study(asset['TA'])
 
     def _load_historical_bar_data(self, asset: IMarketDataStream):
@@ -1372,7 +1370,7 @@ class PaperBroker(BaseBroker):
             if asset.get('stored'):
                 if asset['stored_path']:
                     if os.path.exists(bar_data_path):
-                        self.LOGGER.info("Loading data from ", bar_data_path)
+                        self.LOGGER.info(f"Loading data from {bar_data_path}")
                         self.HISTORICAL_DATA[symbol]['bar'] = pd.read_hdf(
                             bar_data_path)
                         # check if the data is empty
@@ -1399,7 +1397,7 @@ class PaperBroker(BaseBroker):
         except Exception as e:
             raise e
         except BaseException as e:
-            self.LOGGER.error("Error: ", e.args[0]['code'], e.args[0]['data']['path'])
+            self.LOGGER.error(f"Error: {e.args[0]['code']} {e.args[0]['data']['path']}")
 
         if self.DataFeed == 'yf':
             # Populate the HISTORICAL_DATA with the bar data
@@ -1415,7 +1413,7 @@ class PaperBroker(BaseBroker):
             # apply the TA strategy
             self._applyTA(asset)
 
-            self.LOGGER.info("Loaded data for ", symbol)
+            self.LOGGER.info(f"Loaded data for {symbol}")
             self.LOGGER.info(self.HISTORICAL_DATA[symbol]['bar'].describe())
             # if a stored path is provided save the data to the path
             if asset.get('stored_path'):
@@ -1426,7 +1424,7 @@ class PaperBroker(BaseBroker):
                 self.LOGGER.info(self.HISTORICAL_DATA[symbol]['bar'].head(10))
 
                 # Save the data to the path in hdf5 format
-                self.LOGGER.info("Saving data to ", bar_data_path)
+                self.LOGGER.info(f"Saving data to {bar_data_path}")
                 self.HISTORICAL_DATA[symbol]['bar'].to_hdf(
                     bar_data_path, mode='a', key=asset["exchange"], index=True, format='table')
 
@@ -1491,7 +1489,7 @@ class PaperBroker(BaseBroker):
                         )
                         hasFeature = True
                 except Exception as e:
-                    self.LOGGER.exception("Error loading historical data for %s: %s", asset.get("symbol"), e)
+                    self.LOGGER.exception(f"Error loading historical data for {asset.get('symbol')}: {e}")
                     try:
                         assetStreams.remove(asset)
                     except ValueError:
@@ -1560,22 +1558,22 @@ class PaperBroker(BaseBroker):
                         except asyncio.CancelledError:
                             raise
                         except Exception:
-                            self.LOGGER.exception("Error producing bars for asset %s", asset.get("symbol"))
+                            self.LOGGER.exception(f"Error producing bars for asset {asset.get('symbol')}")
                             continue
                     
 
                     # signal market done for this timestep
-                    self.LOGGER.debug("market step %s: reporting market", self.BACKTEST_FlOW_CONTROL._step_id)
+                    self.LOGGER.debug(f"market step {self.BACKTEST_FlOW_CONTROL._step_id}: reporting market")
                     await self.BACKTEST_FlOW_CONTROL.report_market()
 
-                    self.LOGGER.debug("market step %s: waiting for trade", self.BACKTEST_FlOW_CONTROL._step_id)
+                    self.LOGGER.debug(f"market step {self.BACKTEST_FlOW_CONTROL._step_id}: waiting for trade")
                     # wait for trade processing to complete for this timestep
                     # await self.BACKTEST_FlOW_CONTROL.wait_for_trade()
                     try:
                         await asyncio.wait_for(self.BACKTEST_FlOW_CONTROL.wait_for_trade(), timeout=30.0)
                     except asyncio.TimeoutError:
                         # Trade hasn't completed in time — log and decide whether to continue or abort.
-                        self.LOGGER.error("Timeout waiting for trade for timestep %s — aborting backtest step", getattr(self.BACKTEST_FlOW_CONTROL, "_step_id", "n/a"))
+                        self.LOGGER.error(f"Timeout waiting for trade for timestep {getattr(self.BACKTEST_FlOW_CONTROL, '_step_id', 'n/a')} — aborting backtest step")
                         # Either break or call close() to unblock everything
                         break
 
@@ -1629,7 +1627,7 @@ class PaperBroker(BaseBroker):
                     except asyncio.CancelledError:
                         raise
                     except Exception:
-                        self.LOGGER.exception("Error in live market producer for %s", asset["symbol"])
+                        self.LOGGER.exception(f"Error in live market producer for {asset['symbol']}")
                     lastChecked = nextTimeToCheck
 
             # spawn tasks and keep them alive
@@ -1665,10 +1663,10 @@ class PaperBroker(BaseBroker):
                 streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
                 marketStream = self._MARKET_STREAMS.get(streamKey, None)
                 if marketStream:
-                    self.LOGGER.info("Closing Market Stream for: ", streamKey)
+                    self.LOGGER.info(f"Closing Market Stream for: {streamKey}")
                     if type(marketStream) == asyncio.Task:
                         marketStream.cancel(
-                            "Relenquishing Market Stream for: " + streamKey)
+                            f"Relenquishing Market Stream for: {streamKey}")
                     del self._MARKET_STREAMS[streamKey]
                     return True
                 if len(self._MARKET_STREAMS) == 0:
@@ -2139,12 +2137,12 @@ class PaperBroker(BaseBroker):
                         print(results[asset].stats(
                             metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
                     except Exception as e:
-                        self.LOGGER.warning("Failed to run backtest for ", asset, e)
+                        self.LOGGER.warning(f"Failed to run backtest for {asset}: {e}")
                         import traceback
                         traceback.print_exc()
                         continue
                 else:
-                    self.LOGGER.warning("No signals for feature ", asset)
+                    self.LOGGER.warning(f"No signals for feature {asset}")
                     continue
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
@@ -2176,7 +2174,7 @@ class PaperBroker(BaseBroker):
     def update_account_history(self):
         if self.VERBOSE >= 2:
             self.LOGGER.info("Updating Account History")
-            self.LOGGER.info("Account: ", self.Account)
+            self.LOGGER.info(f"Account: {self.Account}")
         self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
 
     def update_account_balance(self):
@@ -2222,8 +2220,7 @@ class PaperBroker(BaseBroker):
     def Account(self, account: IAccount):
         """ Sets the state of the strategy."""
         cash = account.cash
-        self.LOGGER.debug("updated account cash from:",
-              self.Account.cash, "->", account.cash)
+        self.LOGGER.debug(f"updated account cash from: {self.Account.cash} -> {account.cash}")
         if cash and cash != self.ACCOUNT.cash:
             self.ACCOUNT.cash = max(np.round(cash, 2), 0)
         equity = account.equity

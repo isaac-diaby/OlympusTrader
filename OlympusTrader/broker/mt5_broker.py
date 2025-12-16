@@ -57,8 +57,8 @@ class Mt5Broker(BaseBroker):
 
     def __init__(self, paper: bool, feed=None, timezone=None, verbose: int = 0, **kwargs):
         super().__init__(ISupportedBrokers.MT5, paper, feed, verbose, **kwargs)
-        self.LOGGER.info("MetaTrader5 package author: ", mt5.__author__)
-        self.LOGGER.info("MetaTrader5 package version: ", mt5.__version__)
+        self.LOGGER.info(f"MetaTrader5 package author: {mt5.__author__}")
+        self.LOGGER.info(f"MetaTrader5 package version: {mt5.__version__}")
 
         if not mt5.initialize():
             raise BaseException("initialize() failed, error code =", mt5.last_error())
@@ -122,9 +122,9 @@ class Mt5Broker(BaseBroker):
             if not tickerInfo:
                 return None
             if not tickerInfo.visible:
-                self.LOGGER.info(symbol, "is not visible, trying to switch on")
+                self.LOGGER.info(f"{symbol} is not visible, trying to switch on")
                 if not mt5.symbol_select(symbol, True):
-                    self.LOGGER.warning("Failed to switch on", symbol)
+                    self.LOGGER.warning(f"Failed to switch on {symbol}")
                     None
 
             # TODO: Store the size of one lot and max contract size
@@ -283,7 +283,7 @@ class Mt5Broker(BaseBroker):
                 }
                 result = mt5.order_send(request)
                 if not result:
-                    self.LOGGER.info("Order[CLOSE] send failed, error code =", mt5.last_error())
+                    self.LOGGER.info(f"Order[CLOSE] send failed, error code = {mt5.last_error()}")
                     return None
                 return self.format_order(result)
             else:
@@ -332,10 +332,10 @@ class Mt5Broker(BaseBroker):
                 "order": order_id,
                 # "comment": "OlympusTrader Cancel",
             }
-            self.LOGGER.info("Cancelling order", order_id)
+            self.LOGGER.info(f"Cancelling order {order_id}")
             result = mt5.order_send(request)
             if not result:
-                self.LOGGER.info("Order[CANCEL] send failed, error code =", mt5.last_error())
+                self.LOGGER.info(f"Order[CANCEL] send failed, error code = {mt5.last_error()}")
                 return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 self.LOGGER.info(
@@ -365,7 +365,7 @@ class Mt5Broker(BaseBroker):
                 }
                 result = mt5.order_send(request)
                 if not result:
-                    self.LOGGER.info("Order[UPDATE] send failed, error code =", mt5.last_error())
+                    self.LOGGER.info(f"Order[UPDATE] send failed, error code = {mt5.last_error()}")
                     return None
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
                     self.LOGGER.info(
@@ -513,7 +513,7 @@ class Mt5Broker(BaseBroker):
 
             result = mt5.order_send(request)
             if not result:
-                self.LOGGER.info("Order send failed, error code =", mt5.last_error())
+                self.LOGGER.error(f"Order send failed, error code = {mt5.last_error()}")
                 return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 # Should not error here as we have already checked
@@ -652,8 +652,7 @@ class Mt5Broker(BaseBroker):
                     pass
 
                 self.LOGGER.info(
-                    f"Checking for new bars from {lastChecked} to "
-                    f"{nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}"
+                    f"Checking for new bars from {lastChecked} to {nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}"
                 )
 
                 # Fetch bars
