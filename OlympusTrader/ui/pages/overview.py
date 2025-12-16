@@ -169,8 +169,20 @@ def update_account_balance_store(account: IAccount, balance_series_store, metric
         balance_series_store = []
         if metrics is None:
             return no_update
+        start_date = metrics["start_date"]
+        # Convert to timestamp if it's a string
+        if isinstance(start_date, str):
+             try:
+                 dt = datetime.fromisoformat(start_date)
+                 start_date = int(dt.timestamp())
+             except ValueError:
+                 pass # Keep as is if parsing fails
+        else:
+            # Ensure it's an int if it's a float/number
+            start_date = int(start_date)
+        
         balance_series_store.append(
-            {"time": metrics["start_date"], "value": metrics["starting_cash"]})
+            {"time": start_date, "value": metrics["starting_cash"]})
 
     if account is None:
         return no_update
@@ -179,10 +191,27 @@ def update_account_balance_store(account: IAccount, balance_series_store, metric
         return no_update
     # Add a new data point to the series
     
-    new_datapoint = [{"time": time, "value": account["equity"]}]
+    # Ensure time is an int
+    new_datapoint = [{"time": int(time), "value": account["equity"]}]
     # if balance_series[0][-1]["time"]  < time:
     #     balance_series[0].extend(new_datapoint)
     balance_series_store.extend(new_datapoint)
+
+    # Sanitize store: Ensure all timestamps are ints (fixes legacy float data in local storage)
+    for item in balance_series_store:
+        if isinstance(item.get("time"), float):
+            item["time"] = int(item["time"])
+
+    # Sort by time to ensure Tvlwc renders correctly
+    balance_series_store.sort(key=lambda x: x["time"])
+
+    # Remove duplicates (keep last)
+    unique_store = {}
+    for item in balance_series_store:
+        unique_store[item["time"]] = item
+    balance_series_store = list(unique_store.values())
+
+    # print(f"DEBUG: Account balance updated. Points: {len(balance_series_store)}")
 
     return [balance_series_store]
 
@@ -195,14 +224,29 @@ def update_account_balance_store(account: IAccount, balance_series_store, metric
 )
 def update_account_balance_chart(balance_series_store, chart_options):
     if balance_series_store is None:
+        # print("DEBUG: balance_series_store is None")
         return [[]], no_update
     
+    # Check for None values or malformed data
+    for item in balance_series_store:
+        if item.get('value') is None or item.get('time') is None:
+            print(f"DEBUG: Found invalid item in balance_series_store: {item}")
+    
+    # if len(balance_series_store) > 0:
+        # print(f"DEBUG: First point: {balance_series_store[0]}")
+        # print(f"DEBUG: Last point: {balance_series_store[-1]}")
+        # pass
+
     updateBaseline = False
     # Check if the base value is the same as the starting balance
-    if chart_options[0]["baseValue"]["price"] != balance_series_store[0]["value"]:
-        chart_options[0]["baseValue"]["price"] = balance_series_store[0]["value"]
-        updateBaseline = True
-
+    if chart_options and len(chart_options) > 0 and "baseValue" in chart_options[0]:
+        # print(f"DEBUG: Current baseValue: {chart_options[0]['baseValue']}")
+        if chart_options[0]["baseValue"]["price"] != balance_series_store[0]["value"]:
+            chart_options[0]["baseValue"]["price"] = balance_series_store[0]["value"]
+            updateBaseline = True
+            # print(f"DEBUG: Updated baseValue to {balance_series_store[0]['value']}")
+    else:
+        print(f"DEBUG: chart_options is missing or malformed: {chart_options}")
 
     return [balance_series_store], chart_options if updateBaseline else no_update
 

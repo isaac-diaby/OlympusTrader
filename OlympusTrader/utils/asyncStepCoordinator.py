@@ -18,10 +18,14 @@ class AsyncStepCoordinator:
       # insight listener: await coord.wait_for_phase('market'); process; await coord.report('insight')
       # trade stream: await coord.wait_for_phase('insight'); process; await coord.report('trade')
     """
-    def __init__(self, market_parties: int, timeout: float | None = None):
+    LOGGER = logging.getLogger(__name__)
+    def __init__(self, market_parties: int, timeout: float | None = None, verbose: int = 0):
         self.market_parties = max(0, int(market_parties))
         self.timeout = timeout
-
+        self.verbose = verbose
+        if verbose >= 2:
+            self.LOGGER.setLevel(logging.DEBUG)
+            
         self._lock = asyncio.Lock()
         self._reset_for_step()
 
@@ -67,10 +71,16 @@ class AsyncStepCoordinator:
         """Trade stream waits for insight processing to finish (i.e. insight_event)."""
         if self._closed:
             return
-        if self.timeout is None:
-            await self._insight_event.wait()
-            return
-        await asyncio.wait_for(self._insight_event.wait(), timeout=self.timeout)
+        self.LOGGER.debug("ASC: Entering wait_for_insight")
+        try:
+            if self.timeout is None:
+                await self._insight_event.wait()
+            else:
+                await asyncio.wait_for(self._insight_event.wait(), timeout=self.timeout)
+            self.LOGGER.debug("ASC: Exited wait_for_insight")
+        except asyncio.CancelledError:
+            self.LOGGER.debug("ASC: wait_for_insight cancelled")
+            raise
 
     async def report_trade(self):
         """Called by trade stream when it is done processing this step."""

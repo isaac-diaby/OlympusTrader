@@ -66,7 +66,7 @@ class PaperBroker(BaseBroker):
     VERBOSE: int = 0
 
     def __init__(self, cash: float = 100_000.00, start_date: datetime.date = None, end_date: datetime.date = None, leverage: int = 4, currency: str = "GBP", allow_short: bool = True, mode: IStrategyMode = IStrategyMode.BACKTEST, feed: Literal['yf', 'eod'] = 'yf', feedDelay: int = 0, verbose: int = 0):
-        super().__init__(ISupportedBrokers.PAPER, True, feed)
+        super().__init__(name=ISupportedBrokers.PAPER, paper=True, feed=feed, verbose=verbose)
         self.MODE = mode
         self.VERBOSE = verbose
         self.LEVERAGE = leverage
@@ -82,6 +82,7 @@ class PaperBroker(BaseBroker):
         self.CLOSE_ORDERS = deque()
         self.CANCELED_ORDERS = deque()
         self.ACCOUNT_HISTORY = {}
+        self.FILLED_ORDERS_HISTORY = []
         self._MARKET_STREAMS = {}
         self.FeedDelay = feedDelay
         self.CurrentTime = None
@@ -95,9 +96,9 @@ class PaperBroker(BaseBroker):
             self.END_DATE = end_date
             self.CurrentTime = self.START_DATE
             self.update_account_history()
-            # self.BACKTEST_FlOW_CONTROL_BARRIER = Barrier(4)
+            # self.BACKTEST_FLOW_CONTROL_BARRIER = Barrier(4)
         else:
-            print("Live Paper Trading Mode - There is a:",
+            self.LOGGER.info("Live Paper Trading Mode - There is a:",
                   feedDelay, "minute delay in the feed")
             self.FeedDelay = feedDelay
             self.CurrentTime = datetime.datetime.now(
@@ -136,7 +137,7 @@ class PaperBroker(BaseBroker):
                 self.TICKER_INFO[symbol] = tickerAsset
                 return tickerAsset
             except Exception as e:
-                print("Error: ", e)
+                self.LOGGER.error("Error: ", e)
                 return None
         else:
             raise NotImplementedError(
@@ -221,7 +222,7 @@ class PaperBroker(BaseBroker):
         if order:
             # Check if the order is already filled or closed
             if order['status'] == ITradeUpdateEvent.FILLED or order['status'] == ITradeUpdateEvent.CLOSED:
-                print(
+                self.LOGGER.warning(
                     f"Cannot cancel order {order_id} because it is already {order['status']}")
                 raise BaseException({
                     "code": "already_filled",
@@ -234,36 +235,36 @@ class PaperBroker(BaseBroker):
             # Check if order is already in CANCELED_ORDERS to avoid duplicates
             if not any(canceled_order['order_id'] == order_id for canceled_order in self.CANCELED_ORDERS):
                 self.CANCELED_ORDERS.append(order)
-                print(f"Added order {order_id} to CANCELED_ORDERS")
+                self.LOGGER.debug(f"Added order {order_id} to CANCELED_ORDERS")
 
             # Remove from PENDING_ORDERS if present
             for pending_order in list(self.PENDING_ORDERS):
                 if pending_order['order_id'] == order_id:
                     self.PENDING_ORDERS.remove(pending_order)
-                    print(
+                    self.LOGGER.debug(
                         f"Removed order {order_id} from PENDING_ORDERS during cancellation")
 
             # If this order has TP/SL legs, cancel those too
             if order.get('legs'):
                 if order['legs'].get('take_profit'):
                     tp_order_id = order['legs']['take_profit']['order_id']
-                    print(
+                    self.LOGGER.debug(
                         f"Canceling take profit leg {tp_order_id} of order {order_id}")
                     try:
                         # Recursively cancel the TP leg but don't raise exceptions if already canceled
                         self.cancel_order(tp_order_id)
                     except Exception as e:
-                        print(f"Could not cancel TP leg: {e}")
+                        self.LOGGER.error(f"Could not cancel TP leg: {e}")
 
                 if order['legs'].get('stop_loss'):
                     sl_order_id = order['legs']['stop_loss']['order_id']
-                    print(
+                    self.LOGGER.debug(
                         f"Canceling stop loss leg {sl_order_id} of order {order_id}")
                     try:
                         # Recursively cancel the SL leg but don't raise exceptions if already canceled
                         self.cancel_order(sl_order_id)
                     except Exception as e:
-                        print(f"Could not cancel SL leg: {e}")
+                        self.LOGGER.error(f"Could not cancel SL leg: {e}")
 
             return order
 
@@ -281,7 +282,7 @@ class PaperBroker(BaseBroker):
                             "data": {"order_id": parent_id, "status": parent_order['status']}
                         })
                     else:
-                        print(
+                        self.LOGGER.debug(
                             f"Order {order_id} is a take profit leg of {parent_id}, removing reference")
                         # Remove the take profit leg reference
                         del parent_order['legs']['take_profit']
@@ -292,13 +293,13 @@ class PaperBroker(BaseBroker):
                     # Check if the order is already filled or closed
                     # if parent_order['status'] == ITradeUpdateEvent.FILLED or parent_order['status'] == ITradeUpdateEvent.CLOSED:
                     if parent_order['legs']['stop_loss']['status'] == ITradeUpdateEvent.FILLED or parent_order['legs']['stop_loss']['status'] == ITradeUpdateEvent.CLOSED:
-                        # print(f"Cannot cancel order {parent_id} because it is already {parent_order['status']}")
+                        # self.LOGGER.debug(f"Cannot cancel order {parent_id} because it is already {parent_order['status']}")
                         raise BaseException({
                             "code": "already_filled",
                             "data": {"order_id": parent_id, "status": parent_order['status']}
                         })
                     else:
-                        print(
+                        self.LOGGER.debug(
                             f"Order {order_id} is a stop loss leg of {parent_id}, removing reference")
                         # Remove the stop loss leg reference
                         del parent_order['legs']['stop_loss']
@@ -371,11 +372,15 @@ class PaperBroker(BaseBroker):
 
     async def startTradeStream(self, callback):
         await super().startTradeStream(callback)
-        loop = asyncio.new_event_loop()
         if self.MODE == IStrategyMode.BACKTEST:
             # trade stream for all of the pending, filled, canceled oerders.
             while self.get_current_time <= self.END_DATE and self.RUNNING_TRADE_STREAM:
+                self.LOGGER.debug("trade: waiting for insight for step %s", self.BACKTEST_FlOW_CONTROL._step_id)
+                self.LOGGER.debug("DEBUG: Entering wait_for_insight")
                 await self.BACKTEST_FlOW_CONTROL.wait_for_insight()
+                self.LOGGER.debug("DEBUG: Exited wait_for_insight")
+                self.LOGGER.debug("trade: processing orders for step %s", self.BACKTEST_FlOW_CONTROL._step_id)
+
                 try:
                     await self.processUpdateOrders(callback)
                     await self.processClosedOrders(callback)
@@ -386,36 +391,50 @@ class PaperBroker(BaseBroker):
                     await self.processUpdateOrders(callback)
                     await self.processCanceledOrders(callback)
                     # Run barrier in a thread so it doesn't block the async loop
-                except Exception as e:
-                    self.LOGGER.exception("Error processing orders in trade stream", e)
+                except BaseException as e:
+                    self.LOGGER.debug(f"DEBUG: startTradeStream caught exception type: {type(e)}")
+                    if isinstance(e, asyncio.CancelledError):
+                         self.LOGGER.info("startTradeStream cancelled")
+                    else:
+                         self.LOGGER.exception("Error processing orders in trade stream", e)
+                    raise
+                finally:
+                    self.LOGGER.debug("DEBUG: startTradeStream inner finally block")
                 # signal trade done for this timestep
                 await self.BACKTEST_FlOW_CONTROL.report_trade()
+                self.LOGGER.debug("trade: reported trade for step %s", self.BACKTEST_FlOW_CONTROL._step_id)
 
                 # optionally wait a tiny bit to yield
                 await asyncio.sleep(0)
-            print("End of Trade Stream")
+            try:
+                self.BACKTEST_FlOW_CONTROL.close()
+            except Exception:
+                self.LOGGER.exception("Failed to close BACKTEST_FlOW_CONTROL cleanly")
+            self.LOGGER.debug("DEBUG: startTradeStream OUTER finally block - EXITING")
 
         else:
             # live paper trade stream
             while self.RUNNING_TRADE_STREAM:
                 try:
-                    await self.processUpdateOrders(callback, loop)
-                    await self.processClosedOrders(callback, loop)
-                    await self.processCanceledOrders(callback, loop)
-                    await self.processPendingOrders(callback, loop)
-                    await self.processActiveOrders(callback, loop)
+                    await self.processUpdateOrders(callback)
+                    await self.processClosedOrders(callback)
+                    await self.processCanceledOrders(callback)
+                    await self.processPendingOrders(callback)
+                    await self.processActiveOrders(callback)
                     # perform any order updates again
-                    await self.processUpdateOrders(callback, loop)
-                    await self.processCanceledOrders(callback, loop)
+                    await self.processUpdateOrders(callback)
+                    await self.processCanceledOrders(callback)
                 except Exception as e:
-                    print("Error: ", e)
+                    self.LOGGER.error("Error: ", e)
                     continue
                 asyncio.sleep(1)
+        self.LOGGER.info("End of Trade Stream")
+        return
 
     async def processUpdateOrders(self, callback: Awaitable):
         for i, order in enumerate(self.UPDATE_ORDERS):
             updateOrder = order.copy()
-            print("Processing update order: ", updateOrder['order_id'])
+            self.LOGGER.debug("Processing update order: ", updateOrder['order_id'])
             updateOrder['status'] = ITradeUpdateEvent.REPLACED
             await callback(ITradeUpdate(updateOrder, updateOrder['status']))
             self.UPDATE_ORDERS.remove(order)
@@ -439,7 +458,7 @@ class PaperBroker(BaseBroker):
                 # Only skip if the order is not already filled or closed
                 if order['status'] != ITradeUpdateEvent.FILLED and order['status'] != ITradeUpdateEvent.CLOSED:
                     self.PENDING_ORDERS.remove(order)
-                    print(
+                    self.LOGGER.debug(
                         f"Skipping processing of canceled order {order['order_id']} in PENDING_ORDERS")
                     continue
 
@@ -459,7 +478,7 @@ class PaperBroker(BaseBroker):
                 self._update_order(order)
 
                 await callback(ITradeUpdate(order, order['status']))
-                # Now move the order to being PENDING
+                
                 order['status'] = ITradeUpdateEvent.PENDING_NEW
 
             if order['type'] == IOrderType.MARKET:
@@ -475,7 +494,7 @@ class PaperBroker(BaseBroker):
                     await callback(ITradeUpdate(order, order['status']))
                 except BaseException as e:
                     if e.code == "insufficient_funds":
-                        print("Error: ", e)
+                        self.LOGGER.warning("Error: ", e)
                     order['status'] = ITradeUpdateEvent.REJECTED
                     order['filled_at'] = None
                     order['filled_price'] = None
@@ -507,7 +526,7 @@ class PaperBroker(BaseBroker):
                         await callback(ITradeUpdate(order, order['status']))
                     except BaseException as e:
                         if e.code == "insufficient_funds":
-                            print("Error: ", e)
+                            self.LOGGER.error("Error: ", e)
                         order['status'] = ITradeUpdateEvent.REJECTED
                         order['filled_at'] = None
                         order['filled_price'] = None
@@ -516,7 +535,7 @@ class PaperBroker(BaseBroker):
                         self.PENDING_ORDERS.remove(order)
                         await callback(ITradeUpdate(order, order['status']))
                     continue
-            idx += 1  # Increment index only if the order is not removed
+            idx += 1
 
     async def processActiveOrders(self, callback: Awaitable):
         """ Process active orders that are either filled or partially filled.
@@ -540,7 +559,6 @@ class PaperBroker(BaseBroker):
                 if currentBar is None:
                     continue
                 currentBar = currentBar.iloc[0]
-                # FIXME: Figure out if the take profit or stop loss is hit first
 
                 if order['legs'].get('take_profit'):
                     take_profit = order['legs']['take_profit']
@@ -614,34 +632,35 @@ class PaperBroker(BaseBroker):
         # Allowed order states
         allowed_states = [ITradeUpdateEvent.CANCELED,
                           ITradeUpdateEvent.ACCEPTED, ITradeUpdateEvent.PENDING_NEW]
-        for i, order in enumerate(self.CANCELED_ORDERS):
-            if order['status'] not in allowed_states or (order not in self.CANCELED_ORDERS):
-                self.CANCELED_ORDERS.remove(order)
-                continue
+        try: 
+            for i, order in enumerate(self.CANCELED_ORDERS):
+                if order['status'] not in allowed_states or (order not in self.CANCELED_ORDERS):
+                    self.CANCELED_ORDERS.remove(order)
+                    continue
 
-            # Only remove from PENDING_ORDERS and UPDATE_ORDERS
-            # Do NOT remove from ACTIVE_ORDERS as those are filled orders that need processing
-            if order in self.PENDING_ORDERS:
-                self.PENDING_ORDERS.remove(order)
-                print(
-                    f"Removed canceled order {order['order_id']} from PENDING_ORDERS")
-            if order in self.UPDATE_ORDERS:
-                self.UPDATE_ORDERS.remove(order)
-                print(
-                    f"Removed canceled order {order['order_id']} from UPDATE_ORDERS")
+                if order in self.PENDING_ORDERS:
+                    self.PENDING_ORDERS.remove(order)
+                    self.LOGGER.debug(
+                        f"Removed canceled order {order['order_id']} from PENDING_ORDERS")
+                if order in self.UPDATE_ORDERS:
+                    self.UPDATE_ORDERS.remove(order)
+                    self.LOGGER.debug(
+                        f"Removed canceled order {order['order_id']} from UPDATE_ORDERS")
 
-            if (order['status'] != ITradeUpdateEvent.FILLED and order['status'] != ITradeUpdateEvent.CLOSED):
-                order['status'] = ITradeUpdateEvent.CANCELED
-                order['updated_at'] = self.get_current_time
-                self._update_order(order)
+                if (order['status'] != ITradeUpdateEvent.FILLED and order['status'] != ITradeUpdateEvent.CLOSED):
+                    order['status'] = ITradeUpdateEvent.CANCELED
+                    order['updated_at'] = self.get_current_time
+                    self._update_order(order)
 
-                await callback(ITradeUpdate(order, order['status']))
-            else:
-                # If the order is already FILLED or CLOSED, remove it from CANCELED_ORDERS
-                # but don't change its status or remove from ACTIVE_ORDERS
-                print(
-                    f"Order {order['order_id']} is already {order['status']}, removing from CANCELED_ORDERS only")
-                self.CANCELED_ORDERS.remove(order)
+                    await callback(ITradeUpdate(order, order['status']))
+                else:
+                    # If the order is already FILLED or CLOSED, remove it from CANCELED_ORDERS
+                    # but don't change its status or remove from ACTIVE_ORDERS
+                    self.LOGGER.debug(
+                        f"Order {order['order_id']} is already {order['status']}, removing from CANCELED_ORDERS only")
+                    self.CANCELED_ORDERS.remove(order)
+        except Exception as e:
+            self.LOGGER.info(f"error in processCanceledOrders: {e}")
 
     async def closeTradeStream(self):
         await super().closeTradeStream()
@@ -673,10 +692,10 @@ class PaperBroker(BaseBroker):
                     if order['stop_price']:
                         if self.Positions[symbol][orderId]['side'] == IOrderSide.BUY:
                             assert order['side'] == IOrderSide.SELL, "Order side must be SELL for closing a BUY position"
-                            self.Positions[symbol][orderId]['qty'] -= order['qty']
+                            self.Positions[symbol][orderId]['qty'] = np.round(self.Positions[symbol][orderId]['qty'] - order['qty'], 8)
                         elif self.Positions[symbol][orderId]['side'] == IOrderSide.SELL:
                             assert order['side'] == IOrderSide.BUY, "Order side must be BUY for closing a SELL position"
-                            self.Positions[symbol][orderId]['qty'] += order['qty']
+                            self.Positions[symbol][orderId]['qty'] = np.round(self.Positions[symbol][orderId]['qty'] + order['qty'], 8)
 
                         # Calculate realized P&L and update account
                         entryPrice = order['filled_price'] if order[
@@ -703,7 +722,7 @@ class PaperBroker(BaseBroker):
                         # TODO: factor in commission?
                         self.ACCOUNT.cash += realized_pl
 
-                        print(
+                        self.LOGGER.debug(
                             f"[AUDIT] Realized P&L: {realized_pl}, Margin Released: {margin_used}")
 
                         if self.Account.cash <= 0:
@@ -716,7 +735,7 @@ class PaperBroker(BaseBroker):
                             })
 
                     else:
-                        print("Order Close Without stop_price:", order)
+                        self.LOGGER.debug("Order Close Without stop_price:", order)
 
         else:
             match order['status']:
@@ -748,7 +767,7 @@ class PaperBroker(BaseBroker):
 
                     # Deduct margin requirement from cash (affects buying power)
                     margin_required = np.round(marginRequired/self.LEVERAGE, 2)
-                    print(f"[AUDIT] New position margin requirement: {margin_required}")
+                    self.LOGGER.debug(f"[AUDIT] New position margin requirement: {margin_required}")
                     # self.ACCOUNT.equity -= margin_required
                     # TODO: factor in commission on cash?
                     # Equity doesn't change when opening a position (just moving assets)
@@ -768,21 +787,22 @@ class PaperBroker(BaseBroker):
             # --- BEGIN AUDIT LOGGING ---
             # before_cash = self.Account.cash
             # before_equity = self.Account.equity
-            # print(f"[AUDIT] OrderID: {orderId}, Symbol: {symbol}, Side: {order.get('side')}, Qty: {order.get('qty')}, Price: {order.get('filled_price', None) or order.get('stop_price', None)}, Status: {order.get('status')}, BEFORE cash: {before_cash}, BEFORE equity: {before_equity}")
+            # self.LOGGER.debug(f"[AUDIT] OrderID: {orderId}, Symbol: {symbol}, Side: {order.get('side')}, Qty: {order.get('qty')}, Price: {order.get('filled_price', None) or order.get('stop_price', None)}, Status: {order.get('status')}, BEFORE cash: {before_cash}, BEFORE equity: {before_equity}")
             # --- END AUDIT LOGGING ---
 
             if order['status'] == ITradeUpdateEvent.CLOSED:
-                if self.Positions[symbol][orderId]['qty'] == 0:
+                # Check if quantity is effectively zero
+                if np.isclose(self.Positions[symbol][orderId]['qty'], 0, atol=1e-8):
                     # remove the position from the Positions dictionary
                     del self.Positions[symbol][orderId]
+                    self.LOGGER.debug(f"[AUDIT] Position {orderId} for {symbol} removed due to zero qty (CLOSED)")
                 # --- LOG POST-CLOSE ---
-                print(
+                self.LOGGER.debug(
                     f"[AUDIT] CLOSED OrderID: {orderId}, AFTER cash: {self.Account.cash}, AFTER equity: {self.Account.equity}")
                 return
 
             # Only update if price has changed
             if self.Positions[symbol][orderId]['current_price'] == oldPosition.get('current_price') and order['status'] != ITradeUpdateEvent.CLOSED:
-                # No price change in the position since the last update
                 return
 
             # Update the position market value and unrealized PnL based on current data
@@ -811,12 +831,15 @@ class PaperBroker(BaseBroker):
                 self.Positions[symbol][orderId]['unrealized_pl'] - oldPosition.get('unrealized_pl', 0), 2)
 
             # Update equity with unrealized P&L changes
-            # self.ACCOUNT.equity = max(self.ACCOUNT.equity + changeInPL, 0)
-            # self.ACCOUNT.cash = max(self.ACCOUNT.cash + changeInPL, 0)
             self.update_account_balance()
 
             # --- LOG POST-UPDATE ---
-            print(f"[AUDIT] OrderID: {orderId}, AFTER cash: {self.Account.cash}, AFTER equity: {self.Account.equity}, ChangeInPL: {changeInPL}, Unrealized PL: {self.Positions[symbol][orderId]['unrealized_pl']}")
+            self.LOGGER.debug(f"[AUDIT] OrderID: {orderId}, AFTER cash: {self.Account.cash}, AFTER equity: {self.Account.equity}, ChangeInPL: {changeInPL}, Unrealized PL: {self.Positions[symbol][orderId]['unrealized_pl']}")
+
+            # Cleanup zero quantity positions
+            if np.isclose(self.Positions[symbol][orderId]['qty'], 0, atol=1e-8):
+                del self.Positions[symbol][orderId]
+                self.LOGGER.debug(f"[AUDIT] Position {orderId} for {symbol} removed due to zero qty (UPDATE)")
 
         else:
             return
@@ -846,43 +869,83 @@ class PaperBroker(BaseBroker):
         qty = order.get('filled_qty', order.get('qty', 0))
 
         if signalType == 'entry':
+            targetBarIndex = currentBarIndex
+            
+            # Check for conflicts (Reversal: Exit + Entry on same bar)
+            # If we are entering, but there is already an exit on this bar, it's a reversal.
+            # VBT can't handle both on same bar, so shift entry to next bar.
+            conflict = False
+            
+            # DEBUG PRINTS (commented - enable if needed)
+            # print(f"DEBUG: _log_signal ENTRY {symbol} {order['side']} at {currentBarIndex}")
+            # print(f"DEBUG: Exits: {signals.loc[currentBarIndex, 'exits']}, Short Exits: {signals.loc[currentBarIndex, 'short_exits']}")
+
             if order['side'] == IOrderSide.BUY:
-                # For DCA: if conflicting exit exists, prioritize entry (accumulation)
                 if signals.loc[currentBarIndex, 'exits'].bool():
-                    if is_dca_accumulation:
-                        print(
-                            f"[DCA] Prioritizing BUY entry over exit for {symbol} - DCA accumulation")
-                        signals.loc[currentBarIndex, 'exits'] = False
+                    conflict = True
+            elif order['side'] == IOrderSide.SELL:
+                if signals.loc[currentBarIndex, 'short_exits'].bool():
+                    conflict = True
+            
+            # if conflict:
+            #     print(f"DEBUG: Conflict detected for {symbol} at {currentBarIndex}. DCA: {is_dca_accumulation}")
+            
+            if conflict and not is_dca_accumulation:
+                # Find next bar index
+                try:
+                    # Get integer location
+                    iloc = signals.index.get_loc(currentBarIndex)
+                    # Get next location
+                    next_iloc = iloc + 1
+                    if next_iloc < len(signals.index):
+                        targetBarIndex = signals.index[next_iloc]
+                        self.LOGGER.debug(f"[VBT] Shifting {order['side']} Entry signal for {symbol} to next bar {targetBarIndex} to avoid conflict with Exit")
+                        # print(f"DEBUG: Shifted to {targetBarIndex}")
                     else:
-                        print(
+                        self.LOGGER.warning(f"[VBT] Cannot shift Entry signal for {symbol} - end of data")
+                        # Fallback: overwrite (VBT will miss the exit, but better than crashing)
+                except Exception as e:
+                    self.LOGGER.error(f"Error shifting signal: {e}")
+
+            if order['side'] == IOrderSide.BUY:
+                # For DCA: if conflicting exit exists (and not shifted), prioritize entry (accumulation)
+                if targetBarIndex == currentBarIndex and signals.loc[targetBarIndex, 'exits'].bool():
+                    if is_dca_accumulation:
+                        self.LOGGER.debug(
+                            f"[DCA] Prioritizing BUY entry over exit for {symbol} - DCA accumulation")
+                        signals.loc[targetBarIndex, 'exits'] = False
+                    else:
+                        # This should be handled by shift above, but if shift failed or logic gap:
+                        self.LOGGER.debug(
                             f"[DCA] Skipping BUY entry for {symbol} - conflicting exit signal")
                         return
-                signals.loc[currentBarIndex, 'entries'] = True
-                signals.loc[currentBarIndex, 'qty'] += abs(qty)
+                signals.loc[targetBarIndex, 'entries'] = True
+                signals.loc[targetBarIndex, 'qty'] += abs(qty)
 
             elif order['side'] == IOrderSide.SELL:
-                # For DCA: if conflicting short exit exists, prioritize entry (accumulation)
-                if signals.loc[currentBarIndex, 'short_exits'].bool():
+                # For DCA: if conflicting short exit exists (and not shifted), prioritize entry (accumulation)
+                if targetBarIndex == currentBarIndex and signals.loc[targetBarIndex, 'short_exits'].bool():
                     if is_dca_accumulation:
-                        print(
+                        self.LOGGER.debug(
                             f"[DCA] Prioritizing SELL entry over short exit for {symbol} - DCA accumulation")
-                        signals.loc[currentBarIndex, 'short_exits'] = False
+                        signals.loc[targetBarIndex, 'short_exits'] = False
                     else:
-                        print(
+                         # This should be handled by shift above
+                        self.LOGGER.debug(
                             f"[DCA] Skipping SELL entry for {symbol} - conflicting short exit signal")
                         return
-                signals.loc[currentBarIndex, 'short_entries'] = True
-                signals.loc[currentBarIndex, 'qty'] -= abs(qty)
+                signals.loc[targetBarIndex, 'short_entries'] = True
+                signals.loc[targetBarIndex, 'qty'] -= abs(qty)
 
             # Set the entry price
             if order.get('filled_price') is not None and not np.isnan(order['filled_price']):
-                signals.loc[currentBarIndex, 'price'] = order['filled_price']
+                signals.loc[targetBarIndex, 'price'] = order['filled_price']
 
         elif signalType == 'exit':
             if order['side'] == IOrderSide.SELL:
                 # Clear conflicting entry if this is a true position closure
                 if signals.loc[currentBarIndex, 'entries'].bool():
-                    print(
+                    self.LOGGER.debug(
                         f"[DCA] Exit SELL clearing conflicting entry for {symbol}")
                     signals.loc[currentBarIndex, 'entries'] = False
                 signals.loc[currentBarIndex, 'exits'] = True
@@ -891,7 +954,7 @@ class PaperBroker(BaseBroker):
             elif order['side'] == IOrderSide.BUY:
                 # Clear conflicting short entry if this is a true position closure
                 if signals.loc[currentBarIndex, 'short_entries'].bool():
-                    print(
+                    self.LOGGER.debug(
                         f"[DCA] Exit BUY clearing conflicting short entry for {symbol}")
                     signals.loc[currentBarIndex, 'short_entries'] = False
                 signals.loc[currentBarIndex, 'short_exits'] = True
@@ -908,13 +971,13 @@ class PaperBroker(BaseBroker):
         # This should rarely trigger now with improved logic above
         if (signals.loc[currentBarIndex, 'entries'].bool() and
                 signals.loc[currentBarIndex, 'exits'].bool()):
-            print(
+            self.LOGGER.debug(
                 f"[VBT] Warning: Still have conflicting long signals for {symbol} on same bar - clearing exit")
             signals.loc[currentBarIndex, 'exits'] = False
 
         if (signals.loc[currentBarIndex, 'short_entries'].bool() and
                 signals.loc[currentBarIndex, 'short_exits'].bool()):
-            print(
+            self.LOGGER.debug(
                 f"[VBT] Warning: Still have conflicting short signals for {symbol} on same bar - clearing short exit")
             signals.loc[currentBarIndex, 'short_exits'] = False
 
@@ -939,26 +1002,28 @@ class PaperBroker(BaseBroker):
                     if is_dca_accumulation:
                         # This is DCA accumulation - don't treat as position closure
                         # Simply add to pending orders and let it accumulate
-                        print(
+                        self.LOGGER.debug(
                             f"[DCA] Order for {order['asset']['symbol']} is DCA accumulation - allowing to proceed")
                         self.PENDING_ORDERS.append(order)
                         return
 
                     # Handle position closure/reversal logic (existing logic for opposite direction orders)
-                    print(
+                    self.LOGGER.debug(
                         f"[DCA] Order for {order['asset']['symbol']} is opposite direction - handling as closure/reversal")
                     tempCloseOrder = order.copy()
                     conflicting = False
+                    # self.LOGGER.debug(f"[AUDIT] Processing new order {order['order_id']} {order['asset']['symbol']} {order['side']} {order['qty']}. Active orders: {len(self.ACTIVE_ORDERS)}")
                     for i, activeOrder in enumerate(list(self.ACTIVE_ORDERS)):
+                        # self.LOGGER.debug(f"[AUDIT] Checking vs {activeOrder['order_id']} {activeOrder['asset']['symbol']} {activeOrder['side']} {activeOrder['qty']} {activeOrder['status']}")
                         if activeOrder['asset']['symbol'] == order['asset']['symbol'] and \
                                 activeOrder['side'] != order['side'] and \
-                                activeOrder['status'] == ITradeUpdateEvent.FILLED:
+                                (activeOrder['status'] == ITradeUpdateEvent.FILLED or activeOrder['status'] == ITradeUpdateEvent.PARTIAL_FILLED):
 
                             if order in self.PENDING_ORDERS:
                                 # remove the order from the pending orders
                                 self.PENDING_ORDERS.remove(order)
 
-                            if activeOrder['qty'] == tempCloseOrder['qty']:
+                            if np.isclose(activeOrder['qty'], tempCloseOrder['qty'], atol=1e-8):
                                 # close the position
                                 self.ACTIVE_ORDERS.remove(activeOrder)
 
@@ -970,11 +1035,11 @@ class PaperBroker(BaseBroker):
                                 tempCloseOrder['qty'] = 0
                                 conflicting = True
 
-                            elif (activeOrder['qty'] - tempCloseOrder['qty']) > 0:
+                            elif (activeOrder['qty'] - tempCloseOrder['qty']) > 1e-8:
                                 # partially close the position
                                 self.ACTIVE_ORDERS.remove(activeOrder)
                                 # reduce the quantity of the active order
-                                activeOrder['qty'] -= tempCloseOrder['qty']
+                                activeOrder['qty'] = np.round(activeOrder['qty'] - tempCloseOrder['qty'], 8)
                                 self.ACTIVE_ORDERS.append(activeOrder)
 
                                 # send the close order to the close orders
@@ -987,8 +1052,7 @@ class PaperBroker(BaseBroker):
                                 conflicting = True
                             else:
                                 # close multiple positions. quantityLeft > 0
-                                quantityLeft = tempCloseOrder['qty'] - \
-                                    activeOrder['qty']
+                                quantityLeft = np.round(tempCloseOrder['qty'] - activeOrder['qty'], 8)
                                 self.ACTIVE_ORDERS.remove(activeOrder)
                                 # send the close order for the active order
                                 tempCloseOrder['order_id'] = activeOrder['order_id']
@@ -1035,6 +1099,17 @@ class PaperBroker(BaseBroker):
                     if self.MODE == IStrategyMode.BACKTEST:
                         # log the entry signal
                         self._log_signal(order, 'entry')
+                        # Record for VBT from_orders
+                        trade_record = {
+                            'date': self.get_current_time,
+                            'symbol': order['asset']['symbol'],
+                            'side': order['side'],
+                            'qty': order['filled_qty'],
+                            'price': order['filled_price'],
+                            'fees': 0.0
+                        }
+                        self.FILLED_ORDERS_HISTORY.append(trade_record)
+                        self.LOGGER.debug(f"[PAPER DEBUG] Entry Order: {trade_record['date']} | {trade_record['side']} {trade_record['qty']} @ ${trade_record['price']:.2f}")
 
             elif oldOrder in self.ACTIVE_ORDERS:
                 # update position of the order
@@ -1047,16 +1122,25 @@ class PaperBroker(BaseBroker):
             if self.MODE == IStrategyMode.BACKTEST:
                 # log the exit signal
                 self._log_signal(order, 'exit')
+                # Record for VBT from_orders
+                trade_record = {
+                    'date': self.get_current_time,
+                    'symbol': order['asset']['symbol'],
+                    'side': order['side'],
+                    'qty': order['filled_qty'],
+                    'price': order['filled_price'],
+                    'fees': 0.0
+                }
+                self.FILLED_ORDERS_HISTORY.append(trade_record)
+                self.LOGGER.debug(f"[PAPER DEBUG] Exit Order: {trade_record['date']} | {trade_record['side']} {trade_record['qty']} @ ${trade_record['price']:.2f}")
 
             # Check if the position is completely closed and remove it from the positions dictionary - if the qty is 0 or None
             if self.Positions[order['asset']['symbol']].get(order['order_id']) == None:
-                pass
+                if oldOrder in self.ACTIVE_ORDERS:
+                    self.ACTIVE_ORDERS.remove(oldOrder)
 
-            if oldOrder in self.ACTIVE_ORDERS:
-                self.ACTIVE_ORDERS.remove(oldOrder)
-
-            if oldOrder in self.CLOSE_ORDERS:
-                self.CLOSE_ORDERS.remove(oldOrder)
+                if oldOrder in self.CLOSE_ORDERS:
+                    self.CLOSE_ORDERS.remove(oldOrder)
             if order in self.CLOSE_ORDERS:
                 # This is when the order was sent and we are closing a position with another order id than the original order id - order is the updated order with the new order id and oldOrder is the original order (in the filled state)
                 self.CLOSE_ORDERS.remove(order)
@@ -1098,7 +1182,7 @@ class PaperBroker(BaseBroker):
                 case _:
                     pass
         except Exception as e:
-            print("Error updating order: ", e)
+            self.LOGGER.warn("Error updating order: ", e)
 
         self.Orders[order['order_id']] = order
         return order
@@ -1131,7 +1215,7 @@ class PaperBroker(BaseBroker):
         if insight.type in IOrderType:
             orderRequest["type"] = insight.type
         else:
-            print(f"Order Type not supported {insight.type}")
+            self.LOGGER.warning(f"Order Type not supported {insight.type}")
             return
         try:
             if orderRequest:
@@ -1247,7 +1331,7 @@ class PaperBroker(BaseBroker):
             }, index=index, columns=['open', 'high', 'low', 'close', 'volume'])
             return bar
         else:
-            print('DataFeed not supported')
+            self.LOGGER.error('DataFeed not supported')
             return None
 
     def format_on_quote(self, quote):
@@ -1272,7 +1356,7 @@ class PaperBroker(BaseBroker):
             'feature') == None else asset['feature']
         if not asset.get('applyTA') or not asset.get('TA'):
             return
-        print("Applying TA for: ", symbol)
+        self.LOGGER.info("Applying TA for: ", symbol)
         self.HISTORICAL_DATA[symbol]['bar'].ta.study(asset['TA'])
 
     def _load_historical_bar_data(self, asset: IMarketDataStream):
@@ -1288,7 +1372,7 @@ class PaperBroker(BaseBroker):
             if asset.get('stored'):
                 if asset['stored_path']:
                     if os.path.exists(bar_data_path):
-                        print("Loading data from ", bar_data_path)
+                        self.LOGGER.info("Loading data from ", bar_data_path)
                         self.HISTORICAL_DATA[symbol]['bar'] = pd.read_hdf(
                             bar_data_path)
                         # check if the data is empty
@@ -1299,7 +1383,7 @@ class PaperBroker(BaseBroker):
                             })
                         # apply the TA strategy
                         self._applyTA(asset)
-                        print(
+                        self.LOGGER.info(
                             self.HISTORICAL_DATA[symbol]['bar'].describe())
                         return True
                     else:
@@ -1315,7 +1399,7 @@ class PaperBroker(BaseBroker):
         except Exception as e:
             raise e
         except BaseException as e:
-            print("Error: ", e.args[0]['code'], e.args[0]['data']['path'])
+            self.LOGGER.error("Error: ", e.args[0]['code'], e.args[0]['data']['path'])
 
         if self.DataFeed == 'yf':
             # Populate the HISTORICAL_DATA with the bar data
@@ -1331,25 +1415,25 @@ class PaperBroker(BaseBroker):
             # apply the TA strategy
             self._applyTA(asset)
 
-            print("Loaded data for ", symbol)
-            print(self.HISTORICAL_DATA[symbol]['bar'].describe())
+            self.LOGGER.info("Loaded data for ", symbol)
+            self.LOGGER.info(self.HISTORICAL_DATA[symbol]['bar'].describe())
             # if a stored path is provided save the data to the path
             if asset.get('stored_path'):
                 # Create the directory if it does not exist
                 Path(asset['stored_path']+'/bar').mkdir(
                     parents=True, exist_ok=True)
                 # Save the data to the path
-                print(self.HISTORICAL_DATA[symbol]['bar'].head(10))
+                self.LOGGER.info(self.HISTORICAL_DATA[symbol]['bar'].head(10))
 
                 # Save the data to the path in hdf5 format
-                print("Saving data to ", bar_data_path)
+                self.LOGGER.info("Saving data to ", bar_data_path)
                 self.HISTORICAL_DATA[symbol]['bar'].to_hdf(
                     bar_data_path, mode='a', key=asset["exchange"], index=True, format='table')
 
             return True
 
         else:
-            print('DataFeed not supported')
+            self.LOGGER.error('DataFeed not supported')
     async def streamMarketData(self, callback, assetStreams):
         """Listen to market data and call the async callback with the data.
 
@@ -1427,20 +1511,13 @@ class PaperBroker(BaseBroker):
             # Main backtest streaming loop
             if self.VERBOSE > 0:
                 import datetime, timeit
-                print(f"Running Backtest - {datetime.datetime.now()}")
+                self.LOGGER.debug(f"Running Backtest - {datetime.datetime.now()}")
                 start_time = timeit.default_timer()
 
             try:
-                # while (
-                #     self.get_current_time <= self.END_DATE
-                #     and self.RUNNING_MARKET_STREAM
-                #     and assetStreams
-                #     and self.RUNNING_TRADE_STREAM
-                # ):
                 while self.RUNNING_MARKET_STREAM and self.get_current_time <= self.END_DATE:
-
                     if self.VERBOSE > 0:
-                        print("\nstreaming data for:", self.get_current_time, "\n")
+                        self.LOGGER.debug(f"\nstreaming data for: {self.get_current_time} \n")
 
                     # For each asset, find bars between PreviousTime and current time
                     for asset in bar_assets:
@@ -1488,11 +1565,21 @@ class PaperBroker(BaseBroker):
                     
 
                     # signal market done for this timestep
+                    self.LOGGER.debug("market step %s: reporting market", self.BACKTEST_FlOW_CONTROL._step_id)
                     await self.BACKTEST_FlOW_CONTROL.report_market()
 
+                    self.LOGGER.debug("market step %s: waiting for trade", self.BACKTEST_FlOW_CONTROL._step_id)
                     # wait for trade processing to complete for this timestep
-                    await self.BACKTEST_FlOW_CONTROL.wait_for_trade()
+                    # await self.BACKTEST_FlOW_CONTROL.wait_for_trade()
+                    try:
+                        await asyncio.wait_for(self.BACKTEST_FlOW_CONTROL.wait_for_trade(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        # Trade hasn't completed in time — log and decide whether to continue or abort.
+                        self.LOGGER.error("Timeout waiting for trade for timestep %s — aborting backtest step", getattr(self.BACKTEST_FlOW_CONTROL, "_step_id", "n/a"))
+                        # Either break or call close() to unblock everything
+                        break
 
+                    self.LOGGER.debug("Market: trade step completed, updating account and advancing time")
                     # log accounts etc
                     self.update_account_history()
                     # advance time to next increment
@@ -1504,10 +1591,15 @@ class PaperBroker(BaseBroker):
                 
             finally:
                 # final cleanup
+                self.LOGGER.debug("DEBUG: streamMarketData finally block")
                 self.RUNNING_MARKET_STREAM = False
+                try:
+                    self.BACKTEST_FlOW_CONTROL.close()
+                except Exception:
+                    self.LOGGER.exception("Failed to close BACKTEST_FlOW_CONTROL cleanly")
+
                 if self.VERBOSE > 0:
-                    print("Backtest Completed:", timeit.default_timer() - start_time)
-            return
+                    self.LOGGER.debug(f"Backtest Completed: {timeit.default_timer() - start_time}")
         elif  self.MODE == IStrategyMode.LIVE:
             # -------------------
             # LIVE mode
@@ -1563,232 +1655,8 @@ class PaperBroker(BaseBroker):
                 return
         else:
             raise NotImplementedError
+        return
 
-
-    # async def streamMarketData(self, callback, assetStreams):
-    #     """Listen to market data and call the callback function with the data"""
-    #     await super().streamMarketData(callback, assetStreams)
-    #     loop = asyncio.new_event_loop()
-    #     self.RUNNING_MARKET_STREAM = True
-    #     TF = None  # strategy time frame
-    #     hasFeature = False
-
-    #     if self.MODE == IStrategyMode.BACKTEST:
-    #         # Load Market data from yfinance for all assets
-    #         self.HISTORICAL_DATA = {}
-
-    #         progress_bar = tqdm_notebook(
-    #             assetStreams, desc="Loading Historical Data")
-
-    #         for asset in assetStreams:
-    #             symbol = asset['symbol'] if asset.get(
-    #                 'feature') == None else asset['feature']
-    #             if asset['type'] == 'bar':
-    #                 self.HISTORICAL_DATA[symbol] = {}
-    #                 # populate HISTORICAL_DATA
-    #                 try:
-    #                     if self._load_historical_bar_data(asset):
-
-    #                         if asset.get('feature') == None:
-    #                             # Create signals dataframe
-    #                             bar_df = self.HISTORICAL_DATA[symbol]['bar']
-    #                             size = bar_df.shape[0]
-    #                             signals_df = pd.DataFrame(
-    #                                 data={
-    #                                     "entries": np.zeros(size),
-    #                                     "short_entries": np.zeros(size),
-    #                                     "exits": np.zeros(size),
-    #                                     "short_exits": np.zeros(size),
-    #                                     "price": np.zeros(size),
-    #                                     "qty": np.zeros(size),
-    #                                 },
-    #                                 columns=["entries", "short_entries",
-    #                                          "exits", "short_exits", "price", "qty"],
-    #                                 index=bar_df.index
-    #                             )
-    #                             signals_df[["entries", "exits",
-    #                                         "short_entries", "short_exits"]] = False
-    #                             signals_df[["qty"]] = 0
-    #                             signals_df[["price"]] = np.nan
-    #                             self.HISTORICAL_DATA[symbol]["signals"] = signals_df
-    #                             if not TF:
-    #                                 # set the Main time frame to the first asset time frame
-    #                                 TF = asset['time_frame']
-    #                         else:
-    #                             # change the symbol to the feature symbol in the multi index
-    #                             self.HISTORICAL_DATA[symbol]['bar'].rename(
-    #                                 index={asset['symbol']: symbol}, inplace=True)
-    #                             if hasFeature == False:
-    #                                 # signal for the backtest to use dynamic time resoltion
-    #                                 hasFeature = True
-    #                         progress_bar.update(1)
-    #                         continue
-
-    #                 except Exception as e:
-    #                     print("Removing Bar Stream",
-    #                           asset['symbol'],  "\nError: ", e)
-    #                     assetStreams.remove(asset)
-    #                     progress_bar.update(1)
-    #                     continue
-
-    #             else:
-    #                 progress_bar.update(1)
-    #                 continue
-    #                 # raise NotImplementedError(
-    #                 #     f'Stream type not {self.DataFeed}supported')
-
-    #         progress_bar.close()
-    #         # check if we have any data loaded for the backtest
-    #         if self.HISTORICAL_DATA == {}:
-    #             print("Error: ", e)
-    #             self.RUNNING_MARKET_STREAM = False
-    #             return
-
-    #         # Stream data to callback one by one for each IAsset
-
-    #         while self.get_current_time <= self.END_DATE and self.RUNNING_MARKET_STREAM and len(assetStreams) > 0:
-    #             try:
-    #                 if self.VERBOSE > 0:
-    #                     print("\nstreaming data for:",
-    #                           self.get_current_time, "\n")
-    #                 try:
-    #                     for asset in assetStreams:
-    #                         isFeature = False
-    #                         if asset['type'] == 'bar':
-    #                             if asset.get('feature') == None:
-    #                                 symbol = asset['symbol']
-    #                             else:
-    #                                 symbol = asset['feature']
-    #                                 isFeature = True
-
-    #                             try:
-    #                                 if isFeature:
-    #                                     if self.PreviousTime == None:
-    #                                         barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('timestamp') >= self.get_current_time.replace(
-    #                                             tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('timestamp') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
-    #                                     else:
-    #                                         barDatas = self.HISTORICAL_DATA[symbol]['bar'].loc[(self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('timestamp') > self.PreviousTime.replace(
-    #                                             tzinfo=datetime.timezone.utc)) & (self.HISTORICAL_DATA[symbol]['bar'].index.get_level_values('timestamp') <= self.get_current_time.replace(tzinfo=datetime.timezone.utc))]
-    #                                     if type(barDatas) == NoneType:
-    #                                         continue
-    #                                     elif barDatas.empty:
-    #                                         continue
-    #                                     else:
-    #                                         for index in barDatas.index:
-    #                                             try:
-    #                                                 loop.run_until_complete(
-    #                                                     callback(barDatas.loc[[index]], timeframe=asset['time_frame']))
-    #                                             except Exception as e:
-    #                                                 print(
-    #                                                     "Error streaming bar back to strategy: ", e)
-    #                                                 continue
-    #                                 else:
-    #                                     # Get the current bar data with the index
-    #                                     barData = self._get_current_bar(symbol)
-    #                                     if type(barData) == NoneType:
-    #                                         continue
-    #                                     elif barData.empty:
-    #                                         continue
-    #                                     else:
-    #                                         loop.run_until_complete(
-    #                                             callback(barData, timeframe=asset['time_frame']))
-    #                                         continue
-
-    #                             except BaseException as e:
-    #                                 print("Error: ", e)
-    #                                 continue
-    #                         else:
-    #                             print('DataFeed not supported')
-    #                 except BaseException as e:
-    #                     print("Error: ins StreamMarket Date ", e)
-
-    #                 # Wait for all assets to be streamed and processed
-    #                     # for future in as_completed(futures):
-    #                     #     result = future.result()
-    #                     #     print("Result: ", result)
-
-    #                 self.BACKTEST_FlOW_CONTROL_BARRIER.wait()
-
-    #                 # LOG the account history
-    #                 self.update_account_history()
-    #                 # Go to next time frame
-    #                 # FIXME: Implement time frame increment
-    #                 self.setCurrentTime(TF.get_next_time_increment(
-    #                     self.get_current_time))
-    #                 if (self.get_current_time > self.END_DATE):
-    #                     self.update_account_history()
-    #                     self.BACKTEST_FlOW_CONTROL_BARRIER.abort()
-    #                     break
-
-    #             except BrokenBarrierError:
-    #                 continue
-    #             except Exception as e:
-    #                 print("Error: ", e)
-    #                 continue
-    #         loop.run_until_complete(self.closeStream(assetStreams))
-    #         loop.run_until_complete(self.closeTradeStream())
-    #         self.BACKTEST_FlOW_CONTROL_BARRIER.abort()
-
-    #         print("End of Market Stream")
-    #     else:
-    #         #  live data feed
-    #         barStreamCount = 0
-    #         for asset in assetStreams:
-    #             self.HISTORICAL_DATA[asset['symbol']] = {}
-    #             if asset['type'] == 'bar':
-    #                 self.HISTORICAL_DATA[asset['symbol']
-    #                                      ]['bar'] = pd.DataFrame()
-    #             barStreamCount += 1
-    #             # if asset.get('feature') == None:
-    #             #     TF = asset['time_frame']
-
-    #         pool = ThreadPoolExecutor(max_workers=(
-    #             barStreamCount), thread_name_prefix="MarketDataStream")
-    #         for asset in assetStreams:
-    #             if asset['type'] == 'bar':
-    #                 # Stream data to callback one by one for each IAsset
-    #                 async def PaperBarStreamer(asset: IMarketDataStream):
-    #                     """
-    #                     Stream data to the callback function
-    #                     """
-    #                     lastChecked = pd.Timestamp.now() - datetime.timedelta(
-    #                         minutes=self.FeedDelay)  # last checked time for the asset stream data - FeedDelay
-    #                     while self.RUNNING_MARKET_STREAM:
-    #                         nextTimetoCheck = asset['time_frame'].get_next_time_increment(
-    #                             lastChecked)
-    #                         await asyncio.sleep((nextTimetoCheck - lastChecked).total_seconds())
-
-    #                         try:
-    #                             # Get the current bar data with the index
-    #                             barDatas = self._get_current_bar(
-    #                                 asset["symbol"], asset['time_frame'], lastChecked)
-    #                             if type(barDatas) == NoneType:
-    #                                 continue
-    #                             elif barDatas.empty:
-    #                                 continue
-    #                             else:
-    #                                 # TODO: May need to check if this is a feature or not and get the data accordingly
-    #                                 for idx in range(0, len(barDatas)):
-    #                                     bar = barDatas.iloc[[idx]]
-    #                                     # if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked):
-    #                                     if asset['time_frame'].is_time_increment(bar.index[0][1]) and (not (bar.index[0][1]) < lastChecked.replace(tzinfo=datetime.timezone.utc)):
-    #                                         loop.run_until_complete(
-    #                                             callback(bar, timeframe=asset['time_frame']))
-
-    #                                     # loop.run_until_complete(
-    #                                     #     callback(barData.loc[[index]], timeframe=asset['time_frame']))
-
-    #                         except BaseException as e:
-    #                             print("Error: ", e)
-    #                             continue
-
-    #                         lastChecked = nextTimetoCheck
-    #                 streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
-    #                 self._MARKET_STREAMS[streamKey] = loop.create_task(
-    #                     PaperBarStreamer(asset), name=f"Market:{streamKey}")
-
-    #                 # pool.submit(, asset)
-    #         loop.run_forever()
 
     async def closeStream(self,  assetStreams: List[IMarketDataStream]):
         if self.RUNNING_MARKET_STREAM:
@@ -1797,7 +1665,7 @@ class PaperBroker(BaseBroker):
                 streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
                 marketStream = self._MARKET_STREAMS.get(streamKey, None)
                 if marketStream:
-                    print("Closing Market Stream for: ", streamKey)
+                    self.LOGGER.info("Closing Market Stream for: ", streamKey)
                     if type(marketStream) == asyncio.Task:
                         marketStream.cancel(
                             "Relenquishing Market Stream for: " + streamKey)
@@ -1903,7 +1771,7 @@ class PaperBroker(BaseBroker):
                     return None
                 # Try to get the exact current time bar
                 currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol, end:end], :]
-                # print("Current Bar: ", currentBar)
+                # self.LOGGER.debug("Current Bar: ", currentBar)
                 if currentBar.empty:
                     currentBar = self.HISTORICAL_DATA[symbol]['bar'].loc[idx[symbol, start:end], :]
                     if currentBar.empty:
@@ -2014,8 +1882,195 @@ class PaperBroker(BaseBroker):
 
         if self.MODE == IStrategyMode.BACKTEST:
             for asset in tqdm(self.HISTORICAL_DATA.keys(), desc="Running VBT Backtest"):
+                # Use FILLED_ORDERS_HISTORY if available
+                trade_history = [t for t in self.FILLED_ORDERS_HISTORY if t['symbol'] == asset]
+                
+                if trade_history:
+                    try:
+                        self.LOGGER.info(f"Running VBT from orders for {asset} with {len(trade_history)} trades")
+                        bar_data = self.HISTORICAL_DATA[asset]['bar']
+                        # Drop symbol level to get DatetimeIndex
+                        if isinstance(bar_data.index, pd.MultiIndex):
+                            bar_index = bar_data.index.droplevel('symbol')
+                        else:
+                            bar_index = bar_data.index
+                        
+                        # Initialize arrays
+                        size = pd.Series(0.0, index=bar_index)
+                        price = pd.Series(np.nan, index=bar_index)
+                        
+                        # Sort trades by time
+                        trade_history.sort(key=lambda x: x['date'])
+                        
+                        # CRITICAL FIX: Consolidate orders at the SAME timestamp
+                        # Problem: Multiple SELLs at 15:08 were being shifted to 15:08, 15:09, 15:10
+                        # creating phantom trades in VBT. Solution: sum all orders per timestamp.
+                        from collections import defaultdict
+                        orders_by_time = defaultdict(lambda: {'qty': 0.0, 'prices': [], 'weights': []})
+                        
+                        for trade in trade_history:
+                            trade_time = pd.Timestamp(trade['date'])
+                            qty = trade['qty']
+                            if trade['side'] == IOrderSide.SELL:
+                                qty = -qty
+                            
+                            orders_by_time[trade_time]['qty'] += qty
+                            orders_by_time[trade_time]['prices'].append(trade['price'])
+                            orders_by_time[trade_time]['weights'].append(abs(qty))
+                        
+                        # Create consolidated order list with weighted average prices
+                        consolidated_orders = []
+                        for time, data in sorted(orders_by_time.items()):
+                            if abs(data['qty']) > 0.01:  # Only include non-zero orders
+                                # Weighted average price
+                                total_weight = sum(data['weights'])
+                                avg_price = sum(p * w for p, w in zip(data['prices'], data['weights'])) / total_weight if total_weight > 0 else data['prices'][0]
+                                
+                                consolidated_orders.append({
+                                    'time': time,
+                                    'qty': data['qty'],
+                                    'price': avg_price
+                                })
+                        
+                        self.LOGGER.debug(f"\n[VBT DEBUG] Consolidated {len(trade_history)} orders from {len(orders_by_time)} unique timestamps into {len(consolidated_orders)} non-zero orders")
+                        
+                        # Now track position changes for VBT
+                        position_changes = []
+                        current_position = 0.0
+                        
+                        for order in consolidated_orders:
+                            new_position = current_position + order['qty']
+                            position_change = order['qty']
+                            
+                            position_changes.append({
+                                'time': order['time'],
+                                'position_change': position_change,
+                                'new_position': new_position,
+                                'price': order['price']
+                            })
+                            current_position = new_position
+                        
+                        self.LOGGER.debug(f"\n[VBT DEBUG] Consolidated {len(trade_history)} orders into {len(position_changes)} position changes")
+                        
+                        # Now populate size/price arrays from position changes
+                        shifted_count = 0
+                        for change in position_changes:
+                            trade_time = change['time']
+                            
+                            # Normalize timezone
+                            if bar_index.tz is not None:
+                                if trade_time.tz is None:
+                                    trade_time = trade_time.tz_localize(bar_index.tz)
+                                else:
+                                    trade_time = trade_time.tz_convert(bar_index.tz)
+                            else:
+                                if trade_time.tz is not None:
+                                    trade_time = trade_time.tz_localize(None)
+                            
+                            # Find index
+                            if trade_time in bar_index:
+                                idx = trade_time
+                            else:
+                                # Find nearest
+                                loc = bar_index.get_indexer([trade_time], method='nearest')[0]
+                                idx = bar_index[loc]
+                            
+                            # If there's already a trade at this timestamp, shift to next bar
+                            while idx in size.index and size[idx] != 0:
+                                loc = bar_index.get_loc(idx)
+                                if loc + 1 < len(bar_index):
+                                    idx = bar_index[loc +1]
+                                    shifted_count += 1
+                                else:
+                                    self.LOGGER.warning(f"Warning: Dropping position change at end of data")
+                                    break
+                            
+                            if idx in size.index:
+                                size[idx] = change['position_change']
+                                price[idx] = change['price']
+
+                        if shifted_count > 0:
+                            self.LOGGER.warning(f"Shifted {shifted_count} trades to avoid same-bar conflicts")
+
+                        # Log trade history for comparison  
+                        self.LOGGER.debug(f"\n=== VBT DEBUG: Trade History for {asset} ===")
+                        self.LOGGER.debug(f"Total orders recorded: {len(trade_history)}")
+                        self.LOGGER.debug(f"\nFirst 5 PaperBroker orders:")
+                        for i, trade in enumerate(trade_history[:5]):
+                            qty_sign = "+" if trade['side'] == IOrderSide.BUY else "-"
+                            self.LOGGER.debug(f"  {i}: {trade['date']} | {trade['side'].name} {qty_sign}{trade['qty']} @ ${trade['price']:.2f}")
+                        if len(trade_history) > 5:
+                            self.LOGGER.debug(f"... and {len(trade_history) - 5} more orders")
+                        
+                        self.LOGGER.debug(f"\nFirst 5 VBT position changes:")
+                        for i, change in enumerate(position_changes[:5]):
+                            direction = "LONG" if change['position_change'] > 0 else "SHORT"
+                            self.LOGGER.debug(f"  {i}: {change['time']} | {direction} {change['position_change']:+.0f} → Position: {change['new_position']:+.0f} @ ${change['price']:.2f}")
+                        if len(position_changes) > 5:
+                            self.LOGGER.debug(f"... and {len(position_changes) - 5} more changes")
+                        
+                        # Log VBT input arrays (first 10 non-zero entries)
+                        self.LOGGER.debug(f"\n=== VBT DEBUG: Input Arrays ===")
+                        non_zero_size = size[size != 0]
+                        self.LOGGER.debug(f"Non-zero size entries: {len(non_zero_size)}")
+                        if len(non_zero_size) > 0:
+                            self.LOGGER.debug(f"\nFirst 5 VBT orders (size array):")
+                            for idx, val in non_zero_size.head().items():
+                                direction = "BUY" if val > 0 else "SELL"
+                                self.LOGGER.debug(f"  {idx}: {direction} {val:+.0f} @ ${price[idx]:.2f}")
+
+                        vbtParams = {
+                            "init_cash": self.STARTING_CASH,
+                            "close": bar_data['close'].reset_index(level='symbol', drop=True),
+                            "size": size,
+                            "price": price,
+                            "freq": timeFrame.unit.value[0].lower(),
+                        }
+
+                        # run the backtest
+                        self.LOGGER.debug("\n=== Running VBT from_orders ===")
+                        self.LOGGER.debug(f"Initial cash: ${self.STARTING_CASH:,.2f}")
+                        results[asset] = vbt.Portfolio.from_orders(**vbtParams)
+                        
+                        # Log VBT results
+                        self.LOGGER.debug(f"\n=== VBT DEBUG: Portfolio Results ===")
+                        self.LOGGER.debug(f"Final value: ${results[asset].final_value():,.2f}")
+                        self.LOGGER.debug(f"Total return: {results[asset].total_return():.2%}")
+                        self.LOGGER.debug(f"Total trades: {results[asset].trades.count()}")
+                        
+                        # Show first few trades executed by VBT
+                        if results[asset].trades.count() > 0:
+                            self.LOGGER.debug(f"\nFirst 3 VBT executed trades:")
+                            trades_df = results[asset].trades.records_readable
+                            for idx in range(min(3, len(trades_df))):
+                                trade = trades_df.iloc[idx]
+                                self.LOGGER.debug(f"  {idx}: {trade['Entry Timestamp']} → {trade['Exit Timestamp']} | "
+                                      f"Size: {trade['Size']:.0f} | PnL: ${trade['PnL']:.2f} | Return: {trade['Return']:.2%}")
+                        
+                        print(results[asset].stats(
+                            metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
+                            
+                    except Exception as e:
+                        self.LOGGER.error("Failed to run backtest for ", asset, e)
+                        import traceback
+                        traceback.print_exc()
+                        continue
+                
+                # Always use from_signals for better control
                 if isinstance(self.HISTORICAL_DATA[asset].get('signals'), pd.DataFrame):
                     try:
+                        self.LOGGER.info(f"\n=== Running VBT from_signals for {asset} ===")
+                        
+                        # Log signal statistics
+                        signals = self.HISTORICAL_DATA[asset]['signals']
+                        self.LOGGER.debug(f"Signal stats:")
+                        self.LOGGER.debug(f"  Entries: {signals['entries'].sum()}")
+                        self.LOGGER.debug(f"  Short entries: {signals['short_entries'].sum()}")
+                        self.LOGGER.debug(f"  Exits: {signals['exits'].sum()}")
+                        self.LOGGER.debug(f"  Short exits: {signals['short_exits'].sum()}")
+                        
+                        # Apply leverage by multiplying size
+                        leverage_multiplier = self.LEVERAGE if hasattr(self, 'LEVERAGE') else 1.0                        
                         vbtParams = {
                             "init_cash": self.STARTING_CASH,
                             "open": self.HISTORICAL_DATA[asset]['bar']['open'].reset_index(level='symbol', drop=True),
@@ -2027,24 +2082,69 @@ class PaperBroker(BaseBroker):
                             "exits": self.HISTORICAL_DATA[asset]['signals']['exits'].reset_index(level='symbol', drop=True),
                             "short_exits": self.HISTORICAL_DATA[asset]['signals']['short_exits'].reset_index(level='symbol', drop=True),
                             "price": self.HISTORICAL_DATA[asset]['signals']['price'].reset_index(level='symbol', drop=True),
-                            "size":  self.HISTORICAL_DATA[asset]['signals']['qty'].abs().reset_index(level='symbol', drop=True),
-                            "freq": timeFrame.unit.value[0].lower(),
-                            "accumulate": True
+                            "size":  self.HISTORICAL_DATA[asset]['signals']['qty'].abs().reset_index(level='symbol', drop=True),                            "freq": timeFrame.unit.value[0].lower(),
+                            "size_type": "amount",  # Use absolute amounts, not percentages
+                            "accumulate": True,  # Enable DCA-style accumulation
+                            "upon_opposite_entry": "Reverse",  # Handle reversals properly
                         }
 
                         # run the backtest
-                        print("Running backtest with Vector BT for:", asset)
-                        results[asset] = vbt.Portfolio.from_signals(
-                            **vbtParams)
-                        # results[asset] = vbt.Portfolio.from_orders(
-                        #     **vbtParams)
+                        results[asset] = vbt.Portfolio.from_signals(**vbtParams)
+                        
+                        # Log VBT results
+                        self.LOGGER.debug(f"\n=== VBT DEBUG: Portfolio Results ===")
+                        self.LOGGER.debug(f"Final value: ${results[asset].final_value():,.2f}")
+                        self.LOGGER.debug(f"Total return: {results[asset].total_return():.2%}")
+                        self.LOGGER.debug(f"Total trades: {results[asset].trades.count()}")
+                        self.LOGGER.debug(f"Leverage applied: {leverage_multiplier}x")
+                        
+                        # Show first few trades executed by VBT with corresponding PaperBroker orders
+                        if results[asset].trades.count() > 0:
+                            self.LOGGER.debug(f"\n=== Trade Comparison: VBT vs PaperBroker ===")
+                            trades_df = results[asset].trades.records_readable
+                            
+                            for idx in range(min(3, len(trades_df))):
+                                trade = trades_df.iloc[idx]
+                                self.LOGGER.debug(f"\n--- VBT Trade {idx} ---")
+                                self.LOGGER.debug(f"  Entry: {trade['Entry Timestamp']} | Exit: {trade['Exit Timestamp']}")
+                                self.LOGGER.debug(f"  Size: {trade['Size']:.0f} | Entry Price: ${trade['Avg Entry Price']:.2f} | Exit Price: ${trade['Avg Exit Price']:.2f}")
+                                self.LOGGER.debug(f"  PnL: ${trade['PnL']:.2f} | Return: {trade['Return']:.2%}")
+                                
+                                # Find corresponding PaperBroker orders
+                                entry_time = pd.Timestamp(trade['Entry Timestamp'])
+                                exit_time = pd.Timestamp(trade['Exit Timestamp'])
+                                
+                                # Get PaperBroker orders in this time window (normalize timezone)
+                                paper_orders = []
+                                for order in self.FILLED_ORDERS_HISTORY:
+                                    if order['symbol'] == asset:
+                                        order_time = pd.Timestamp(order['date'])
+                                        # Normalize timezone
+                                        if entry_time.tz is not None and order_time.tz is None:
+                                            order_time = order_time.tz_localize(entry_time.tz)
+                                        elif entry_time.tz is None and order_time.tz is not None:
+                                            order_time = order_time.tz_localize(None)
+                                        
+                                        if entry_time <= order_time <= exit_time:
+                                            paper_orders.append(order)
+                                
+                                if paper_orders:
+                                    self.LOGGER.debug(f"\n  Corresponding PaperBroker orders ({len(paper_orders)}):")
+                                    for i, order in enumerate(paper_orders[:5]):  # Show first 5
+                                        side_label = "BUY" if order['side'] == IOrderSide.BUY else "SELL"
+                                        self.LOGGER.debug(f"    {i}: {order['date']} | {side_label} {order['qty']:.0f} @ ${order['price']:.2f}")
+                                else:
+                                    self.LOGGER.debug(f"\n  ⚠️  No matching PaperBroker orders found in this time window")
+                        
                         print(results[asset].stats(
                             metrics=[*vbt.Portfolio.metrics, expectancy_ratio]))
                     except Exception as e:
-                        print("Failed to run backtest for ", asset, e)
+                        self.LOGGER.warning("Failed to run backtest for ", asset, e)
+                        import traceback
+                        traceback.print_exc()
                         continue
                 else:
-                    print("No signals for feature ", asset)
+                    self.LOGGER.warning("No signals for feature ", asset)
                     continue
         else:
             raise NotImplementedError(f'Mode {self.MODE} not supported')
@@ -2062,21 +2162,21 @@ class PaperBroker(BaseBroker):
                 })
         df = pd.DataFrame(rows)
         df.to_csv(filename, index=False)
-        print(f"[EXPORT] Trade log exported to {filename}")
+        self.LOGGER.info(f"[EXPORT] Trade log exported to {filename}")
 
     def export_vbt_signals(self, asset, filename="vbt_signals.csv"):
         import pandas as pd
         if asset in self.HISTORICAL_DATA and 'signals' in self.HISTORICAL_DATA[asset]:
             df = self.HISTORICAL_DATA[asset]['signals']
             df.to_csv(filename)
-            print(f"[EXPORT] VBT signals for {asset} exported to {filename}")
+            self.LOGGER.info(f"[EXPORT] VBT signals for {asset} exported to {filename}")
         else:
-            print(f"[EXPORT] No signals found for asset {asset}")
+            self.LOGGER.info(f"[EXPORT] No signals found for asset {asset}")
 
     def update_account_history(self):
         if self.VERBOSE >= 2:
-            print("Updating Account History")
-            print("Account: ", self.Account)
+            self.LOGGER.info("Updating Account History")
+            self.LOGGER.info("Account: ", self.Account)
         self.ACCOUNT_HISTORY[self.get_current_time] = self.Account
 
     def update_account_balance(self):
@@ -2090,22 +2190,27 @@ class PaperBroker(BaseBroker):
             for position in positions.values()
         )
 
-        # Calculate total margin requirements for all open positions
-        total_margin_used = sum(
-            position.get('margin_required', 0)
+        # Calculate total market value of all open positions (ignore closed ones)
+        total_position_value = sum(
+            abs(position.get('market_value', 0))
             for positions in self.Positions.values()
             for position in positions.values()
+            if position.get('qty', 0) != 0
         )
+        # Debug info: number of open positions and their total market value
+        open_positions = [p for positions in self.Positions.values() for p in positions.values() if p.get('qty', 0) != 0]
+        self.LOGGER.debug(f"[AUDIT] Open positions count: {len(open_positions)}; total market value: {total_position_value}")
+        # self.LOGGER.debug(f"[AUDIT] Open positions: {open_positions}")
 
         # Update equity: cash + unrealized P&L
         self.ACCOUNT.equity = max(np.round(
             self.ACCOUNT.cash + total_unrealized_pl, 2), 0)
         
-        # Calculate Buying Power
-        total_account_value_with_leverage = self.ACCOUNT.equity * self.ACCOUNT.leverage
-
+        # Buying power = (cash * leverage) - total position value
+        total_account_value_with_leverage = self.ACCOUNT.cash * self.ACCOUNT.leverage
         self.ACCOUNT.buying_power = max((
-            np.round(total_account_value_with_leverage - total_margin_used, 2)), 0)
+            np.round(total_account_value_with_leverage - total_position_value, 2)), 0)
+        self.LOGGER.debug(f"[AUDIT] Buying Power after calc: {self.ACCOUNT.buying_power}")
 
     @property
     def Account(self) -> IAccount:
@@ -2117,7 +2222,7 @@ class PaperBroker(BaseBroker):
     def Account(self, account: IAccount):
         """ Sets the state of the strategy."""
         cash = account.cash
-        print("updated account cash from:",
+        self.LOGGER.debug("updated account cash from:",
               self.Account.cash, "->", account.cash)
         if cash and cash != self.ACCOUNT.cash:
             self.ACCOUNT.cash = max(np.round(cash, 2), 0)

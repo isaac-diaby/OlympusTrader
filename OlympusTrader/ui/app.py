@@ -55,7 +55,8 @@ external_scripts = ["https://cdn.tailwindcss.com"]
 app = dash.Dash(__name__,
                 external_scripts=external_scripts,
                 external_stylesheets=external_stylesheets,
-                use_pages=True)
+                use_pages=True,
+                suppress_callback_exceptions=True)
 
 header = html.Header(
     className="text-white p-4 border-b border-accent",
@@ -183,7 +184,7 @@ def update_strategy_data(n_intervals):
         SSM_manager = sharedStrategyManager.get_shared_strategy_manager()
 
     if n_intervals == None or SSM_manager == None:
-        return ({},), (0,), ("Loading...",), ({},), ({},), (pd.DataFrame()) ({},), (None,)
+        return ({},), (0,), ("Loading...",), ({},), ({},), ({},), ({},), (None,)
     
     STRATEGY = SSM_manager.get_strategy()
     # Convert the objects to serializable formats

@@ -28,13 +28,14 @@ class BaseBroker(abc.ABC):
     supportedFeatures: ISupportedBrokerFeatures
 
     LOGGER: logging.Logger = None
+    VERBOSE: int = 0
 
     RUNNING_TRADE_STREAM: bool = False
     RUNNING_MARKET_STREAM: bool = False
     BACKTEST_FlOW_CONTROL: AsyncStepCoordinator = AsyncStepCoordinator(0)
 
     @abc.abstractmethod
-    def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: Optional[str] = None) -> None:
+    def __init__(self, name: ISupportedBrokers = ISupportedBrokers.BASE, paper: bool = True, feed: Optional[str] = None, verbose: int = 0) -> None:
         """Abstract class for broker implementations."""
         load_dotenv()
         assert isinstance(name, ISupportedBrokers), 'name must be of type ISupportedBrokers enum'
@@ -42,7 +43,12 @@ class BaseBroker(abc.ABC):
         self.PAPER = paper
         self.DataFeed = feed
         self.LOGGER = logging.getLogger("OlympusTrader."+self.NAME.value)
-        # logging.basicConfig(level=logging.INFO)
+        self.VERBOSE = verbose
+        logging.basicConfig(level=logging.INFO)
+        if self.VERBOSE > 0:
+            self.LOGGER.setLevel(logging.DEBUG)
+        else:
+            self.LOGGER.setLevel(logging.INFO)
 
 
     @abc.abstractmethod
@@ -130,7 +136,7 @@ class BaseBroker(abc.ABC):
     async def startTradeStream(self, callback: Awaitable):
         """Listen to trades and order updates and call the callback function with the data"""
         self.RUNNING_TRADE_STREAM = True
-        print("Start Trade Stream -", self.NAME)
+        self.LOGGER.info(f"Start Trade Stream - {self.NAME}")
         return
 
     @abc.abstractmethod
@@ -146,7 +152,7 @@ class BaseBroker(abc.ABC):
             assert assetStream['symbol'], 'assetStream must have a symbol'
             assert assetStream['time_frame'], 'assetStream must have a time_frame'
             assert assetStream['type'], 'assetStream must have a type'
-        print("Stream Market Data -", self.NAME)
+        self.LOGGER.info(f"Stream Market Data - {self.NAME}")
         
 
     @abc.abstractmethod

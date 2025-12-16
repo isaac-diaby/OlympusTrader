@@ -137,8 +137,10 @@ def update_asset_chart(selected_asset_timeframe: str, history, seriesData):
 
     # No history data
     if len(history[selected_asset_timeframe]) == 0:
+        print(f"DEBUG: History empty for {selected_asset_timeframe}")
         return no_update
 
+    # print(f"DEBUG: Updating chart for {selected_asset_timeframe}, points: {len(history[selected_asset_timeframe])}")
     ctx = dash.callback_context
     if seriesData == None or ctx.triggered_id == 'active-chart-timeframes':
         if selected_asset_timeframe not in history:
@@ -148,8 +150,9 @@ def update_asset_chart(selected_asset_timeframe: str, history, seriesData):
             seriesData[0].extend(history[selected_asset_timeframe])
             return seriesData
 
-    if (len(seriesData[0]) == len(history[selected_asset_timeframe])) or seriesData[0][-1]["time"] == history[selected_asset_timeframe][-1]["time"]:
-        return no_update
+    if len(seriesData[0]) > 0 and len(history[selected_asset_timeframe]) > 0:
+        if (len(seriesData[0]) == len(history[selected_asset_timeframe])) or seriesData[0][-1]["time"] == history[selected_asset_timeframe][-1]["time"]:
+            return no_update
 
     indexdiff = len(history[selected_asset_timeframe]) - len(seriesData[0])
     seriesData[0].extend(history[selected_asset_timeframe][-indexdiff:])
@@ -338,13 +341,14 @@ def update_active_chart_timeframe_class_names(active_timeframes, timeframes):
 
 
 @callback(
-    [Output('available-chart-timeframes', 'children')],
+    [Output('available-chart-timeframes', 'children'),
+     Output('active-chart-timeframes', 'data', allow_duplicate=True)],
     [Input('selected-asset-store', 'data')],
     [State(STRATEGY_STORE_MAPPINGS.history.id, 'data')],
     suppress_callback_exceptions=True,
     prevent_initial_call=True
 )
-def update_active_chart_timeframes(selected_asset_data, history):
+def populate_chart_timeframes(selected_asset_data, history):
     if selected_asset_data is None or history is None:
         raise PreventUpdate
 
@@ -353,6 +357,8 @@ def update_active_chart_timeframes(selected_asset_data, history):
     # Get all timeframes for the selected asset and split them by the feature '~'
     timeframes = [tf for tf in history.keys() if tf.split('~')[0]
                   == selected_asset_data]
+    
+    default_timeframe = timeframes[0] if timeframes else None
 
     return [[
             html.Button(
@@ -360,12 +366,13 @@ def update_active_chart_timeframes(selected_asset_data, history):
                 children=frame,
                 id={'type': 'timeframe-button', 'index': frame}
             ) for frame in timeframes
-            ]]
+            ]], default_timeframe
+
 # Callback to update the active chart timeframe
 
 
 @callback(
-    Output('active-chart-timeframes', 'data'),
+    Output('active-chart-timeframes', 'data', allow_duplicate=True),
     [Input({'type': 'timeframe-button', 'index': dash.dependencies.ALL}, 'n_clicks')],
     [
         State('active-chart-timeframes', 'data')
@@ -373,7 +380,7 @@ def update_active_chart_timeframes(selected_asset_data, history):
     suppress_callback_exceptions=True,
     prevent_initial_call=True
 )
-def update_active_chart_timeframes(n_clicks, current_timeframes):
+def handle_timeframe_click(n_clicks, current_timeframes):
     ctx = dash.callback_context
 
     if not ctx.triggered:

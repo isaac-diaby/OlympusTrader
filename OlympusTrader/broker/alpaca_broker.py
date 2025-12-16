@@ -37,8 +37,8 @@ class AlpacaBroker(BaseBroker):
     HISTORICAL_DATA: dict[str, dict[Literal['trade',
                                             'quote', 'bar', 'news', 'signals'], pd.DataFrame]] = {}
 
-    def __init__(self, paper: bool, feed: DataFeed = DataFeed.IEX):
-        super().__init__(ISupportedBrokers.ALPACA, paper, feed)
+    def __init__(self, paper: bool, feed: DataFeed = DataFeed.IEX, verbose: int = 0, **kwargs):
+        super().__init__(ISupportedBrokers.ALPACA, paper, feed, verbose, **kwargs)
 
         assert os.getenv('ALPACA_API_KEY'), 'ALPACA_API_KEY not found'
         assert os.getenv('ALPACA_SECRET_KEY'), 'ALPACA_SECRET_KEY not found'
@@ -127,7 +127,7 @@ class AlpacaBroker(BaseBroker):
             self.TICKER_INFO[symbol] = tickerAsset
             return tickerAsset
         except alpaca.common.exceptions.APIError as e:
-            print("Error: No asset for", symbol)
+            self.LOGGER.exception("Error: No asset for", symbol)
             return None
 
     def get_account(self):
@@ -316,7 +316,7 @@ class AlpacaBroker(BaseBroker):
                             orderRequest['stop_price'] = insight.stop_price
                             req = StopOrderRequest(**orderRequest)
                     else:
-                        print(
+                        self.LOGGER.warning(
                             f"ALPACA: Order Type {insight.type} needs a stop price")
                         return None
                 case IOrderType.STOP_LIMIT:
@@ -330,16 +330,16 @@ class AlpacaBroker(BaseBroker):
                             orderRequest['limit_price'] = insight.limit_price
                             req = StopLimitOrderRequest(**orderRequest)
                     else:
-                        print(
+                        self.LOGGER.warning(
                             f"ALPACA: Order Type {insight.type} needs a stop price and limit price")
                         return None
                 case IOrderType.TRAILING_STOP:
-                    print(
+                    self.LOGGER.warning(
                         f"ALPACA: Order Type not supported {insight.type} ")
                     return None
                 # TODO: insight.type == IOrderType.TRAILING_STOP
                 case _:
-                    print(
+                    self.LOGGER.info(
                         f"ALPACA: Order Type not supported {insight.type} ")
                     return
             if req:
@@ -362,7 +362,7 @@ class AlpacaBroker(BaseBroker):
         return None
 
     def close_all_positions(self):
-        print("Closing all positions and orders")
+        self.LOGGER.info("Closing all positions and orders")
         closeOrders = self.trading_client.close_all_positions(
             cancel_orders=True)
         return closeOrders
@@ -377,7 +377,7 @@ class AlpacaBroker(BaseBroker):
             # print("Closed position", order)
             return self.format_order(order)
         except alpaca.common.exceptions.APIError as e:
-            print("Error closing position", e)
+            self.LOGGER.exception("Error closing position", e)
             raise e
 
     def cancel_order(self, order_id):
@@ -411,12 +411,23 @@ class AlpacaBroker(BaseBroker):
         try:
             await asyncio.to_thread(self.trading_stream_client.run)
         except asyncio.CancelledError:
+            self.LOGGER.info("Stopping Alpaca Trade Stream...")
+            try:
+                self.trading_stream_client.stop()
+            except Exception as e:
+                self.LOGGER.warning(f"Error stopping trade stream: {e}")
+            # await self.trading_stream_client.close() # Causes RuntimeError (different loop)
             raise
+        return
 
     async def closeTradeStream(self):
         super().closeTradeStream()
-        self.trading_stream_client.stop()
-        await self.trading_stream_client.close()
+        try:
+            self.trading_stream_client.stop()
+        except Exception as e:
+            self.LOGGER.warning(f"Error stopping trade stream in closeTradeStream: {e}")
+        # await self.trading_stream_client.close() # Causes RuntimeError (different loop)
+        return
 
     async def streamMarketData(self, callback: Awaitable, assetStreams):
         await super().streamMarketData(callback, assetStreams)
@@ -427,7 +438,6 @@ class AlpacaBroker(BaseBroker):
 
         pool = ThreadPoolExecutor(max_workers=(
             barStreamCount), thread_name_prefix="MarketDataStream")
-        loop = asyncio.new_event_loop()
         baseTimeFrame = tf(1, ITimeFrameUnit.Minute)
 
         for assetStream in assetStreams:
@@ -480,26 +490,32 @@ class AlpacaBroker(BaseBroker):
             # TODO: add support for quotes
 
         if StockStreamCount:
-            loop.run_in_executor(pool, self.stock_stream_client.run)
-            # self.stock_stream_client.run()
-            print(f"Stock Stream Running: {StockStreamCount} streams")
+            asyncio.get_running_loop().run_in_executor(pool, self.stock_stream_client.run)
+            self.LOGGER.info(f"Stock Stream Running: {StockStreamCount} streams")
         if CryptoStreamCount:
-            loop.run_in_executor(pool, self.crypto_stream_client.run)
-            # self.crypto_stream_client.run()
-            print(f"Crypto Stream Running: {CryptoStreamCount} streams")
-        # TODO: add support for qutoes
-
-    # def streamBar(self, callback: Awaitable, symbol: str, AssetType: Literal['stock', 'crypto'] = 'stock'):
-    #     if AssetType == 'stock':
-    #         return self.stock_stream_client.subscribe_bars(callback, symbol)
-    #     elif AssetType == 'crypto':
-    #         return self.crypto_stream_client.subscribe_bars(callback, symbol)
-
-    # def startStream(self, assetType, type):
-    #     if assetType == 'stock':
-    #         self.stock_stream_client.run()
-    #     elif assetType == 'crypto':
-    #         self.crypto_stream_client.run()
+            asyncio.get_running_loop().run_in_executor(pool, self.crypto_stream_client.run)
+            self.LOGGER.info(f"Crypto Stream Running: {CryptoStreamCount} streams")
+        
+        # Keep the task alive until cancelled
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            self.LOGGER.info("Stopping Alpaca Market Data Streams...")
+            if StockStreamCount:
+                try:
+                    self.stock_stream_client.stop()
+                except Exception as e:
+                    self.LOGGER.warning(f"Error stopping stock stream: {e}")
+                # await self.stock_stream_client.close() # Causes RuntimeError (different loop)
+            if CryptoStreamCount:
+                try:
+                    self.crypto_stream_client.stop()
+                except Exception as e:
+                    self.LOGGER.warning(f"Error stopping crypto stream: {e}")
+                # await self.crypto_stream_client.close() # Causes RuntimeError (different loop)
+            pool.shutdown(wait=False)
+            raise
+        return
 
     async def closeStream(self, assetStreams):
         # TODO: unsubscribe from streams type close stream should be called when strategy is stopped - close WSS connection
@@ -518,10 +534,20 @@ class AlpacaBroker(BaseBroker):
                     if not closeCryptoBarStream:
                         closeCryptoBarStream = True
 
+        # Stop the stream loops before closing connections
         if closeStockBarStream:
-            self.stock_stream_client.close()
+            try:
+                self.stock_stream_client.stop()
+            except Exception as e:
+                self.LOGGER.warning(f"Error stopping stock stream in closeStream: {e}")
+            # await self.stock_stream_client.close()
         if closeCryptoBarStream:
-            self.crypto_stream_client.stop()
+            try:
+                self.crypto_stream_client.stop()
+            except Exception as e:
+                self.LOGGER.warning(f"Error stopping crypto stream in closeStream: {e}")
+            # await self.crypto_stream_client.close()
+        return
 
     def format_on_trade_update(self, trade: TradeUpdate):
         event: ITradeUpdateEvent = None

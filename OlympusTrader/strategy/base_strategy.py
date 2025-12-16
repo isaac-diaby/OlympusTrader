@@ -163,6 +163,11 @@ class BaseStrategy(abc.ABC):
 
     # Internal task registry
     _tasks: Dict[str, asyncio.Task] = field(default_factory=dict, init=False)
+    _watchdog_timeout: int = 30
+    _teardown_timeout: int = 30
+
+    # Internal Optimiser
+    _MAX_HISTORY_SIZE: int = field(default=1000) # Max history size for the strategy
 
     # def __init__(
     #     self,
@@ -182,6 +187,10 @@ class BaseStrategy(abc.ABC):
         self.LOGGER = logging.getLogger("OlympusTrader."+self.NAME)
         # self.VERBOSE = verbose  # TODO: Log Levels should be an derived from env file
         logging.basicConfig(level=logging.INFO)
+        if self.VERBOSE > 0:
+            self.LOGGER.setLevel(logging.DEBUG)
+        else:
+            self.LOGGER.setLevel(logging.INFO)
 
 
         if not isinstance(self.VARIABLES, AttributeDict):
@@ -316,7 +325,7 @@ class BaseStrategy(abc.ABC):
     @abc.abstractmethod
     def teardown(self):
         """Called once at the end of the strategy."""
-        print("Tear Down: Closing all positions")
+        self.LOGGER.info("Tear Down: Closing all positions")
         self.BROKER.close_all_positions()
 
 
@@ -340,7 +349,7 @@ class BaseStrategy(abc.ABC):
                 if result.insight is not None:
                     self.add_insight(result.insight)
             else:
-                print(f"Alpha {result.alpha} Failed: {result.message}")
+                self.LOGGER.warning(f"Alpha {result.alpha} Failed: {result.message}")
 
         self.generateInsights(symbol)
 
@@ -352,10 +361,9 @@ class BaseStrategy(abc.ABC):
             self.LOGGER.info("Stopped by user")
 
     async def _run(self) -> None:
-        """Top-level entry. Use asyncio.run(strategy.run())."""
+        """Top-level entry."""
         self._RUNNING = True
         await self._start_strategy()
-        # Install signal handlers for graceful shutdown
         loop = asyncio.get_running_loop()
         stop_event = asyncio.Event()
 
@@ -371,31 +379,140 @@ class BaseStrategy(abc.ABC):
                 # Windows or event loop implementations may not support it
                 pass
 
-        # Use AsyncExitStack to ensure deterministic cleanup
+        # Safety watchdog to force exit if shutdown hangs (e.g. blocked sync calls)
+        async def _shutdown_watchdog():
+            await stop_event.wait()
+            self.LOGGER.info(f"Shutdown initiated. Watchdog waiting {self._watchdog_timeout}s...")
+            try:
+                await asyncio.sleep(self._watchdog_timeout)
+            except asyncio.CancelledError:
+                return
+            self.LOGGER.warning("Shutdown timed out. Forcing exit via watchdog.")
+            import os
+            os._exit(1)
+            
+        watchdog_task = asyncio.create_task(_shutdown_watchdog())
+
         async with AsyncExitStack() as stack:
-            # Create a TaskGroup for lifetime of strategy
+            # In backtest mode, start UI/SSM servers OUTSIDE the main TaskGroup
+            # so they persist after backtest completes
+            ui_ssm_tasks = []
+            if self.MODE == IStrategyMode.BACKTEST and (self.WITHUI or self.WITHSSM):
+                ui_ssm_tasks = await self._start_ui_ssm_servers()
+            
+            # Create a TaskGroup for lifetime of strategy (market/trade/insight tasks)
             async with asyncio.TaskGroup() as tg:
                 # Start streams/listeners/tasks
                 await self._start_streams_and_listeners(tg)
 
                 # Start the main strategy loop
-                tg.create_task(self._run_strategy(), name="strategy_main")
+                main_task = tg.create_task(self._run_strategy(), name="strategy_main")
 
-                # Wait until a stop signal
-                await stop_event.wait()
+                # Wait until a stop signal OR the strategy loop finishes (backtest done)
+                # We wrap stop_event.wait() in a task so we can wait on it in asyncio.wait
+                stop_task = tg.create_task(stop_event.wait(), name="stop_signal_waiter")
+
+                self.LOGGER.info("Waiting for main_task or stop_task...")
+                done, pending = await asyncio.wait(
+                    [main_task, stop_task],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                self.LOGGER.info(f"asyncio.wait returned. done count={len(done)}")
+
+                # Track whether strategy completed naturally
+                strategy_completed = main_task in done
+                
+                # If main_task finished (strategy done), stop everything and exit
+                if strategy_completed:
+                    self.LOGGER.info("Strategy main loop finished. Stopping...")
+                    
+                    # Run teardown logic (save results, close positions)
+                    try:
+                        await asyncio.wait_for(self._shutdown(), timeout=self._teardown_timeout)
+                    except Exception as e:
+                        self.LOGGER.exception("Error during teardown: %s", e)
+
+                    # Signal to stop the broker streams
+                    self._RUNNING = False
+                    if hasattr(self.BROKER, 'closeTradeStream'):
+                        try:
+                            await self.BROKER.closeTradeStream()
+                        except Exception as e:
+                            self.LOGGER.exception("Error closing trade stream: %s", e)
+                    
+                    # Set stop event to trigger TaskGroup exit
+                    stop_event.set()
+                else:
+                    # Stopped by user (Ctrl+C)
+                    self.LOGGER.info("Strategy stopped by user. Cancelling main task...")
+                    main_task.cancel()
+                    try:
+                        await main_task
+                    except asyncio.CancelledError:
+                        self.LOGGER.info("Main task cancelled")
+                    
+                    # Run teardown logic immediately
+                    self.LOGGER.info("Running teardown before cancelling streams...")
+                    try:
+                        await asyncio.wait_for(self._shutdown(), timeout=20)
+                    except Exception as e:
+                        self.LOGGER.exception("Error during teardown: %s", e)
 
                 # Signal tasks to stop
                 self.LOGGER.info("Cancelling tasks...")
-                # self._RUNNING = False
-                # TaskGroup will cancel tasks on exit from context
+                if hasattr(self, 'trade_stream') and not self.trade_stream.done():
+                    self.trade_stream.cancel()
+                    self.LOGGER.info("Cancelled trade_stream")
+                if hasattr(self, 'market_data_stream') and not self.market_data_stream.done():
+                    self.market_data_stream.cancel()
+                    self.LOGGER.info("Cancelled market_data_stream")
+                if hasattr(self, 'insight_listener') and not self.insight_listener.done():
+                    self.insight_listener.cancel()
+                    self.LOGGER.info("Cancelled insight_listener")
+                
+                # Exiting the TaskGroup context will cancel all remaining tasks
+                self.LOGGER.info("Exiting TaskGroup...")
 
-        # outside TaskGroup: do teardown
-        try:
-            await asyncio.wait_for(self._shutdown(), timeout=30)
-        except Exception as e:
-            self.LOGGER.exception("Error during teardown: %s", e)
+        self.LOGGER.info("TaskGroup exited.")
+        # _shutdown() moved inside TaskGroup to ensure it runs before exit hangs
+
+        # In BACKTEST mode, if UI/SSM are running and strategy completed naturally,
+        # keep them alive for inspection
+        if self.MODE == IStrategyMode.BACKTEST and ui_ssm_tasks and strategy_completed:
+            self.LOGGER.info("Strategy complete. UI/SSM servers still running. Press Ctrl+C to exit.")
+            # Clear the stop_event since it was set to exit the TaskGroup
+            # Now we need to wait for a fresh SIGINT from the user
+            stop_event.clear()
+            try:
+                # Wait for SIGINT
+                await stop_event.wait()
+            except asyncio.CancelledError:
+                pass
+        
+        # Shutdown UI/SSM servers for ALL modes (LIVE, BACKTEST, etc.)
+        if ui_ssm_tasks:
+            self.LOGGER.info("Shutting down UI/SSM servers...")
+            if hasattr(self, '_ssm_server'):
+                try:
+                    self._ssm_server.shutdown()
+                except Exception as e:
+                    self.LOGGER.debug("Error shutting down SSM server: %s", e)
+            # Cancel the tasks
+            for task in ui_ssm_tasks:
+                task.cancel()
 
         self.LOGGER.info("Strategy stopped")
+        
+        # Force exit if UI/SSM servers were running OR if in LIVE mode
+        # (broker executor threads and websocket connections don't stop gracefully)
+        if ui_ssm_tasks or self.MODE == IStrategyMode.LIVE:
+            import os
+            self.LOGGER.info("Forcing process exit to stop background threads...")
+            os._exit(0)
+        
+        watchdog_task.cancel()
+        return
+        
 
     async def _start_strategy(self):
         """Set up the strategy and check if the universe is empty."""
@@ -405,6 +522,42 @@ class BaseStrategy(abc.ABC):
             alpha.start()
 
 # -------------------- stream and listener management --------------------
+    async def _start_ui_ssm_servers(self):
+        """Start UI and SSM servers outside the main TaskGroup.
+        Returns a list of tasks that can be cancelled later.
+        """
+        tasks = []
+        
+        # Shared memory server (blocking) -> run in thread
+        if self.WITHSSM and hasattr(self, "SSM"):
+            self._ssm_server = self.SSM.get_server()
+            task = asyncio.create_task(
+                asyncio.to_thread(self._ssm_server.serve_forever), 
+                name="ssm_server"
+            )
+            tasks.append(task)
+            self.LOGGER.info("UI Shared Memory Server started")
+
+            # UI server
+            if self.WITHUI:
+                try:
+                    from OlympusTrader.ui.app import app
+                    import functools
+
+                    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+                    task = asyncio.create_task(
+                        asyncio.to_thread(
+                            functools.partial(app.run, host="0.0.0.0", threaded=True)
+                        ),
+                        name="ui_server",
+                    )
+                    tasks.append(task)
+                    self.LOGGER.info("UI Dashboard Server started")
+                except Exception as e:
+                    self.LOGGER.exception("Failed to start UI server: %s", e)
+        
+        return tasks
+
     async def _start_streams_and_listeners(self, tg: asyncio.TaskGroup) -> None:
         """Start broker streams, insight listener, shared servers, and UI.
 
@@ -413,7 +566,7 @@ class BaseStrategy(abc.ABC):
         """
         # Start trade stream
         if hasattr(self.broker, "startTradeStream"):
-            tg.create_task(
+            self.trade_stream = tg.create_task(
             self.broker.startTradeStream(self._on_trade_update),
             name="trade_stream",
             )
@@ -421,7 +574,7 @@ class BaseStrategy(abc.ABC):
 
         # Start market data stream
         if hasattr(self.broker, "streamMarketData"):
-            tg.create_task(
+            self.market_data_stream = tg.create_task(
             self.broker.streamMarketData(self._on_bar, self.STREAMS),
             name="market_data_stream",
             )
@@ -429,91 +582,36 @@ class BaseStrategy(abc.ABC):
 
         # Start insight listener if defined
         if hasattr(self, "_insightListener"):
-            tg.create_task(self._insightListener(), name="insight_listener")
+            self.insight_listener = tg.create_task(self._insightListener(), name="insight_listener")
 
-        # Shared memory server (blocking) -> run in thread
-        if self.WITHSSM and hasattr(self, "SSM"):
-            server = self.SSM.get_server()
-            tg.create_task(
-            asyncio.to_thread(server.serve_forever), name="ssm_server"
-            )
-            self.LOGGER.info("UI Shared Memory Server started")
+        # In backtest mode, UI/SSM are started separately outside TaskGroup
+        # In live mode, start them here within the TaskGroup
+        if self.MODE != IStrategyMode.BACKTEST:
+            # Shared memory server (blocking) -> run in thread
+            if self.WITHSSM and hasattr(self, "SSM"):
+                self._ssm_server = self.SSM.get_server()
+                tg.create_task(
+                asyncio.to_thread(self._ssm_server.serve_forever), name="ssm_server"
+                )
+                self.LOGGER.info("UI Shared Memory Server started")
 
-            # UI server (e.g. Flask) - run in thread to avoid blocking
-            if self.WITHUI:
-                try:
-                    from OlympusTrader.ui.app import app
+                # UI server (e.g. Flask) - run in thread to avoid blocking
+                if self.WITHUI:
+                    try:
+                        from OlympusTrader.ui.app import app
 
 
-                    logging.getLogger("werkzeug").setLevel(logging.ERROR)
-                    # loop = asyncio.get_running_loop()
-                    # tg.create_task(
-                    #     loop.run_in_executor(
-                    #         None,
-                    #         lambda: app.run(
-                    #             host="0.0.0.0",
-                    #             port=8050,
-                    #             debug=False,
-                    #             threaded=True,
-                    #             use_reloader=False,
-                    #         )
-                    #     ),
-                    #     name="ui_server"
-                    # )
-                    # OLD
-                    tg.create_task(
-                    asyncio.to_thread(
-                    functools.partial(app.run, host="0.0.0.0", threaded=True)
-                    ),
-                    name="ui_server",
-                    )
-                    self.LOGGER.info("UI Dashboard Server started")
-                except Exception as e:
-                    self.LOGGER.exception("Failed to start UI server: %s", e)
-
-    # def _start_streams_and_listeners(self, loop, pool):
-    #     """Start the trading data streams, market data streams, UI shared memory server, and insight listener."""
-    #     self.TRADE_STREAM = loop.run_in_executor(
-    #         pool, self.BROKER.startTradeStream, self._on_trade_update
-    #     )
-    #     self.MARKET_DATA_STREAM = loop.run_in_executor(
-    #         pool, self.BROKER.streamMarketData, self._on_bar, self.STREAMS
-    #     )
-    #     self.INSIGHT_STREAM = loop.run_in_executor(pool, self._insightListener)
-
-    #     if self.WITHSSM:
-    #         server = self.SSM.get_server()
-    #         # Run the UI Shared Memory Server
-    #         self.UI_SSM_STREAM = loop.run_in_executor(pool, server.serve_forever)
-    #         print("UI Shared Memory Server Started")
-    #         if self.WITHUI:
-    #             from OlympusTrader.ui.__main__ import app
-    #             # FIXME: Enabling dev tools is not working in a pool executor for some reason
-    #             # if self.VERBOSE > 0:
-    #             #     # Enable the dev tools
-    #             #     app.enable_dev_tools(
-    #             #         debug=True,
-    #             #         dev_tools_ui=True,
-    #             #         dev_tools_serve_dev_bundles=True,
-    #             #         dev_tools_hot_reload=True
-    #             #     )
-
-    #             #     # Run the UI Dashboard Server in debug mode
-    #             #     self.UI_STREAM = loop.run_in_executor(pool,  functools.partial(app.run, debug=True))
-    #             # else:
-    #             #     log = logging.getLogger('werkzeug')
-    #             #     log.setLevel(logging.ERROR)
-    #             #     # Run the UI Dashboard Server in production mode
-    #             #     self.UI_STREAM = loop.run_in_executor(pool, functools.partial(app.run, host='0.0.0.0', threaded=True))
-    #             # Run the UI Dashboard Server in production mode
-    #             log = logging.getLogger("werkzeug")
-    #             log.setLevel(logging.ERROR)
-
-    #             self.UI_STREAM = loop.run_in_executor(
-    #                 pool, functools.partial(app.run, host="0.0.0.0", threaded=True)
-    #             )
-    #             print("UI Dashboard Server Started")
-
+                        logging.getLogger("werkzeug").setLevel(logging.ERROR)
+                        tg.create_task(
+                        asyncio.to_thread(
+                        functools.partial(app.run, host="0.0.0.0", threaded=True)
+                        ),
+                        name="ui_server",
+                        )
+                        self.LOGGER.info("UI Dashboard Server started")
+                    except Exception as e:
+                        self.LOGGER.exception("Failed to start UI server: %s", e)
+        return
     async def _run_strategy(self):
         """Run the strategy in backtest mode or live mode."""
         self.LOGGER.info("_run_strategy: starting")
@@ -522,11 +620,17 @@ class BaseStrategy(abc.ABC):
             await self._run_backtest_loop()
         else:
             # Live mode: just stay alive until _RUNNING is False
-            while not getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) or not getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False):
-                await asyncio.sleep(0.1)
-            while getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) and getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False) and self._RUNNING:
-                await asyncio.sleep(1)
+            try:
+                while not getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) or not getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False):
+                    await asyncio.sleep(0)
+                while getattr(self.BROKER, 'RUNNING_MARKET_STREAM', False) and getattr(self.BROKER, 'RUNNING_TRADE_STREAM', False) and self._RUNNING:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                self.LOGGER.info("_run_strategy: cancelled")
+                raise
+
         self.LOGGER.info("_run_strategy_loop: exiting")
+        return
 
     async def _run_backtest_loop(self) -> None:
         """Backtest loop: waits for streams to start and controls backtest flow."""
@@ -536,7 +640,7 @@ class BaseStrategy(abc.ABC):
 
         if self.VERBOSE > 0:
             import datetime, timeit
-            print(f"Running Backtest - {datetime.datetime.now()}")
+            self.LOGGER.info(f"Running Backtest - {datetime.datetime.now()}")
             start_time = timeit.default_timer()
 
         # Main backtest control loop
@@ -547,31 +651,31 @@ class BaseStrategy(abc.ABC):
                 await asyncio.sleep(0)
                 # await asyncio.to_thread(self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait)
             except asyncio.CancelledError:
-                if (not self.BROKER.RUNNING_MARKET_STREAM) or (not self.BROKER.RUNNING_TRADE_STREAM):
-                    break
-                continue
+                self.LOGGER.info("Backtest loop cancelled")
+                break
 
         if self.VERBOSE > 0:
-            print("Backtest Completed:", timeit.default_timer() - start_time)
+            self.LOGGER.info("Backtest Completed:", timeit.default_timer() - start_time)
 
-    async def run_teardown(self, loop):
+    async def run_teardown(self):
         """Clean up resources and save backtest results if applicable."""
         self.teardown()
 
         if self.MODE == IStrategyMode.BACKTEST and len(self.BACKTESTING_RESULTS) == 0:
             self.BACKTESTING_RESULTS = self.BROKER.get_VBT_results(self.resolution)
             self.saveBacktestResults()
-        print("Simulation Account", self.BROKER.Account)
+
+        self.ACCOUNT = self.BROKER.get_account()
+        self.LOGGER.info(f"End Account: {self.ACCOUNT}")
+        
         self.METRICS.updateEnd(
             (
                 pd.Timestamp(self.BROKER.get_current_time, tz="UTC")
                 - datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
             ).total_seconds(),
-            self.BROKER.Account.equity,
+            self.ACCOUNT.equity,
         )
-        print("Trade METRICS: ", self.METRICS)
-
-        exit(0)
+        self.LOGGER.info(f"Trade METRICS: {self.METRICS}")
 
     def saveBacktestResults(self):
         """Save the backtest results."""
@@ -593,9 +697,9 @@ class BaseStrategy(abc.ABC):
             if self.BACKTESTING_RESULTS.get(symbol):
                 self.BACKTESTING_RESULTS[symbol].save(path)
                 self.BACKTESTING_RESULTS[symbol].plot().show()
-                print("Backtesting results saved for", symbol, "at", path)
+                self.LOGGER.info("Backtesting results saved for", symbol, "at", path)
             else:
-                print("No backtesting results found for", symbol)
+                self.LOGGER.info("No backtesting results found for", symbol)
 
         # Save the account history
         self.BROKER.export_trade_log()
@@ -649,10 +753,10 @@ class BaseStrategy(abc.ABC):
             self.SSM = SharedStrategyManager(
                 address=("", 50000), authkey=os.getenv("SSM_PASSWORD").encode()
             )
-            print("UI Shared Memory Server configured")
+            self.LOGGER.info("UI Shared Memory Server configured")
 
         except Exception as e:
-            print(f"Error in _startUISharedMemory: {e}")
+            self.LOGGER.error(f"Error in _startUISharedMemory: {e}")
             pass
 
     async def _insightListener(self):
@@ -660,14 +764,13 @@ class BaseStrategy(abc.ABC):
         assert callable(
             self.executeInsight
         ), "executeInsight must be a callable function"
-        print("Running Insight Listener")
+        self.LOGGER.info("Running Insight Listener")
+        self.ACCOUNT = await asyncio.to_thread(self.BROKER.get_account)
+        self.POSITIONS = await asyncio.to_thread(self.BROKER.get_positions)
+        if self.POSITIONS == None:
+            self.POSITIONS = {}
         try:
             while self._RUNNING:
-                # Update the account and positions
-                self.ACCOUNT = self.BROKER.get_account()
-                self.POSITIONS = self.BROKER.get_positions()
-                if self.POSITIONS == None:
-                    self.POSITIONS = {}
 
                 if self.MODE == IStrategyMode.BACKTEST:
                     # Wait for market producers to finish this timestep
@@ -689,7 +792,7 @@ class BaseStrategy(abc.ABC):
                         passed = True
                         for executor in self.INSIGHT_EXECUTORS[insight.state]:
                             if not executor.should_run(insight):
-                                continue
+                                continue                            
                             result = executor.run(self.INSIGHTS[insight.INSIGHT_ID])
                             # Executor manage the insight state and mutates the insight
                             if not result.success:
@@ -701,8 +804,7 @@ class BaseStrategy(abc.ABC):
                             elif not result.passed:
                                 passed = False
                                 break
-                            if self.VERBOSE > 1:
-                                self.LOGGER.info(f"Executor {result.executor}: {result.message}")
+                            self.LOGGER.debug(f"Executor {result.executor}: {result.message}")
 
                         if not passed:
                             continue
@@ -726,8 +828,9 @@ class BaseStrategy(abc.ABC):
                         self.LOGGER.error("Error in _insightListener:", e)
                         continue
 
-                # signal insight stage done
-                await self.BROKER.BACKTEST_FlOW_CONTROL.report_insight()
+                if self.MODE == IStrategyMode.BACKTEST:
+                    # signal insight stage done
+                    await self.BROKER.BACKTEST_FlOW_CONTROL.report_insight()
                 # note: we do NOT step_complete here; trade will signal trade complete, then market will call step_complete()
                 # Wait small time to yield control (optional)
                 await asyncio.sleep(0)
@@ -741,8 +844,8 @@ class BaseStrategy(abc.ABC):
                 #         break
                 
                 # Update the account and positions
-                self.ACCOUNT = self.BROKER.get_account()
-                self.POSITIONS = self.BROKER.get_positions()
+                self.ACCOUNT = await asyncio.to_thread(self.BROKER.get_account)
+                self.POSITIONS = await asyncio.to_thread(self.BROKER.get_positions)
                 if self.POSITIONS == None:
                     self.POSITIONS = {}
         except asyncio.CancelledError:
@@ -750,6 +853,7 @@ class BaseStrategy(abc.ABC):
         finally:
             self._INSIGHT_RUNNING = False
         self.LOGGER.info("End of Insight Listener")
+        return
 
     async def _on_trade_update(self, trade):
         """format the trade stream to the strategy."""
@@ -761,9 +865,6 @@ class BaseStrategy(abc.ABC):
         self.LOGGER.info(
             f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] is not None else orderdata['filled_price']} - {orderdata['order_id']}"
         )
-        # print(
-        #     f"Order: {event:<16} {orderdata['created_at']}: {orderdata['asset']['symbol']:^6}: {str(orderdata['filled_qty']):^8} / {orderdata['qty']:^8} : {orderdata['type']} / {orderdata['order_class']} : {orderdata['side']} @ {orderdata['limit_price'] if orderdata['limit_price'] is not None else orderdata['filled_price']} - {orderdata['order_id']}"
-        # )
         self.ORDERS[orderdata["order_id"]] = orderdata
         for i, insight in self.INSIGHTS.items():
             # Check if the insight is managing the order by checking the symbol
@@ -874,12 +975,8 @@ class BaseStrategy(abc.ABC):
                                     if insight.close():
                                         pass
                                     else:
-                                        print(
-                                            "Partial Filled Quantity Before Canceled: ",
-                                            insight._partial_filled_quantity,
-                                            " / ",
-                                            oldQuantity,
-                                            " - And Failed to close the position",
+                                        self.LOGGER.warning(
+                                            f"Partial Filled Quantity Before Canceled: {insight._partial_filled_quantity} / {oldQuantity} - And Failed to close the position"
                                         )
                                 else:
                                     insight.updateState(
@@ -897,7 +994,7 @@ class BaseStrategy(abc.ABC):
                 case InsightState.FILLED | InsightState.CLOSED:
                     # Check if the position has been closed via SL or TP
                     # if insight.state == InsightState.CANCELED and insight._partial_filled_quantity == None:
-                    #     # Check if we has a partial fill and need to get the results of the partial fill that was closed
+                    #     # Check if we have a partial fill and need to get the results of the partial fill that was closed
                     #     break
                     if (event == ITradeUpdateEvent.FILLED) or (
                         event == ITradeUpdateEvent.CLOSED
@@ -1156,6 +1253,8 @@ class BaseStrategy(abc.ABC):
 
     async def _on_bar(self, bar: Any, timeframe: ITimeFrame):
         """format the bar stream to the strategy."""
+        if not self._RUNNING:
+            return
         try:
             data: pd.DataFrame = None
             if (
@@ -1217,6 +1316,12 @@ class BaseStrategy(abc.ABC):
                     self.HISTORY[symbol] = self.HISTORY[symbol].loc[
                         ~self.HISTORY[symbol].index.duplicated(keep="first")
                     ]
+                    
+                    # Truncate history to prevent memory leaks and slow TA calculations
+                    MAX_HISTORY_SIZE = self.WARM_UP + self._MAX_HISTORY_SIZE # Keep a buffer above warm up
+                    if len(self.HISTORY[symbol]) > MAX_HISTORY_SIZE:
+                         self.HISTORY[symbol] = self.HISTORY[symbol].iloc[-MAX_HISTORY_SIZE:]
+
                     if len(self.HISTORY[symbol]) < self.WARM_UP:
                         self.LOGGER.info(f"Waiting for warm up: {symbol} - {len(self.HISTORY[symbol])} / {self.WARM_UP}")
                         return
@@ -1232,12 +1337,11 @@ class BaseStrategy(abc.ABC):
                     except Exception as e:
                         self.LOGGER.error(f"Error in on_bar: {e}")
                     if self.VERBOSE > 0:
-                        self.LOGGER.info(f"Time taken on_bar: {symbol} {timeit.default_timer() - start_time}")
+                        self.LOGGER.debug(f"Time taken on_bar: {symbol} {timeit.default_timer() - start_time}")
                 # else: not part of resolution/feature event
         except Exception as e:
             self.LOGGER.error(f"Exception in _on_bar: {e}")
         finally:
-            return
             # If in backtest mode and shutdown is signaled, ensure barrier is released
             if self.MODE == IStrategyMode.BACKTEST and hasattr(self.BROKER, 'BACKTEST_FlOW_CONTROL_BARRIER') and self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER:
                 try:
@@ -1245,6 +1349,7 @@ class BaseStrategy(abc.ABC):
                      await asyncio.to_thread(self.BROKER.BACKTEST_FlOW_CONTROL_BARRIER.wait)
                 except Exception as barrier_e:
                     self.LOGGER.warning(f"Barrier wait failed or timed out: {barrier_e}")
+        return
         
 
     def submit_order(self, insight: Insight):

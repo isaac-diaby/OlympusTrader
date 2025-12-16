@@ -55,10 +55,10 @@ class Mt5Broker(BaseBroker):
     TIMEZONE = timezone.utc
     """MT5 Timezone"""
 
-    def __init__(self, paper: bool, feed=None, timezone=None):
-        super().__init__(ISupportedBrokers.MT5, paper, feed)
-        print("MetaTrader5 package author: ", mt5.__author__)
-        print("MetaTrader5 package version: ", mt5.__version__)
+    def __init__(self, paper: bool, feed=None, timezone=None, verbose: int = 0, **kwargs):
+        super().__init__(ISupportedBrokers.MT5, paper, feed, verbose, **kwargs)
+        self.LOGGER.info("MetaTrader5 package author: ", mt5.__author__)
+        self.LOGGER.info("MetaTrader5 package version: ", mt5.__version__)
 
         if not mt5.initialize():
             raise BaseException("initialize() failed, error code =", mt5.last_error())
@@ -109,7 +109,7 @@ class Mt5Broker(BaseBroker):
             # self.TIMEZONE = timezone(np.abs(tzdif).round(freq='H'))
             return True
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_ticker_info(self, symbol: str) -> Union[IAsset, None]:
@@ -122,9 +122,9 @@ class Mt5Broker(BaseBroker):
             if not tickerInfo:
                 return None
             if not tickerInfo.visible:
-                print(symbol, "is not visible, trying to switch on")
+                self.LOGGER.info(symbol, "is not visible, trying to switch on")
                 if not mt5.symbol_select(symbol, True):
-                    print("Failed to switch on", symbol)
+                    self.LOGGER.warning("Failed to switch on", symbol)
                     None
 
             # TODO: Store the size of one lot and max contract size
@@ -168,7 +168,7 @@ class Mt5Broker(BaseBroker):
             return tickerAsset
 
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_account(self) -> IAccount:
@@ -190,7 +190,7 @@ class Mt5Broker(BaseBroker):
             )
             return account
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_position(self, symbol) -> IPosition:
@@ -202,7 +202,7 @@ class Mt5Broker(BaseBroker):
             position: IPosition = self.format_position(position[0])
             return position
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_positions(self) -> dict[str, IPosition]:
@@ -219,7 +219,7 @@ class Mt5Broker(BaseBroker):
             return positions
 
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def format_position(self, position: Any) -> IPosition:
@@ -236,7 +236,7 @@ class Mt5Broker(BaseBroker):
                 unrealized_pl=position.profit,
             )
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def close_position(
@@ -283,14 +283,14 @@ class Mt5Broker(BaseBroker):
                 }
                 result = mt5.order_send(request)
                 if not result:
-                    print("Order[CLOSE] send failed, error code =", mt5.last_error())
+                    self.LOGGER.info("Order[CLOSE] send failed, error code =", mt5.last_error())
                     return None
                 return self.format_order(result)
             else:
                 return None
 
         except BaseException as e:
-            print(e)
+            self.LOGGER.exception(e)
             return None
 
     def close_all_positions(self):
@@ -304,7 +304,7 @@ class Mt5Broker(BaseBroker):
         try:
             orders: dict[str, IOrder] = {}
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_order(self, order_id) -> Optional[IOrder]:
@@ -312,7 +312,7 @@ class Mt5Broker(BaseBroker):
             order = self.format_order(mt5.order_get(ticket=order_id))
             return order
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_latest_quote(self, asset: IAsset) -> IQuote:
@@ -322,7 +322,7 @@ class Mt5Broker(BaseBroker):
                 return None
             return self.format_on_quote(quote, asset.get('symbol'))
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def cancel_order(self, order_id: str) -> Optional[str]:
@@ -332,13 +332,13 @@ class Mt5Broker(BaseBroker):
                 "order": order_id,
                 # "comment": "OlympusTrader Cancel",
             }
-            print("Cancelling order", order_id)
+            self.LOGGER.info("Cancelling order", order_id)
             result = mt5.order_send(request)
             if not result:
-                print("Order[CANCEL] send failed, error code =", mt5.last_error())
+                self.LOGGER.info("Order[CANCEL] send failed, error code =", mt5.last_error())
                 return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
-                print(
+                self.LOGGER.info(
                     f"Order to cancel failed, retcode={
                       result.retcode}, comment={result.comment}"
                 )
@@ -365,10 +365,10 @@ class Mt5Broker(BaseBroker):
                 }
                 result = mt5.order_send(request)
                 if not result:
-                    print("Order[UPDATE] send failed, error code =", mt5.last_error())
+                    self.LOGGER.info("Order[UPDATE] send failed, error code =", mt5.last_error())
                     return None
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
-                    print(
+                    self.LOGGER.info(
                         f"Order to update failed, retcode={
                           result.retcode}, comment={result.comment}"
                     )
@@ -377,7 +377,7 @@ class Mt5Broker(BaseBroker):
             else:
                 return None
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def get_history(self, asset: IAsset, start, end, resolution) -> pd.DataFrame:
@@ -409,7 +409,7 @@ class Mt5Broker(BaseBroker):
 
             return bar
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     def execute_insight_order(self, insight, asset) -> Union[IOrder, None]:
@@ -427,7 +427,7 @@ class Mt5Broker(BaseBroker):
             "max_order_size", np.inf
         ):
             # We could clamp here but user logic would not be aware until after we commit the order.
-            print("exceesing max order limit")
+            self.LOGGER.info("exceesing max order limit")
             return None
 
         si = mt5.symbol_info(asset["symbol"])
@@ -513,11 +513,11 @@ class Mt5Broker(BaseBroker):
 
             result = mt5.order_send(request)
             if not result:
-                print("Order send failed, error code =", mt5.last_error())
+                self.LOGGER.info("Order send failed, error code =", mt5.last_error())
                 return None
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 # Should not error here as we have already checked
-                print(
+                self.LOGGER.info(
                     f"Order send failed, retcode={
                       result.retcode}, comment={result.comment}"
                 )
@@ -569,7 +569,7 @@ class Mt5Broker(BaseBroker):
             )
             return order
         except Exception as e:
-            print(f"Error: {e}")
+            self.LOGGER.exception(f"Error: {e}")
             return None
 
     async def startTradeStream(self, callback: Awaitable):
@@ -579,21 +579,21 @@ class Mt5Broker(BaseBroker):
         await super().startTradeStream(callback)
         # Rate limit for new trade signals
         rate = 1
-        loop = asyncio.new_event_loop()
-
         lastChecked = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
         while self.RUNNING_TRADE_STREAM:
-            sleep(1 / rate)
+            await asyncio.sleep(1 / rate)
             now = datetime.now(self.TIMEZONE).replace(tzinfo=timezone.utc)
             # now = datetime.now(self.TIMEZONE)
             # print(f"Checking for new trades from {lastChecked} to {now}")
             new_incoming_orders = mt5.history_orders_get(lastChecked, now)
             if (new_incoming_orders == None):
-                print("No history orders error code={}".format(mt5.last_error()))
+                # print("No history orders error code={}".format(mt5.last_error()))
+                pass
 
             new_incoming_deals = mt5.history_deals_get(lastChecked, now)
             if (new_incoming_deals == None):
-                print("No history deal error code={}".format(mt5.last_error()))
+                # print("No history deal error code={}".format(mt5.last_error()))
+                pass
 
             # TODO:Check if they are sorted!
             # print("Oders", new_incoming_orders)
@@ -601,22 +601,22 @@ class Mt5Broker(BaseBroker):
             if (new_incoming_orders and len(new_incoming_orders) > 0) or (
                 new_incoming_deals and len(new_incoming_deals) > 0
             ):
-                for order in new_incoming_orders:
-                    try:
-                        await callback(ITradeUpdate(order, order.state))
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as e:
-                        print(f"Error: {e}")
+                if new_incoming_orders:
+                    for order in new_incoming_orders:
+                        try:
+                            await callback(ITradeUpdate(order, order.state))
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as e:
+                            self.LOGGER.exception(f"Error: {e}")
 
             lastChecked = now
-        loop.close()
 
     # TradeOrder(ticket=530218319, time_setup=1582282114, time_setup_msc=1582282114681, time_done=1582303777, time_done_msc=1582303777582, time_expiration=0, ...
     # TradeDeal(ticket=291835101, order=305043333, time=1757630992, time_msc=1757630992575, type=1, entry=0, magic=234777, position_id=305043333, reason=3, volume=0.02, price=1, 114359.7, commission=-0.74, swap=0.0, profit=0.0, fee=0.0, symbol='BTCUSD', comment='', external_id='271754123')
     async def closeTradeStream(self):
         # TODO: Will have to build this out
-        super().closeTradeStream()
+        await super().closeTradeStream()
         mt5.shutdown()
         pass
 
@@ -624,8 +624,8 @@ class Mt5Broker(BaseBroker):
         await super().streamMarketData(callback, assetStreams)
 
         self.RUNNING_MARKET_STREAM = True
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # loop = asyncio.new_event_loop()
+        # asyncio.set_event_loop(loop)
 
         tasks = []
 
@@ -634,26 +634,35 @@ class Mt5Broker(BaseBroker):
 
             while self.RUNNING_MARKET_STREAM:
 
-                # Calculate next time increment
+                # Calculate next time increment based on LAST CHECKED time, not current time
+                # This ensures we don't skip intervals if we fall behind
                 nextTimetoCheck = asset["time_frame"].get_next_time_increment(
-                    pd.Timestamp.now()
+                    lastChecked
                 )
 
                 # Async sleep until the time increment is reached
-                wait_seconds = (nextTimetoCheck - lastChecked).total_seconds()
+                # We compare against NOW to see if we need to wait
+                now = pd.Timestamp.now()
+                wait_seconds = (nextTimetoCheck - now).total_seconds()
+                
                 if wait_seconds > 0:
                     await asyncio.sleep(wait_seconds)
+                else:
+                    # We are behind, don't sleep, just catch up
+                    pass
 
-                print(
+                self.LOGGER.info(
                     f"Checking for new bars from {lastChecked} to "
                     f"{nextTimetoCheck} for {asset['symbol']} {asset['time_frame']}"
                 )
 
                 # Fetch bars
+                # We want the bar that closed at (or before) nextTimetoCheck
+                # If we are catching up, nextTimetoCheck is in the past
                 bars = mt5.copy_rates_from(
                     asset["symbol"],
                     int(asset["time_frame"]),
-                    lastChecked,
+                    nextTimetoCheck, # Fetch from the target time
                     1
                 )
 
@@ -665,14 +674,28 @@ class Mt5Broker(BaseBroker):
                             bar = barDatas.iloc[[idx]]
 
                             # Check for valid time increment
+                            # We check if the bar time matches our target interval
                             if (
                                 asset["time_frame"].is_time_increment(bar.index[0][1])
                                 and bar.index[0][1] >= lastChecked.replace(tzinfo=timezone.utc)
                             ):
-                                await callback(bar, timeframe=asset["time_frame"])
+                                # Run callback concurrently to avoid blocking the stream loop
+                                # await callback(bar, timeframe=asset["time_frame"])
+                                task = asyncio.create_task(callback(bar, timeframe=asset["time_frame"]))
+                                
+                                # Add a done callback to log any exceptions from the task
+                                def handle_result(t):
+                                    try:
+                                        t.result()
+                                    except asyncio.CancelledError:
+                                        pass
+                                    except Exception as e:
+                                        self.LOGGER.error(f"Error in on_bar callback task: {e}")
+                                
+                                task.add_done_callback(handle_result)
 
                         except Exception as e:
-                            print(f"Error inside callback dispatch: {e}")
+                            self.LOGGER.exception(f"Error inside callback dispatch: {e}")
                             continue
 
                 lastChecked = nextTimetoCheck
@@ -685,9 +708,10 @@ class Mt5Broker(BaseBroker):
                 )
 
             streamKey = f"{asset['symbol']}:{str(asset['time_frame'])}"
-            task = loop.create_task(
-                MT5BarStreamer(asset), name=f"Market:{streamKey}"
-            )
+            # task = loop.create_task(
+            #     MT5BarStreamer(asset), name=f"Market:{streamKey}"
+            # )
+            task = asyncio.create_task(MT5BarStreamer(asset), name=f"Market:{streamKey}")
             self._MARKET_STREAMS[streamKey] = task
             tasks.append(task)
 
@@ -702,8 +726,8 @@ class Mt5Broker(BaseBroker):
             # cleanup on exit
             for t in tasks:
                 t.cancel()
-            loop.stop()
-            loop.close()
+            # loop.stop()
+            # loop.close()
 
     async def closeStream(self, assetStreams):
         if self.RUNNING_MARKET_STREAM:
@@ -714,6 +738,7 @@ class Mt5Broker(BaseBroker):
                     await marketStream.cancel()
                     del self._MARKET_STREAMS[streamKey]
                 if len(self._MARKET_STREAMS) == 0:
+                    await super().closeStream(assetStreams)
                     self.RUNNING_MARKET_STREAM = False
 
     def format_on_bar(

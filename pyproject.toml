@@ -55,6 +55,7 @@ tqdm = "^4.67.1"
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"
 nbformat = "^5.10.4"
+notebook = "^7.5.0"
 
 [tool.poetry.group.docs.dependencies]
 sphinx = "^8.0.2"

@@ -1,6 +1,7 @@
 from .app import app
 
 if __name__ == "__main__":
+    """ Run the dashboard app with `python -m OlympusTrader.ui` """
     devMode = True
     if devMode:
         app.enable_dev_tools(
